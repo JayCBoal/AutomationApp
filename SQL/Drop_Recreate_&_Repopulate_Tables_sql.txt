@@ -1,0 +1,305 @@
+-- ============================================================================
+-- AutomationDB Schema Initialization Script
+-- Engine Target: MariaDB / MySQL
+-- Pattern: Global Registry / MasterObjects Supertype Pattern
+-- ============================================================================
+
+SET FOREIGN_KEY_CHECKS = 0;
+
+-- ----------------------------------------------------------------------------
+-- Drop Existing Tables
+-- ----------------------------------------------------------------------------
+DROP TABLE IF EXISTS JobStepParameters;
+DROP TABLE IF EXISTS JobSteps;
+DROP TABLE IF EXISTS StepDefinitions;
+DROP TABLE IF EXISTS StepTypes;
+
+DROP TABLE IF EXISTS TagAssignments;
+DROP TABLE IF EXISTS Variables;
+
+DROP TABLE IF EXISTS Jobs;
+DROP TABLE IF EXISTS Processes;
+DROP TABLE IF EXISTS Tags;
+
+DROP TABLE IF EXISTS Sources;
+DROP TABLE IF EXISTS Deliveries;
+DROP TABLE IF EXISTS Operations;
+DROP TABLE IF EXISTS Sites;
+DROP TABLE IF EXISTS Entities;
+DROP TABLE IF EXISTS Applications;
+DROP TABLE IF EXISTS Credentials;
+
+DROP TABLE IF EXISTS AsyncInstances;
+DROP TABLE IF EXISTS AsyncParentInstances;
+DROP TABLE IF EXISTS Audits;
+
+DROP TABLE IF EXISTS MasterObjects;
+
+SET FOREIGN_KEY_CHECKS = 1;
+
+-- ----------------------------------------------------------------------------
+-- 1. Master Object Registry (Global Supertype)
+-- ----------------------------------------------------------------------------
+
+CREATE TABLE MasterObjects (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    ObjectType VARCHAR(32) NOT NULL, -- 'APPLICATION', 'ENTITY', 'SITE', 'CREDENTIAL', 'TAG', 'PROCESS', 'JOB'
+    CreatedDateTime DATETIME DEFAULT CURRENT_TIMESTAMP,
+    CreatedBy VARCHAR(50) DEFAULT 'system'
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ----------------------------------------------------------------------------
+-- 2. Core Base Entities (1-to-1 extension of MasterObjects)
+-- ----------------------------------------------------------------------------
+
+CREATE TABLE Applications (
+    MasterObject_id INT PRIMARY KEY,
+    Name VARCHAR(64) NOT NULL UNIQUE,
+    Abbr VARCHAR(10) NOT NULL UNIQUE,
+    Description VARCHAR(256) NULL,
+    SupportDL VARCHAR(64) NULL,
+    ModifiedDateTime DATETIME ON UPDATE CURRENT_TIMESTAMP,
+    ModifiedBy VARCHAR(50) NULL,
+    FOREIGN KEY (MasterObject_id) REFERENCES MasterObjects(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE Entities (
+    MasterObject_id INT PRIMARY KEY,
+    Name VARCHAR(64) NOT NULL UNIQUE,
+    Abbr VARCHAR(10) NOT NULL UNIQUE,
+    Description VARCHAR(256) NULL,
+    ModifiedDateTime DATETIME ON UPDATE CURRENT_TIMESTAMP,
+    ModifiedBy VARCHAR(50) NULL,
+    FOREIGN KEY (MasterObject_id) REFERENCES MasterObjects(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE Credentials (
+    MasterObject_id INT PRIMARY KEY,
+    Name VARCHAR(64) NOT NULL UNIQUE,
+    Username VARCHAR(64) NULL,
+    Pwd TEXT NULL, -- Encrypted
+    KeyFile VARCHAR(256) NULL,
+    Description VARCHAR(256) NULL,
+    ModifiedDateTime DATETIME ON UPDATE CURRENT_TIMESTAMP,
+    ModifiedBy VARCHAR(50) NULL,
+    FOREIGN KEY (MasterObject_id) REFERENCES MasterObjects(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE Sites (
+    MasterObject_id INT PRIMARY KEY,
+    Name VARCHAR(64) NOT NULL UNIQUE,
+    Entity_MasterObject_id INT NULL,
+    Host VARCHAR(128) NOT NULL,
+    Port INT DEFAULT 22,
+    Credential_MasterObject_id INT NULL,
+    Protocol VARCHAR(16) DEFAULT 'SFTP',
+    Description VARCHAR(256) NULL,
+    ModifiedDateTime DATETIME ON UPDATE CURRENT_TIMESTAMP,
+    ModifiedBy VARCHAR(50) NULL,
+    FOREIGN KEY (MasterObject_id) REFERENCES MasterObjects(id) ON DELETE CASCADE,
+    FOREIGN KEY (Entity_MasterObject_id) REFERENCES Entities(MasterObject_id) ON DELETE SET NULL,
+    FOREIGN KEY (Credential_MasterObject_id) REFERENCES Credentials(MasterObject_id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ----------------------------------------------------------------------------
+-- 3. Workflow Entities & Hierarchical Tags
+-- ----------------------------------------------------------------------------
+
+CREATE TABLE Tags (
+    MasterObject_id INT PRIMARY KEY,
+    Parent_MasterObject_id INT NULL,
+    Name VARCHAR(64) NOT NULL,
+    Slug VARCHAR(128) NOT NULL UNIQUE,
+    Category VARCHAR(32) NULL,
+    Description VARCHAR(256) NULL,
+    ModifiedDateTime DATETIME ON UPDATE CURRENT_TIMESTAMP,
+    ModifiedBy VARCHAR(50) NULL,
+    FOREIGN KEY (MasterObject_id) REFERENCES MasterObjects(id) ON DELETE CASCADE,
+    FOREIGN KEY (Parent_MasterObject_id) REFERENCES Tags(MasterObject_id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE Processes (
+    MasterObject_id INT PRIMARY KEY,
+    Name VARCHAR(128) NOT NULL UNIQUE,
+    Description VARCHAR(256) NULL,
+    Severity INT DEFAULT 1,
+    ModifiedDateTime DATETIME ON UPDATE CURRENT_TIMESTAMP,
+    ModifiedBy VARCHAR(50) NULL,
+    FOREIGN KEY (MasterObject_id) REFERENCES MasterObjects(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE Jobs (
+    MasterObject_id INT PRIMARY KEY,
+    Process_MasterObject_id INT NOT NULL,
+    Name VARCHAR(128) NOT NULL,
+    JobOrder INT NOT NULL DEFAULT 1,
+    Description VARCHAR(256) NULL,
+    ModifiedDateTime DATETIME ON UPDATE CURRENT_TIMESTAMP,
+    ModifiedBy VARCHAR(50) NULL,
+    FOREIGN KEY (MasterObject_id) REFERENCES MasterObjects(id) ON DELETE CASCADE,
+    FOREIGN KEY (Process_MasterObject_id) REFERENCES Processes(MasterObject_id) ON DELETE CASCADE,
+    UNIQUE KEY uq_process_job (Process_MasterObject_id, Name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ----------------------------------------------------------------------------
+-- 4. Polymorphic Associations (Variables & Tag Assignments)
+-- ----------------------------------------------------------------------------
+
+CREATE TABLE Variables (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    MasterObject_id INT NOT NULL,
+    VarName VARCHAR(64) NOT NULL,
+    VarValue TEXT NOT NULL,
+    Description VARCHAR(256) NULL,
+    CreatedDateTime DATETIME DEFAULT CURRENT_TIMESTAMP,
+    CreatedBy VARCHAR(50) DEFAULT 'system',
+    ModifiedDateTime DATETIME ON UPDATE CURRENT_TIMESTAMP,
+    ModifiedBy VARCHAR(50) NULL,
+    FOREIGN KEY (MasterObject_id) REFERENCES MasterObjects(id) ON DELETE CASCADE,
+    UNIQUE KEY uq_obj_var (MasterObject_id, VarName)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE TagAssignments (
+    Tag_MasterObject_id INT NOT NULL,
+    Target_MasterObject_id INT NOT NULL,
+    PRIMARY KEY (Tag_MasterObject_id, Target_MasterObject_id),
+    FOREIGN KEY (Tag_MasterObject_id) REFERENCES Tags(MasterObject_id) ON DELETE CASCADE,
+    FOREIGN KEY (Target_MasterObject_id) REFERENCES MasterObjects(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ----------------------------------------------------------------------------
+-- 5. Step Definitions & Parameters
+-- ----------------------------------------------------------------------------
+
+CREATE TABLE StepTypes (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    Name VARCHAR(64) NOT NULL UNIQUE,
+    Description VARCHAR(256) NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE StepDefinitions (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    StepType_id INT NOT NULL,
+    ParamName VARCHAR(64) NOT NULL,
+    IsRequired BOOLEAN DEFAULT TRUE,
+    Description VARCHAR(256) NULL,
+    FOREIGN KEY (StepType_id) REFERENCES StepTypes(id) ON DELETE CASCADE,
+    UNIQUE KEY uq_steptype_param (StepType_id, ParamName)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE JobSteps (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    Job_MasterObject_id INT NOT NULL,
+    StepType_id INT NOT NULL,
+    Title VARCHAR(128) NOT NULL,
+    StepOrder INT NOT NULL DEFAULT 1,
+    Enabled BOOLEAN DEFAULT TRUE,
+    CreatedDateTime DATETIME DEFAULT CURRENT_TIMESTAMP,
+    CreatedBy VARCHAR(50) DEFAULT 'system',
+    ModifiedDateTime DATETIME ON UPDATE CURRENT_TIMESTAMP,
+    ModifiedBy VARCHAR(50) NULL,
+    FOREIGN KEY (Job_MasterObject_id) REFERENCES Jobs(MasterObject_id) ON DELETE CASCADE,
+    FOREIGN KEY (StepType_id) REFERENCES StepTypes(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE JobStepParameters (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    Step_id INT NOT NULL,
+    ParamName VARCHAR(64) NOT NULL,
+    ParamValue TEXT NULL,
+    FOREIGN KEY (Step_id) REFERENCES JobSteps(id) ON DELETE CASCADE,
+    UNIQUE KEY uq_step_param (Step_id, ParamName)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ----------------------------------------------------------------------------
+-- 6. Endpoint Sources & Deliveries
+-- ----------------------------------------------------------------------------
+
+CREATE TABLE Sources (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    Application_MasterObject_id INT NULL,
+    Entity_MasterObject_id INT NULL,
+    Site_MasterObject_id INT NULL,
+    Path VARCHAR(256) NOT NULL,
+    FilenamePattern VARCHAR(128) NOT NULL,
+    FOREIGN KEY (Application_MasterObject_id) REFERENCES Applications(MasterObject_id) ON DELETE SET NULL,
+    FOREIGN KEY (Entity_MasterObject_id) REFERENCES Entities(MasterObject_id) ON DELETE SET NULL,
+    FOREIGN KEY (Site_MasterObject_id) REFERENCES Sites(MasterObject_id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE Deliveries (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    Application_MasterObject_id INT NULL,
+    Entity_MasterObject_id INT NULL,
+    Site_MasterObject_id INT NULL,
+    Path VARCHAR(256) NOT NULL,
+    FilenamePattern VARCHAR(128) NOT NULL,
+    FOREIGN KEY (Application_MasterObject_id) REFERENCES Applications(MasterObject_id) ON DELETE SET NULL,
+    FOREIGN KEY (Entity_MasterObject_id) REFERENCES Entities(MasterObject_id) ON DELETE SET NULL,
+    FOREIGN KEY (Site_MasterObject_id) REFERENCES Sites(MasterObject_id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ----------------------------------------------------------------------------
+-- 7. Operations Audit & Async Tracking
+-- ----------------------------------------------------------------------------
+
+CREATE TABLE Operations (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    OpType VARCHAR(32) NOT NULL,
+    SourceSite_MasterObject_id INT NULL,
+    SourcePath VARCHAR(256) NULL,
+    SourceFilename VARCHAR(128) NULL,
+    SourceSizeBytes BIGINT NULL,
+    DestSite_MasterObject_id INT NULL,
+    DestPath VARCHAR(256) NULL,
+    DestFilename VARCHAR(128) NULL,
+    DestSizeBytes BIGINT NULL,
+    StartDateTime DATETIME NOT NULL,
+    EndDateTime DATETIME NOT NULL,
+    ProcessName VARCHAR(128) NOT NULL,
+    JobName VARCHAR(128) NOT NULL,
+    InstanceID VARCHAR(64) NOT NULL,
+    ExecUser VARCHAR(64) NULL,
+    Details TEXT NULL,
+    FOREIGN KEY (SourceSite_MasterObject_id) REFERENCES Sites(MasterObject_id) ON DELETE SET NULL,
+    FOREIGN KEY (DestSite_MasterObject_id) REFERENCES Sites(MasterObject_id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE AsyncParentInstances (
+    InstanceID VARCHAR(64) PRIMARY KEY,
+    Status VARCHAR(16) NOT NULL,
+    DownstreamProcessName VARCHAR(128) NOT NULL,
+    DownstreamJobName VARCHAR(128) NOT NULL,
+    TriggerAttempt INT DEFAULT 0,
+    SupportDL VARCHAR(64) NULL,
+    OverrunNotificationSent CHAR(1) DEFAULT 'N',
+    FailureNotificationSent CHAR(1) DEFAULT 'N',
+    CreatedDateTime DATETIME DEFAULT CURRENT_TIMESTAMP,
+    ModifiedDateTime DATETIME ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE AsyncInstances (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    ParentInstanceID VARCHAR(64) NOT NULL,
+    InitiatingCall VARCHAR(256) NOT NULL,
+    Status VARCHAR(16) NOT NULL,
+    CallbackContent TEXT NULL,
+    ExpectedDuration INT DEFAULT 0,
+    OverrunNotificationSent CHAR(1) DEFAULT 'N',
+    FailureNotificationSent CHAR(1) DEFAULT 'N',
+    CreatedDateTime DATETIME DEFAULT CURRENT_TIMESTAMP,
+    ModifiedDateTime DATETIME ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (ParentInstanceID) REFERENCES AsyncParentInstances(InstanceID) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE Audits (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    MasterObject_id INT NULL,
+    TableName VARCHAR(64) NOT NULL,
+    Action VARCHAR(16) NOT NULL,
+    RecordID INT NOT NULL,
+    ChangedBy VARCHAR(64) NOT NULL,
+    ChangeDetails TEXT NULL,
+    ChangeDateTime DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (MasterObject_id) REFERENCES MasterObjects(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

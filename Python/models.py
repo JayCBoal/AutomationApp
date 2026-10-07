@@ -27,7 +27,7 @@ class MasterObject(Base):
         'polymorphic_identity': 'MASTER_OBJECT'
     }
 
-    # Universal Relationships attached to ANY MasterObject
+    # Universal One-to-Many Relationships attached to ANY MasterObject
     variables = relationship("Variable", backref="owner", cascade="all, delete-orphan", passive_deletes=True)
     tag_assignments = relationship("TagAssignment", backref="target_object", cascade="all, delete-orphan", passive_deletes=True)
 
@@ -57,7 +57,6 @@ class Entity(MasterObject):
     Description = Column(Text, nullable=True)
     IsActive = Column(Boolean, default=True)
 
-    # Relationship to owned sites
     sites = relationship("Site", backref="entity")
 
     __mapper_args__ = {
@@ -169,7 +168,7 @@ class TagAssignment(Base):
 
 
 # ============================================================================
-# Unified Endpoint Model (Replaces Sources & Deliveries)
+# Unified Endpoint Model
 # ============================================================================
 class Endpoint(Base):
     __tablename__ = 'Endpoints'
@@ -185,14 +184,13 @@ class Endpoint(Base):
     ModifiedDateTime = Column(DateTime, onupdate=datetime.datetime.utcnow)
     ModifiedBy = Column(String(50), nullable=True)
 
-    # Relationships
     site = relationship("Site")
     entity = relationship("Entity")
     application = relationship("Application")
 
 
 # ============================================================================
-# Execution & Catalog Entities
+# Step Catalog & Job Setup
 # ============================================================================
 class StepType(Base):
     __tablename__ = 'StepTypes'
@@ -243,3 +241,32 @@ class JobStepParameter(Base):
     JobStep_id = Column(Integer, ForeignKey('JobSteps.id', ondelete='CASCADE'), nullable=False)
     ParameterName = Column(String(100), nullable=False)
     ParameterValue = Column(Text, nullable=True)
+
+
+# ============================================================================
+# Operational Telemetry & Execution Audits
+# ============================================================================
+class Operation(Base):
+    __tablename__ = 'Operations'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    ExecutionInstanceID = Column(Integer, nullable=False, index=True)
+    JobStep_id = Column(Integer, ForeignKey('JobSteps.id', ondelete='SET NULL'), nullable=True)
+    OpType = Column(String(50), nullable=False)
+    OpStatus = Column(String(20), nullable=False)
+    BytesTransferred = Column(Integer, default=0)
+    SourceURI = Column(Text, nullable=True)
+    DestinationURI = Column(Text, nullable=True)
+    Details = Column(Text, nullable=True)
+    CreatedDateTime = Column(DateTime, default=datetime.datetime.utcnow)
+
+
+class Audit(Base):
+    __tablename__ = 'Audits'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    MasterObject_id = Column(Integer, ForeignKey('MasterObjects.id', ondelete='CASCADE'), nullable=True)
+    ExecutionInstanceID = Column(Integer, nullable=True, index=True)
+    Severity = Column(String(20), default='INFO')
+    Message = Column(Text, nullable=False)
+    CreatedDateTime = Column(DateTime, default=datetime.datetime.utcnow)

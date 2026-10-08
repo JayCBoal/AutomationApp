@@ -50,14 +50,21 @@ class Application(MasterObject):
 
 
 class Entity(MasterObject):
-    __tablename__ = 'Entities'
+    __tablename__ = "Entities"
 
-    MasterObject_id = Column(Integer, ForeignKey('MasterObjects.id', ondelete='CASCADE'), primary_key=True)
-    Name = Column(String(100), nullable=False, unique=True)
-    Description = Column(Text, nullable=True)
-    IsActive = Column(Boolean, default=True)
+    MasterObject_id = Column(Integer, ForeignKey("MasterObjects.id", ondelete="CASCADE"), primary_key=True)
+    Name = Column(String(64), nullable=False, unique=True)
+    Abbr = Column(String(10), nullable=False)
+    Description = Column(String(256), nullable=True)
 
-    sites = relationship("Site", backref="entity")
+    # Explicitly define foreign_keys to resolve ambiguity with Endpoint references
+    sites = relationship(
+        "Site",
+        foreign_keys="[Site.Entity_MasterObject_id]",
+        back_populates="entity",
+        cascade="all, delete-orphan",
+        passive_deletes=True
+    )
 
     __mapper_args__ = {
         'polymorphic_identity': 'ENTITY',
@@ -65,15 +72,21 @@ class Entity(MasterObject):
 
 
 class Site(MasterObject):
-    __tablename__ = 'Sites'
+    __tablename__ = "Sites"
 
-    MasterObject_id = Column(Integer, ForeignKey('MasterObjects.id', ondelete='CASCADE'), primary_key=True)
-    Entity_MasterObject_id = Column(Integer, ForeignKey('Entities.MasterObject_id', ondelete='SET NULL'), nullable=True)
-    Name = Column(String(100), nullable=False, unique=True)
-    Hostname = Column(String(255), nullable=False)
-    Protocol = Column(String(20), default='SFTP')
-    RootFolder = Column(String(500), nullable=True)
-    IsActive = Column(Boolean, default=True)
+    MasterObject_id = Column(Integer, ForeignKey("MasterObjects.id", ondelete="CASCADE"), primary_key=True)
+    Entity_MasterObject_id = Column(Integer, ForeignKey("Entities.MasterObject_id", ondelete="SET NULL"), nullable=True)
+    Name = Column(String(64), nullable=False, unique=True)
+    Host = Column(String(128), nullable=False)
+    Port = Column(Integer, default=22)
+    Protocol = Column(String(16), default="SFTP")
+    Description = Column(String(256), nullable=True)
+
+    entity = relationship(
+        "Entity",
+        foreign_keys=[Entity_MasterObject_id],
+        back_populates="sites",
+    )
 
     __mapper_args__ = {
         'polymorphic_identity': 'SITE',
@@ -115,7 +128,14 @@ class Process(MasterObject):
     Description = Column(Text, nullable=True)
     IsActive = Column(Boolean, default=True)
 
-    jobs = relationship("Job", backref="process", cascade="all, delete-orphan", passive_deletes=True)
+    # Disambiguate relationship by explicitly defining foreign_keys
+    jobs = relationship(
+        "Job",
+        foreign_keys="[Job.process_id]",
+        backref="process",
+        cascade="all, delete-orphan",
+        passive_deletes=True
+    )
 
     __mapper_args__ = {
         'polymorphic_identity': 'PROCESS',
@@ -126,7 +146,12 @@ class Job(MasterObject):
     __tablename__ = 'Jobs'
 
     MasterObject_id = Column(Integer, ForeignKey('MasterObjects.id', ondelete='CASCADE'), primary_key=True)
-    Process_MasterObject_id = Column(Integer, ForeignKey('Processes.MasterObject_id', ondelete='CASCADE'), nullable=False)
+    process_id = Column(
+        "Process_MasterObject_id",
+        Integer,
+        ForeignKey('Processes.MasterObject_id', ondelete='CASCADE'),
+        nullable=False
+    )
     Name = Column(String(150), nullable=False)
     Description = Column(Text, nullable=True)
     ExecutionOrder = Column(Integer, default=1)
@@ -176,7 +201,6 @@ class Endpoint(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     EndpointType = Column(Enum('SOURCE', 'DELIVERY', name='endpoint_type_enum'), nullable=False)
     Site_MasterObject_id = Column(Integer, ForeignKey('Sites.MasterObject_id', ondelete='SET NULL'), nullable=True)
-    Entity_MasterObject_id = Column(Integer, ForeignKey('Entities.MasterObject_id', ondelete='SET NULL'), nullable=True)
     Application_MasterObject_id = Column(Integer, ForeignKey('Applications.MasterObject_id', ondelete='SET NULL'), nullable=True)
     Path = Column(String(256), nullable=False)
     FilenamePattern = Column(String(128), nullable=False)
@@ -185,7 +209,6 @@ class Endpoint(Base):
     ModifiedBy = Column(String(50), nullable=True)
 
     site = relationship("Site")
-    entity = relationship("Entity")
     application = relationship("Application")
 
 
@@ -196,8 +219,8 @@ class StepType(Base):
     __tablename__ = 'StepTypes'
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    Name = Column(String(100), nullable=False)
-    Code = Column(String(50), nullable=False, unique=True)
+    TypeName = Column("Name", String(100), nullable=False)
+    HandlerClass = Column("Code", String(50), nullable=False, unique=True)
     Description = Column(Text, nullable=True)
     IsActive = Column(Boolean, default=True)
 
@@ -207,12 +230,12 @@ class StepType(Base):
 class StepDefinition(Base):
     __tablename__ = 'StepDefinitions'
     __table_args__ = (
-        UniqueConstraint('StepType_id', 'ParameterName', name='uq_steptype_param'),
+        UniqueConstraint('StepType_id', 'ParameterName', name='uq_steptype_param'), # <-- Match ParameterName
     )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     StepType_id = Column(Integer, ForeignKey('StepTypes.id', ondelete='CASCADE'), nullable=False)
-    ParameterName = Column(String(100), nullable=False)
+    ParamName = Column("ParameterName", String(100), nullable=False)
     DataType = Column(String(20), default='STRING')
     IsRequired = Column(Boolean, default=True)
     DefaultValue = Column(Text, nullable=True)
@@ -223,24 +246,26 @@ class JobStep(Base):
     __tablename__ = 'JobSteps'
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    Job_MasterObject_id = Column(Integer, ForeignKey('Jobs.MasterObject_id', ondelete='CASCADE'), nullable=False)
+    job_id = Column("Job_MasterObject_id", Integer, ForeignKey('Jobs.MasterObject_id', ondelete='CASCADE'), nullable=False)
     StepType_id = Column(Integer, ForeignKey('StepTypes.id'), nullable=False)
     StepOrder = Column(Integer, default=1)
+    Title = Column("StepTitle", String(150), nullable=True, default="Execution Step")
     IsActive = Column(Boolean, default=True)
 
+    step_type = relationship("StepType")
     parameters = relationship("JobStepParameter", backref="job_step", cascade="all, delete-orphan", passive_deletes=True)
 
 
 class JobStepParameter(Base):
     __tablename__ = 'JobStepParameters'
     __table_args__ = (
-        UniqueConstraint('JobStep_id', 'ParameterName', name='uq_jobstep_param'),
+        UniqueConstraint('JobStep_id', 'ParameterName', name='uq_jobstep_param'), # <-- Match ParameterName
     )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    JobStep_id = Column(Integer, ForeignKey('JobSteps.id', ondelete='CASCADE'), nullable=False)
-    ParameterName = Column(String(100), nullable=False)
-    ParameterValue = Column(Text, nullable=True)
+    job_step_id = Column("JobStep_id", Integer, ForeignKey('JobSteps.id', ondelete='CASCADE'), nullable=False)
+    ParamName = Column("ParameterName", String(100), nullable=False)
+    ParamValue = Column("ParameterValue", Text, nullable=True)
 
 
 # ============================================================================
@@ -250,7 +275,7 @@ class Operation(Base):
     __tablename__ = 'Operations'
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    ExecutionInstanceID = Column(Integer, nullable=False, index=True)
+    ExecutionInstanceID = Column(String(64), nullable=False, index=True)
     JobStep_id = Column(Integer, ForeignKey('JobSteps.id', ondelete='SET NULL'), nullable=True)
     OpType = Column(String(50), nullable=False)
     OpStatus = Column(String(20), nullable=False)
@@ -266,7 +291,7 @@ class Audit(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     MasterObject_id = Column(Integer, ForeignKey('MasterObjects.id', ondelete='CASCADE'), nullable=True)
-    ExecutionInstanceID = Column(Integer, nullable=True, index=True)
+    ExecutionInstanceID = Column(String(64), nullable=True, index=True)
     Severity = Column(String(20), default='INFO')
     Message = Column(Text, nullable=False)
     CreatedDateTime = Column(DateTime, default=datetime.datetime.utcnow)

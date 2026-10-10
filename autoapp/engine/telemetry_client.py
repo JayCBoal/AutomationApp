@@ -4,7 +4,7 @@ import time
 from pathlib import Path
 from typing import Dict, Any, Optional
 
-class TelemetryClient:
+class LocalSpoolTelemetryClient:
     """
     Process-isolated, zero-latency local spooling telemetry client.
     Writes operation records and audit events directly to unique local .jsonl files 
@@ -16,18 +16,13 @@ class TelemetryClient:
         self.pid = os.getpid()
         self.spool_dir.mkdir(parents=True, exist_ok=True)
         
-        base_name = f"inst_{self.instance_id}_pid_{self.pid}_{int(time.time())}"
+        # Unique file paths for process isolation
+        base_name = f"ops_inst_{self.instance_id}_pid_{self.pid}_{int(time.time())}"
+        self.active_file_path = self.spool_dir / f"{base_name}.jsonl.tmp"
+        self.completed_file_path = self.spool_dir / f"{base_name}.jsonl"
         
-        # Process-isolated file paths for Operations and Audits
-        self.ops_active_path = self.spool_dir / f"ops_{base_name}.jsonl.tmp"
-        self.ops_completed_path = self.spool_dir / f"ops_{base_name}.jsonl"
-        
-        self.audit_active_path = self.spool_dir / f"audit_{base_name}.jsonl.tmp"
-        self.audit_completed_path = self.spool_dir / f"audit_{base_name}.jsonl"
-        
-        # Line-buffered file handles for instant append writes (<0.1ms)
-        self._ops_handle = open(self.ops_active_path, "a", encoding="utf-8", buffering=1)
-        self._audit_handle = open(self.audit_active_path, "a", encoding="utf-8", buffering=1)
+        # Open an unbuffered/line-buffered file handle for fast append
+        self._file_handle = open(self.active_file_path, "a", encoding="utf-8", buffering=1)
 
     def log_operation(
         self,
@@ -42,7 +37,9 @@ class TelemetryClient:
         bytes_transferred: Optional[int] = None,
         details: Optional[Dict[str, Any]] = None
     ) -> None:
-        """Appends an Operation log entry to the active ops spool file."""
+        """
+        Appends an operation log entry directly to the process-isolated spool file.
+        """
         payload = {
             "InstanceID": self.instance_id,
             "StepID": step_id,
@@ -57,48 +54,76 @@ class TelemetryClient:
             "Details": details or {},
             "LoggedAtUtc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         }
-        self._ops_handle.write(json.dumps(payload) + "\n")
+        self._file_handle.write(json.dumps(payload) + "\n")
+
+    def log_batch_operations(
+        self,
+        op_type: str,
+        step_id: int,
+        status: str,
+        execution_time_ms: int,
+        ops_list: list,
+        details: Optional[Dict[str, Any]] = None
+    ) -> None:
+        """
+        Logs an entire batch of sub-operations for a step in a single disk write.
+        """
+        payload = {
+            "InstanceID": self.instance_id,
+            "StepID": step_id,
+            "OpType": op_type,
+            "Status": status,
+            "ExecutionTimeMs": execution_time_ms,
+            "IsBatch": True,
+            "Operations": ops_list,
+            "Details": details or {},
+            "LoggedAtUtc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        }
+        self._file_handle.write(json.dumps(payload) + "\n")
 
     def log_audit(
         self,
         action: str,
         actor: str,
         resource_type: str,
-        resource_id: Optional[str] = None,
-        status: str = "SUCCESS",
+        resource_id: str,
+        status: str,
         details: Optional[Dict[str, Any]] = None
     ) -> None:
-        """Appends an Audit log entry to the active audit spool file."""
+        """
+        Appends an audit event entry to the process-isolated spool file.
+        """
         payload = {
             "InstanceID": self.instance_id,
+            "IsAudit": True,
             "Action": action,
             "Actor": actor,
             "ResourceType": resource_type,
-            "ResourceID": resource_id,
+            "ResourceId": resource_id,
             "Status": status,
             "Details": details or {},
-            "TimestampUtc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+            "LoggedAtUtc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         }
-        self._audit_handle.write(json.dumps(payload) + "\n")
+        self._file_handle.write(json.dumps(payload) + "\n")
 
     def close(self) -> None:
-        """Flushes, closes, and atomically renames .tmp files to .jsonl."""
-        for handle, active_path, completed_path in [
-            (self._ops_handle, self.ops_active_path, self.ops_completed_path),
-            (self._audit_handle, self.audit_active_path, self.audit_completed_path)
-        ]:
-            if handle and not handle.closed:
-                handle.flush()
-                handle.close()
-                if active_path.exists():
-                    # Unlink empty temporary files to keep spool directory clean
-                    if active_path.stat().st_size == 0:
-                        active_path.unlink()
-                    else:
-                        active_path.rename(completed_path)
+        """
+        Flushes and closes the file handle, then atomically renames 
+        the .tmp file to .jsonl for ingestion picking.
+        """
+        if self._file_handle and not self._file_handle.closed:
+            self._file_handle.flush()
+            self._file_handle.close()
+            
+            if self.active_file_path.exists():
+                self.active_file_path.rename(self.completed_file_path)
 
     def __enter__(self):
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.close()
+
+# Backward-compatible aliases for base handler imports
+TelemetryClient = LocalSpoolTelemetryClient
+SpoolLogger = LocalSpoolTelemetryClient

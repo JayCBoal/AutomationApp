@@ -229,13 +229,10 @@ class StepType(Base):
 
 class StepDefinition(Base):
     __tablename__ = 'StepDefinitions'
-    __table_args__ = (
-        UniqueConstraint('StepType_id', 'ParameterName', name='uq_steptype_param'), # <-- Match ParameterName
-    )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     StepType_id = Column(Integer, ForeignKey('StepTypes.id', ondelete='CASCADE'), nullable=False)
-    ParamName = Column("ParameterName", String(100), nullable=False)
+    ParamName = Column("ParameterName", String(100), nullable=False) # <--- Python attribute is ParamName
     DataType = Column(String(20), default='STRING')
     IsRequired = Column(Boolean, default=True)
     DefaultValue = Column(Text, nullable=True)
@@ -258,14 +255,11 @@ class JobStep(Base):
 
 class JobStepParameter(Base):
     __tablename__ = 'JobStepParameters'
-    __table_args__ = (
-        UniqueConstraint('JobStep_id', 'ParameterName', name='uq_jobstep_param'), # <-- Match ParameterName
-    )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     job_step_id = Column("JobStep_id", Integer, ForeignKey('JobSteps.id', ondelete='CASCADE'), nullable=False)
-    ParamName = Column("ParameterName", String(100), nullable=False)
-    ParamValue = Column("ParameterValue", Text, nullable=True)
+    ParamName = Column("ParameterName", String(100), nullable=False) # <--- Python attribute is ParamName
+    ParamValue = Column("ParameterValue", Text, nullable=True)     # <--- Python attribute is ParamValue
 
 
 # ============================================================================

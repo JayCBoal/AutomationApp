@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from app.routers import jobs, telemetry, variables
+from app.routers import jobs, operations, telemetry, variables
 
 app = FastAPI(
     title="AutoApp Core REST API",
@@ -10,6 +10,7 @@ app = FastAPI(
 # Register APIRouters
 app.include_router(jobs.router)
 app.include_router(telemetry.router)
+app.include_router(operations.router)
 app.include_router(variables.router)
 
 

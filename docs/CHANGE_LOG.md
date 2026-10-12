@@ -4,6 +4,64 @@ Notable structural, schema and design changes to AutoApp, newest first. Line-by-
 
 ---
 
+## 2026-10-12
+
+### Run history and per-file operations
+
+- **Added:** `JobRuns`, one row per execution of a job: AutoApp's run ID, the scheduler's instance ID, a run number, an optional scheduler name, status, error and times.
+- **Changed:** `Operations` is one row per thing a step did, not one per step. For a file step that is one row per file, with a source and a destination side (endpoint, path, filename, size). A step that handles no files (SQL, REST call, email) will leave the file columns empty and describe what it did in `Details`. Each row points at its run. `SourceURI`, `DestinationURI`, `BytesTransferred` and `ExecutionInstanceID` are gone.
+- **Changed:** `Audits` now records changes to definitions (`Action`, `PerformedBy`, `Details`). It no longer holds job start and end events, which are the run row's job.
+- **Added:** `IsActive` on `Entities` and `Sites`.
+- **Added:** runner options `--run-number` and `--scheduler`.
+- **Changed:** the runner refuses a disabled job. Previously only disabled steps were honoured.
+- **Rationale:**
+  - A trace needs one row per file. The spool nested the files inside one record per step, and the table had room for one source and one destination per row, so the two never agreed.
+  - Schedulers differ in how they number runs. ActiveBatch and RunMyJobs issue a new ID per run; Control-M keeps one ID for the day and counts runs. Storing AutoApp's own run ID plus what the scheduler passed covers both.
+  - The scheduler already tracks job lifecycle, so AutoApp keeps only a thin run row: enough to group a run's file operations and to record a failure that happened before any file moved.
+
+### Telemetry: one path, through the API
+
+- **Changed:** the spool is always written first and then delivered through the API. The API is no longer a separate "live" path with the spool as a different-format fallback.
+- **Added:** `POST /api/v1/telemetry/records`, which accepts spool records as they are and is safe to call twice with the same records.
+- **Removed:** `POST /api/v1/telemetry/ops`, `/ops/batch` and `/audit`, which referred to columns that did not exist.
+- **Added:** `engine/spool_delivery.py`, the command that sends spool files left behind.
+- **Added:** runner option `--api-url`. The runner posts after each step; a failed post never affects the job.
+- **Rationale:** two paths need two record formats, and they had already drifted apart. One path means the same records whether they arrive immediately or a day later.
+
+### Operations log and file trace
+
+- **Added:** `GET /api/v1/operations` (search) and `GET /api/v1/operations/{id}/trace` (a file's whole route).
+- **Added:** the trace links operations by location and time. See the blueprint, section 7.
+
+### File handler
+
+- **Added:** each file's size is measured at source and destination; a difference fails the step.
+- **Added:** `Checksum` step parameter, which records and verifies a SHA-256.
+- **Changed:** a folder whose name matches the source pattern is skipped instead of failing the step.
+
+### Job log
+
+- **Added:** `engine/job_log.py`, with four levels: `DEBUG`, `DETAIL` (default), `SUMMARY` and `SILENT`. Set with the runner's `--log-level`, or for one step with a `LogLevel` parameter.
+- **Changed:** at the default level every step logs its parameters as written and as resolved, each action it took, and a closing line with the outcome. Before, a step logged one line with its title.
+- **Changed:** errors go to stderr and everything else to stdout. Before, everything went to stderr.
+- **Added:** values of secret variables are masked in the log.
+- **Rationale:** carries forward the 2024 prototype's logging, where the job log said what each step did and a step could be made quiet.
+
+### Schema source of truth
+
+- **Decided:** the Python models define the schema.
+- **Changed:** the MariaDB table script is now generated from the models (`SQL/generate_ddl.py` writes `SQL/Create_Tables.sql`). It replaces the hand-written `Drop_Recreate_&_Repopulate_Tables.sql`, which had drifted from the models.
+- **Removed:** `AsyncParentInstances` and `AsyncInstances` from the table script. They had no model; they return when asynchronous processes are rebuilt.
+- **Changed:** column defaults (`IsActive`, `CreatedBy`, `StepOrder` and others) are declared in the database as well as in the code. Before, a row inserted with plain SQL had no `IsActive` value and was treated as disabled.
+- **Changed:** `SQL/Seed_Sample_Data.sql` replaces `Seed_MasterObjects_Data.sql`, which named columns that did not exist. The new one is plain SQL that runs on MariaDB and SQLite, and a test runs its jobs.
+- **Added:** `autoapp/create_dev_db.py`, which builds a development database with the sample data.
+
+### Environment
+
+- **Changed:** development moved to Python 3.13 in a project-local `.venv`. The test HTTP client is `httpx2`.
+
+---
+
 ## 2026-10-11
 
 ### Repository cleanup

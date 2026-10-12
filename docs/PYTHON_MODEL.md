@@ -40,6 +40,7 @@ classDiagram
         +string(64) Name
         +string(10) Abbr
         +string(256) Description
+        +bool IsActive
     }
     MasterObject <|-- Entity
     class Job {
@@ -57,6 +58,7 @@ classDiagram
         +int Port
         +string(16) Protocol
         +string(256) Description
+        +bool IsActive
     }
     MasterObject <|-- Site
     class Tag {
@@ -78,9 +80,9 @@ classDiagram
     class Audit {
         +int id
         +int MasterObject_id
-        +string(64) ExecutionInstanceID
-        +string(20) Severity
-        +text Message
+        +string(50) Action
+        +string(100) PerformedBy
+        +text Details
         +datetime CreatedDateTime
     }
     class Endpoint {
@@ -93,6 +95,20 @@ classDiagram
         +string(256) Description
         +datetime ModifiedDateTime
         +string(50) ModifiedBy
+    }
+    class JobRun {
+        +int id
+        +string(36) RunID
+        +string(320) JobKey
+        +int Job_MasterObject_id
+        +string(64) SchedulerInstanceID
+        +int RunNumber
+        +string(100) SchedulerName
+        +string(255) Host
+        +string(20) Status
+        +text ErrorMessage
+        +datetime StartedDateTime
+        +datetime EndedDateTime
     }
     class JobStep {
         +int id
@@ -110,17 +126,25 @@ classDiagram
     }
     class Operation {
         +int id
-        +string(64) ExecutionInstanceID
+        +int JobRun_id
+        +int Seq
         +int JobStep_id
+        +int StepOrder
         +string(50) OpType
         +string(20) OpStatus
-        +int BytesTransferred
-        +text SourceURI
-        +text DestinationURI
         +int SourceEndpoint_id
+        +text SourcePath
+        +string(255) SourceFilename
+        +bigint SourceSize
         +int DestEndpoint_id
+        +text DestPath
+        +string(255) DestFilename
+        +bigint DestSize
+        +string(64) Checksum
         +text Details
-        +datetime CreatedDateTime
+        +text ErrorMessage
+        +datetime StartedDateTime
+        +datetime EndedDateTime
     }
     class StepDefinition {
         +int id
@@ -155,10 +179,14 @@ classDiagram
     Endpoint "*" --> "0..1" Application : application
     Entity "1" --> "*" Site : sites
     Job "1" --> "*" JobStep : steps
+    JobRun "*" --> "0..1" Job : job
+    JobRun "1" --> "*" Operation : operations
     JobStep "*" --> "0..1" StepType : step_type
     JobStep "1" --> "*" JobStepParameter : parameters
     MasterObject "1" --> "*" Variable : variables
     MasterObject "1" --> "*" TagAssignment : tag_assignments
+    Operation "*" --> "0..1" Endpoint : source_endpoint
+    Operation "*" --> "0..1" Endpoint : dest_endpoint
     StepType "1" --> "*" StepDefinition : definitions
 ```
 
@@ -192,9 +220,11 @@ flowchart TD
         scope[scope_engine.py<br/>resolves placeholders]
         params[step_params.py<br/>working-folder rule and Endpoint lookup]
         registry[handlers/__init__.py<br/>step type to handler]
-        base[handlers/base_handler.py<br/>timing, operation record, failure audit]
+        base[handlers/base_handler.py<br/>timing, step logging, one record per file]
+        joblog[job_log.py<br/>the job log and its levels]
         file[handlers/file_handler.py<br/>COPY_FILES]
         telemetry[telemetry_client.py<br/>writes the spool file]
+        delivery[spool_delivery.py<br/>posts spool records to the API]
     end
 
     subgraph app [autoapp/app]
@@ -203,7 +233,10 @@ flowchart TD
         schemas[schemas.py<br/>API request and response shapes]
         jobs[routers/jobs.py<br/>POST /api/v1/jobs/init]
         variables[routers/variables.py]
-        telemetry_api[routers/telemetry.py<br/>not working yet]
+        telemetry_api[routers/telemetry.py<br/>POST /api/v1/telemetry/records]
+        ingest[telemetry_ingest.py<br/>loads records into JobRuns and Operations]
+        operations_api[routers/operations.py<br/>operations log and file trace routes]
+        trace[trace.py<br/>search and file trace]
         main[main.py<br/>FastAPI app]
     end
 
@@ -216,6 +249,10 @@ flowchart TD
     registry --> file
     file --> base
     base --> telemetry
+    base --> joblog
+    runner --> joblog
+    file --> joblog
+    telemetry --> delivery
     scope --> models
     params --> models
     database --> models
@@ -223,13 +260,20 @@ flowchart TD
     main --> jobs
     main --> variables
     main --> telemetry_api
+    main --> operations_api
     jobs --> scope
     jobs --> params
     jobs --> registry
     jobs --> schemas
     variables --> scope
-    telemetry_api --> models
+    telemetry_api --> ingest
+    telemetry_api --> schemas
+    ingest --> models
+    operations_api --> trace
+    trace --> models
+    trace --> schemas
 
     telemetry --> spool[(spool .jsonl files)]
+    delivery -->|HTTP| telemetry_api
     database --> db[(AutoApp database)]
 ```

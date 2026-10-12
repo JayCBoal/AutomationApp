@@ -53,8 +53,8 @@ A header with the AutoApp name and the page title, and a navigation bar on every
 | Job Search / Detail | search, detail | Mockup's Process pages, changed | Detail page is the job editor |
 | Endpoint Search / Detail | search, detail | Replaces Source and Delivery pages | See below |
 | Operations Log | search | Mockup, changed | The file trace; see below |
-| Job History | search | Mockup | Needs a job history table, which the rewrite does not have yet |
-| Audit Log | search | Mockup | Read-only |
+| Job History | search | Mockup | Reads `JobRuns`: one row per run, with status and error |
+| Audit Log | search | Mockup | Read-only. Changes to definitions: who changed what, and when |
 | Async Parent Process Search / Detail | search, detail | Mockup | Deferred until asynchronous processes are rebuilt |
 | Step Type Detail | detail | Mentioned in the design document, no mockup | **Proposed** layout below |
 | Tag Search / Detail | search, detail | **Proposed** | Waits on the tag design |
@@ -120,10 +120,11 @@ The mockup's Operations Search, with source and destination now taken from the e
   - Date and time range, operation type
   - Source: endpoint, path, filename
   - Destination: endpoint, path, filename
-  - Automation: job, instance ID, user
+  - Automation: job, instance ID, run number, scheduler
   - Entity, application, site (matched on either side)
 - **Results:** one row per operation, with a Source block and a Destination block. Each block shows endpoint, application, entity, site, path, filename and size. A side that was inside the working folder says so. Then start and end time, and the job and instance.
-- **Proposed: Trace.** A link on any row shows that file's whole route: every operation that handled it, in order, from the endpoint it entered by to the endpoint it left by.
+- **Proposed: Trace.** A link on any row shows that file's whole route: every operation that handled it, in order, from the endpoint it entered by to the endpoint it left by. A file copied to two places shows as two branches.
+- The API behind this page and the trace is built: `GET /api/v1/operations` and `GET /api/v1/operations/{id}/trace`.
 
 ## Variables panel (Proposed)
 
@@ -164,7 +165,7 @@ The catalog that drives the job editor. For administrators.
 
 ## Suggested build order
 
-1. Operations Log, read-only. It needs only data that already exists once the spool is loaded, and it is the first thing worth demonstrating.
+1. Operations Log, read-only. Its API is built, so this is a page over existing data, and it is the first thing worth demonstrating.
 2. Endpoint Search and Detail. The simplest pages with editing; they establish the common search and detail behaviour.
 3. The job editor.
 4. Application, Entity and Site pages, which reuse the Endpoint pattern.

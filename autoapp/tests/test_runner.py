@@ -6,49 +6,9 @@ Layout used by these tests, all inside pytest's temp folder:
     app_outbox/              an application's folder, registered as Endpoint LEGAL_EXTRACTS
     app_inbox/               another application's folder, registered as Endpoint BILLING_INBOX
     work/<JobKey>/           the job's working folder
+
+The run_runner, outbox and endpoints fixtures are in conftest.py.
 """
-import os
-import subprocess
-import sys
-from pathlib import Path
-
-import pytest
-
-AUTOAPP_DIR = Path(__file__).resolve().parents[1]
-
-
-@pytest.fixture
-def run_runner(db, db_url, tmp_path):
-    def _run(job_key, instance_id="RUN_001"):
-        db.commit()
-        return subprocess.run(
-            [sys.executable, "-m", "engine.runner",
-             "--job-key", job_key,
-             "--instance-id", instance_id,
-             "--spool-dir", str(tmp_path / "spool"),
-             "--working-root", str(tmp_path / "work")],
-            cwd=AUTOAPP_DIR,
-            env={**os.environ, "DATABASE_URL": db_url},
-            capture_output=True, text=True,
-        )
-    return _run
-
-
-@pytest.fixture
-def outbox(tmp_path):
-    folder = tmp_path / "app_outbox"
-    folder.mkdir()
-    (folder / "Legal_Batch_1.csv").write_text("id\n1")
-    (folder / "Legal_Batch_2.csv").write_text("id\n2")
-    (folder / "other.txt").write_text("not part of the feed")
-    return folder
-
-
-@pytest.fixture
-def endpoints(seed, outbox, tmp_path):
-    source = seed.endpoint("LEGAL_EXTRACTS", outbox, "Legal_Batch_*.csv", application=seed.application("LEGAL_APP"))
-    dest = seed.endpoint("BILLING_INBOX", tmp_path / "app_inbox", "*.csv", application=seed.application("BILLING_APP"))
-    return source, dest
 
 
 def names(folder):
@@ -75,14 +35,68 @@ def test_job_moves_files_from_one_endpoint_to_another_through_the_working_folder
     assert names(tmp_path / "app_inbox") == batch
 
     records = spool_records(tmp_path / "spool")
-    assert [r["Action"] for r in records if r.get("IsAudit")] == ["JOB_STARTED", "JOB_COMPLETED"]
-    operations = [r for r in records if not r.get("IsAudit")]
-    assert [r["Status"] for r in operations] == ["SUCCESS", "SUCCESS", "SUCCESS"]
-    assert [(r["SourceEndpointID"], r["DestEndpointID"]) for r in operations] == [
+    start, *operations, end = records
+    assert (start["Record"], start["JobKey"], start["InstanceID"]) == ("RUN_START", "DEV-LOAD", "RUN_001")
+    assert (end["Record"], end["Status"], end["Error"]) == ("RUN_END", "SUCCESS", None)
+    # One record per file per step: two files through three steps
+    assert [(r["StepOrder"], r["OpType"], r["SourceFilename"]) for r in operations] == [
+        (1, "COPY", "Legal_Batch_1.csv"), (1, "COPY", "Legal_Batch_2.csv"),
+        (2, "COPY", "Legal_Batch_1.csv"), (2, "COPY", "Legal_Batch_2.csv"),
+        (3, "MOVE", "Legal_Batch_1.csv"), (3, "MOVE", "Legal_Batch_2.csv"),
+    ]
+    assert {r["Status"] for r in operations} == {"SUCCESS"}
+    assert [(r["SourceEndpointID"], r["DestEndpointID"]) for r in operations[::2]] == [
         (source.id, None),      # Collect: from a registered endpoint into the working folder
         (None, None),           # Archive: a hop inside the working folder
         (None, dest.id),        # Deliver: out of the working folder to a registered endpoint
     ]
+
+
+def test_run_number_and_scheduler_name_are_recorded(seed, run_runner, endpoints, tmp_path, spool_records):
+    job = seed.job("DEV-LOAD")
+    seed.step(job, 1, SourceEndpoint="LEGAL_EXTRACTS", Dest="incoming")
+
+    result = run_runner(job.JobKey, "00A1B", "--run-number", "3", "--scheduler", "CTM_PROD")
+
+    assert result.returncode == 0, result.stderr
+    start = spool_records(tmp_path / "spool")[0]
+    assert (start["InstanceID"], start["RunNumber"], start["Scheduler"]) == ("00A1B", 3, "CTM_PROD")
+
+
+def test_run_number_defaults_to_one_and_scheduler_to_none(seed, run_runner, endpoints, tmp_path, spool_records):
+    job = seed.job("DEV-LOAD")
+    seed.step(job, 1, SourceEndpoint="LEGAL_EXTRACTS", Dest="incoming")
+
+    run_runner(job.JobKey)
+
+    start = spool_records(tmp_path / "spool")[0]
+    assert (start["RunNumber"], start["Scheduler"]) == (1, None)
+
+
+def test_disabled_job_does_not_run(seed, run_runner, endpoints, tmp_path, spool_records):
+    job = seed.job("DEV-LOAD")
+    job.IsActive = False
+    seed.step(job, 1, SourceEndpoint="LEGAL_EXTRACTS", Dest="incoming")
+
+    result = run_runner(job.JobKey)
+
+    assert result.returncode == 1
+    assert "disabled" in result.stderr
+    assert not (tmp_path / "work").exists()
+    end = spool_records(tmp_path / "spool")[-1]
+    assert (end["Status"], end["Error"]) == ("FAILED", "Job 'DEV-LOAD' is disabled.")
+
+
+def test_disabled_step_is_skipped(seed, run_runner, endpoints, tmp_path):
+    job = seed.job("DEV-LOAD")
+    seed.step(job, 1, SourceEndpoint="LEGAL_EXTRACTS", Dest="incoming")
+    seed.step(job, 2, Source="incoming/*.csv", DestEndpoint="BILLING_INBOX").IsActive = False
+
+    result = run_runner(job.JobKey)
+
+    assert result.returncode == 0, result.stderr
+    assert names(tmp_path / "work" / "DEV-LOAD" / "incoming") == ["Legal_Batch_1.csv", "Legal_Batch_2.csv"]
+    assert not (tmp_path / "app_inbox").exists()
 
 
 def test_raw_path_outside_the_working_folder_fails_the_job(seed, run_runner, outbox, tmp_path, spool_records):
@@ -95,7 +109,7 @@ def test_raw_path_outside_the_working_folder_fails_the_job(seed, run_runner, out
     assert "outside the job's working folder" in result.stderr
     assert "SourceEndpoint" in result.stderr
     assert not (tmp_path / "work" / "DEV-LOAD" / "incoming").exists()
-    assert spool_records(tmp_path / "spool")[-1]["Action"] == "JOB_FAILED"
+    assert spool_records(tmp_path / "spool")[-1]["Status"] == "FAILED"
 
 
 def test_unresolved_placeholder_fails_the_job_before_touching_files(seed, run_runner, endpoints, tmp_path, spool_records):
@@ -107,7 +121,9 @@ def test_unresolved_placeholder_fails_the_job_before_touching_files(seed, run_ru
     assert result.returncode == 1
     assert "${NoSuchFolder}" in result.stderr
     assert names(tmp_path / "work" / "DEV-LOAD") == []
-    assert spool_records(tmp_path / "spool")[-1]["Action"] == "JOB_FAILED"
+    start, end = spool_records(tmp_path / "spool")      # no file was touched, but the run is on record
+    assert (start["Record"], end["Record"], end["Status"]) == ("RUN_START", "RUN_END", "FAILED")
+    assert "${NoSuchFolder}" in end["Error"]
 
 
 def test_failing_step_stops_the_job(seed, run_runner, endpoints, tmp_path, spool_records):
@@ -119,7 +135,7 @@ def test_failing_step_stops_the_job(seed, run_runner, endpoints, tmp_path, spool
 
     assert result.returncode == 1
     assert not (tmp_path / "app_inbox").exists()
-    assert spool_records(tmp_path / "spool")[-1]["Action"] == "JOB_FAILED"
+    assert spool_records(tmp_path / "spool")[-1]["Status"] == "FAILED"
 
 
 def test_unknown_step_type_fails_the_job(seed, run_runner):
@@ -143,13 +159,16 @@ def test_only_the_job_whose_key_is_passed_runs(seed, run_runner, endpoints, tmp_
     assert not (tmp_path / "work" / "DEV-LOAD-A").exists()
 
 
-def test_unknown_job_fails(seed, run_runner):
+def test_unknown_job_fails(seed, run_runner, tmp_path, spool_records):
     seed.job("DEV-LOAD")
 
     result = run_runner("NO_SUCH_JOB")
 
     assert result.returncode == 1
     assert "NO_SUCH_JOB" in result.stderr
+    start, end = spool_records(tmp_path / "spool")
+    assert start["JobKey"] == "NO_SUCH_JOB"
+    assert end["Status"] == "FAILED"
 
 
 def test_job_with_no_steps_fails(seed, run_runner):

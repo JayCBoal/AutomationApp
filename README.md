@@ -2,13 +2,13 @@
 
 AutoApp is a batch-processing execution framework that keeps *what a job does* separate from *when it runs*.
 
-A workload automation scheduler (Control-M, AutoSys, ActiveBatch, RunMyJobs, cron) decides when a job runs and passes AutoApp two things: a job key and an instance ID. AutoApp looks up the job's steps and parameters in its own database, runs them, and returns an exit code. Because the job definitions live outside the scheduler, changing schedulers does not mean rewriting jobs.
+A workload automation scheduler (Control-M, AutoSys, ActiveBatch, RunMyJobs, cron) decides when a job runs and passes AutoApp two things: a job key and its own instance ID. AutoApp looks up the job's steps and parameters in its own database, runs them, and returns an exit code. Because the job definitions live outside the scheduler, changing schedulers does not mean rewriting jobs.
 
 It also keeps a structured record of every file operation, tied to a register of the places files come from and go to, so a file's path through the system can be traced.
 
 ## Status
 
-Early rewrite of a 2024 prototype. The core path works end to end for local file copy and move steps and is covered by tests. Most other planned features are not built yet. See:
+Early rewrite of a 2024 prototype. Working end to end and covered by tests: local file copy and move steps, a record of every file handled, and a file trace through the API. Most other planned features are not built yet. See:
 
 - [docs/PROJECT_GOALS.md](docs/PROJECT_GOALS.md): what the project is for
 - [docs/PROJECT_BLUEPRINT.md](docs/PROJECT_BLUEPRINT.md): how it works, with what is built and what is only planned
@@ -23,15 +23,30 @@ Early rewrite of a 2024 prototype. The core path works end to end for local file
 Requires Python 3.11 or later.
 
 ```bash
-pip install -r requirements-dev.txt
+python3 -m venv .venv                     # once: a private Python environment for the project
+source .venv/bin/activate                 # in every new terminal
+pip install -r requirements-dev.txt       # once
 
 python3 -m pytest -v          # run the tests
-python3 demo/run_demo.py      # seed a database, run a sample job, show the results
+python3 demo/run_demo.py      # seed a database, run a sample job, show the results and a file trace
 ```
+
+On Debian or ChromeOS Linux, install the prerequisites first: `sudo apt-get install git python3-venv python3-pip`.
 
 The demo writes everything it produces to `demo/output/run_<timestamp>/` so you can look at the files and the telemetry yourself.
 
 To keep the files the tests produce: `python3 -m pytest --basetemp=_test_out`.
+
+## A development database
+
+```bash
+cd autoapp
+python3 create_dev_db.py
+```
+
+This creates `autoapp/autoapp.db` (SQLite) with the sample data from `SQL/Seed_Sample_Data.sql`: two applications, three endpoints and two jobs that hand a file from one to the other. It prints the commands to run the jobs and look at the result. It never overwrites an existing database.
+
+For MariaDB, run `SQL/Create_Tables.sql` and then `SQL/Seed_Sample_Data.sql`, and point `DATABASE_URL` at the database. After changing the models, regenerate the table script with `python3 SQL/generate_ddl.py`.
 
 ## Running a job
 
@@ -42,21 +57,41 @@ python3 -m engine.runner \
     --job-key DEV-LEGAL-CLIENT_EXTRACT \
     --instance-id 20261011_0001 \
     --working-root /data/autoapp/work \
-    --spool-dir /data/autoapp/spool
+    --spool-dir /data/autoapp/spool \
+    --api-url http://autoapp-server:8000
 ```
 
 Exit code `0` means every step succeeded; `1` means the job failed.
+
+Optional: `--run-number N` for schedulers that reuse an instance ID across restarts, and `--scheduler NAME` where more than one scheduler issues instance IDs.
+
+The job log says what each step did, file by file. `--log-level SUMMARY` reduces it to one line per step, `SILENT` to errors only, and `DEBUG` adds troubleshooting detail. A single step can set its own level with a `LogLevel` parameter.
+
+`--api-url` is where the runner sends its record of the run. Without it, or if the API cannot be reached, the record stays in the spool folder until this is run:
+
+```bash
+python3 -m engine.spool_delivery --spool-dir /data/autoapp/spool --api-url http://autoapp-server:8000
+```
+
+## Running the API
+
+```bash
+cd autoapp
+DATABASE_URL=sqlite:///./autoapp.db python3 -m uvicorn app.main:app --port 8000
+```
+
+Every route is described at `http://localhost:8000/docs`. The operations log is at `/api/v1/operations`, and a file's trace at `/api/v1/operations/<id>/trace`.
 
 ## Layout
 
 ```
 autoapp/
   app/        FastAPI service: database models, schemas, routes
-  engine/     runner, variable scope engine, step handlers, telemetry spooler
+  engine/     runner, variable scope engine, step handlers, telemetry spool and delivery
   tests/      pytest suite
 demo/         run_demo.py and its output
 docs/         goals, blueprint, to-do, change log
-SQL/          MariaDB DDL and seed script (currently out of step with the models; see TO-DO)
+SQL/          MariaDB table script (generated from the models) and sample data
 ```
 
 ## Background

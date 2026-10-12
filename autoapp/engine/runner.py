@@ -6,41 +6,39 @@ Runs every active step of one Job, in StepOrder, and returns an OS exit code
 (0 = all steps succeeded, 1 = the job failed) for the calling WLA scheduler.
 """
 import argparse
-import logging
 import os
 import sys
-from typing import Any, Dict, Optional
+from typing import Optional
 
 from sqlalchemy.orm import Session
 
 from app.database import SessionLocal
-from app.models import Job, JobStep
+from app.models import Job, JobStep, Variable
+from engine import job_log
 from engine.handlers import get_handler
 from engine.scope_engine import ScopeResolutionEngine
 from engine.step_params import resolve_step
 from engine.telemetry_client import LocalSpoolTelemetryClient
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
-logger = logging.getLogger("AutoApp.Runner")
+# A step parameter every step type accepts: the job log level for that step alone
+LOG_LEVEL_PARAM = "LogLevel"
 
 
 def run_job(db: Session, job_key: str, instance_id: str, spool_dir: str,
-            working_root: Optional[str] = None) -> int:
+            working_root: Optional[str] = None, run_number: int = 1,
+            scheduler: Optional[str] = None, api_url: Optional[str] = None) -> int:
     """Executes the job and returns the exit code to hand back to the scheduler."""
-    actor = f"Runner_PID_{os.getpid()}"
-
-    with LocalSpoolTelemetryClient(spool_dir=spool_dir, instance_id=instance_id) as telemetry:
-
-        def audit(action: str, status: str, details: Dict[str, Any] = None) -> None:
-            telemetry.log_audit(
-                action=action, actor=actor, resource_type="Job",
-                resource_id=job_key, status=status, details=details
-            )
+    with LocalSpoolTelemetryClient(spool_dir=spool_dir, instance_id=instance_id, api_url=api_url) as telemetry:
+        telemetry.start_run(job_key, run_number=run_number, scheduler=scheduler)
+        job_log.summary(f"Job '{job_key}', instance {instance_id}, run number {run_number}")
+        job_log.debug(f"Run ID {telemetry.run_id}; spool file {telemetry.active_file_path}")
 
         try:
             job = db.query(Job).filter(Job.JobKey == job_key).first()
             if not job:
                 raise ValueError(f"No job with JobKey '{job_key}' exists.")
+            if not job.IsActive:
+                raise ValueError(f"Job '{job_key}' is disabled.")
             job_id = job.MasterObject_id
 
             global_config = {"WORKING_ROOT": working_root} if working_root else {}
@@ -50,6 +48,7 @@ def run_job(db: Session, job_key: str, instance_id: str, spool_dir: str,
             scope_engine.build_context()
             if scope_engine.working_folder:
                 os.makedirs(scope_engine.working_folder, exist_ok=True)
+            job_log.debug(f"Working folder: {scope_engine.working_folder}")
 
             steps = (
                 db.query(JobStep)
@@ -60,46 +59,75 @@ def run_job(db: Session, job_key: str, instance_id: str, spool_dir: str,
             if not steps:
                 raise ValueError(f"Job '{job_key}' has no active steps.")
 
-            audit("JOB_STARTED", "STARTED", {"step_count": len(steps)})
-
             for step in steps:
                 step_type = step.step_type.HandlerClass
-                logger.info(f"Step {step.StepOrder}: {step.Title} (type {step_type})")
-
                 handler_cls = get_handler(step_type)
                 resolved = resolve_step(step, handler_cls, scope_engine, db)
+                raw_params = {p.ParamName: p.ParamValue for p in step.parameters}
+                step_log_level = resolved.params.pop(LOG_LEVEL_PARAM, None)
+                raw_params.pop(LOG_LEVEL_PARAM, None)
+                if step_log_level:
+                    try:
+                        job_log.level_number(step_log_level)
+                    except ValueError as e:
+                        raise ValueError(f"Step {step.StepOrder} ('{step.Title}'): {e}") from e
+
                 handler = handler_cls(
                     step_config={
-                        "StepID": step.id, "StepType": step_type, "Title": step.Title,
+                        "StepID": step.id, "StepOrder": step.StepOrder,
+                        "StepType": step.step_type.TypeName, "Title": step.Title,
+                        "RawParams": raw_params,
                         "SourceEndpointID": resolved.source_endpoint_id,
                         "DestEndpointID": resolved.dest_endpoint_id,
                     },
                     telemetry_client=telemetry
                 )
-                handler.run(resolved.params)
+                try:
+                    with job_log.level_for_step(step_log_level):
+                        handler.run(resolved.params)
+                finally:
+                    # Send what this step recorded; a failure here never affects the job
+                    telemetry.deliver()
 
         except Exception as e:
-            logger.error(f"Job '{job_key}' failed: {e}")
-            audit("JOB_FAILED", "FAILED", {"error": str(e)})
+            job_log.error(f"Job '{job_key}' failed: {e}")
+            telemetry.end_run("FAILED", error=str(e))
             return 1
 
-        audit("JOB_COMPLETED", "SUCCESS")
-        logger.info(f"Job '{job_key}' completed successfully.")
+        telemetry.end_run("SUCCESS")
+        job_log.summary(f"Job '{job_key}' completed successfully.")
         return 0
 
 
 def main():
     parser = argparse.ArgumentParser(description="AutoApp Lightweight Execution Runner")
     parser.add_argument("--job-key", required=True, help="JobKey of the target Job (e.g. DEV-LEGAL-CLIENT_EXTRACT)")
-    parser.add_argument("--instance-id", required=True, help="Unique execution Instance ID passed from WLA")
+    parser.add_argument("--instance-id", required=True, help="The scheduler's unique ID for this job instance")
+    parser.add_argument("--run-number", type=int, default=1,
+                        help="Run or restart count, for schedulers that reuse the instance ID (default: 1)")
+    parser.add_argument("--scheduler", default=os.getenv("AUTOAPP_SCHEDULER"),
+                        help="Name of the scheduler issuing the instance ID, where there is more than one "
+                             "(default: the AUTOAPP_SCHEDULER environment variable)")
     parser.add_argument("--spool-dir", default="./spool", help="Directory for telemetry spool files")
+    parser.add_argument("--api-url", default=os.getenv("AUTOAPP_API_URL"),
+                        help="Address of the AutoApp API to deliver telemetry to "
+                             "(default: the AUTOAPP_API_URL environment variable; if unset, telemetry stays in the spool)")
     parser.add_argument("--working-root", default=None,
                         help="Root of job working folders (default: the AUTOAPP_WORKING_ROOT environment variable)")
+    parser.add_argument("--log-level", default=os.getenv("AUTOAPP_LOG_LEVEL", job_log.DEFAULT_LEVEL),
+                        type=str.upper, choices=list(job_log.LEVELS),
+                        help="How much the job log says: DETAIL (default) logs every action, SUMMARY one line "
+                             "per step, SILENT errors only, DEBUG adds troubleshooting detail. "
+                             "A step can set its own with a LogLevel parameter.")
     args = parser.parse_args()
 
     db: Session = SessionLocal()
     try:
-        exit_code = run_job(db, args.job_key, args.instance_id, args.spool_dir, args.working_root)
+        # Values of secret variables must never reach the log
+        secrets = [value for (value,) in db.query(Variable.VarValue).filter(Variable.IsSecret.is_(True))]
+        job_log.configure(args.log_level, secrets=secrets)
+        exit_code = run_job(db, args.job_key, args.instance_id, args.spool_dir, args.working_root,
+                            run_number=args.run_number, scheduler=args.scheduler, api_url=args.api_url)
     finally:
         db.close()
     sys.exit(exit_code)

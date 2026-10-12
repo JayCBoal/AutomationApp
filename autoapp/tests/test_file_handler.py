@@ -1,6 +1,8 @@
 """
 File handler: real files in a temp folder, the real handler, real spool output.
 """
+import hashlib
+
 import pytest
 
 from engine.handlers.file_handler import FileOpHandler
@@ -103,29 +105,107 @@ def test_bytes_transferred_is_total_size_of_copied_files(folders):
     assert result["result"]["bytes_transferred"] == expected
 
 
-def test_success_is_recorded_in_the_spool(folders, spool_records):
+def test_each_file_gets_its_own_spool_record(folders, spool_records):
     src, dest, spool = folders
 
     run_handler(spool, {"Source": str(src / "*.csv"), "Dest": str(dest)})
 
+    first, second = spool_records(spool)
+    assert first["Record"] == "OPERATION"
+    assert (first["Status"], first["OpType"], first["StepID"]) == ("SUCCESS", "COPY", 201)
+    assert (first["SourcePath"], first["SourceFilename"]) == (str(src), "a.csv")
+    assert (first["DestPath"], first["DestFilename"]) == (str(dest), "a.csv")
+    assert first["SourceSize"] == first["DestSize"] == (src / "a.csv").stat().st_size
+    assert first["Checksum"] is None
+    assert (second["SourceFilename"], second["DestFilename"]) == ("b.csv", "b.csv")
+
+
+def test_a_move_is_recorded_as_a_move(folders, spool_records):
+    src, dest, spool = folders
+
+    run_handler(spool, {"Source": str(src / "a.csv"), "Dest": str(dest), "Move": "True"})
+
     [record] = spool_records(spool)
-    assert record["Status"] == "SUCCESS"
-    assert record["StepID"] == 201
-    assert record["OpType"] == "COPY_FILES"
-    assert sorted(op["Dest"] for op in record["Details"]["ops"]) == [str(dest / "a.csv"), str(dest / "b.csv")]
+    assert record["OpType"] == "MOVE"
+    assert record["SourceSize"] == record["DestSize"] == (dest / "a.csv").stat().st_size
 
 
-def test_failure_is_recorded_in_the_spool(folders, spool_records):
+def test_a_rename_is_recorded_with_both_filenames(folders, spool_records):
+    src, dest, spool = folders
+
+    run_handler(spool, {"Source": str(src / "a.csv"), "Dest": str(dest / "renamed.csv")})
+
+    [record] = spool_records(spool)
+    assert (record["SourceFilename"], record["DestFilename"]) == ("a.csv", "renamed.csv")
+
+
+def test_a_file_that_fails_is_recorded_with_the_error(folders, spool_records):
     src, dest, spool = folders
 
     with pytest.raises(FileNotFoundError):
         run_handler(spool, {"Source": str(src / "*.csv"), "Dest": str(dest), "CreateFolder": "False"})
 
-    audit, operation = spool_records(spool)
-    assert audit["IsAudit"] is True
-    assert audit["Action"] == "STEP_EXECUTION_FAILURE"
-    assert operation["Status"] == "FAILED"
-    assert "error_message" in operation["Details"]
+    [record] = spool_records(spool)     # the step stops at the first file that fails
+    assert record["Status"] == "FAILED"
+    assert record["SourceFilename"] == "a.csv"
+    assert record["SourceSize"] == (src / "a.csv").stat().st_size
+    assert record["DestSize"] is None
+    assert "No such file or directory" in record["Error"]
+
+
+def test_a_copy_that_arrives_a_different_size_fails(folders, spool_records, monkeypatch):
+    """Stands in for a transfer cut short: the copy writes only part of the file."""
+    src, dest, spool = folders
+
+    def truncating_copy(source, target):
+        with open(source, "rb") as f, open(target, "wb") as out:
+            out.write(f.read()[:5])
+
+    monkeypatch.setattr("engine.handlers.file_handler.shutil.copy2", truncating_copy)
+
+    with pytest.raises(IOError, match="Size mismatch"):
+        run_handler(spool, {"Source": str(src / "a.csv"), "Dest": str(dest)})
+
+    [record] = spool_records(spool)
+    assert record["Status"] == "FAILED"
+    assert (record["SourceSize"], record["DestSize"]) == ((src / "a.csv").stat().st_size, 5)
+    assert "Size mismatch" in record["Error"]
+
+
+def test_checksum_option_records_the_files_sha256(folders, spool_records):
+    src, dest, spool = folders
+
+    run_handler(spool, {"Source": str(src / "a.csv"), "Dest": str(dest), "Checksum": "True"})
+
+    [record] = spool_records(spool)
+    assert record["Checksum"] == hashlib.sha256(b"id,val\n1,alpha").hexdigest()
+
+
+def test_checksum_option_fails_a_copy_whose_content_changed(folders, spool_records, monkeypatch):
+    """Same size, different content: only a checksum can catch this."""
+    src, dest, spool = folders
+
+    def corrupting_copy(source, target):
+        with open(source, "rb") as f, open(target, "wb") as out:
+            out.write(f.read().replace(b"alpha", b"ALPHA"))
+
+    monkeypatch.setattr("engine.handlers.file_handler.shutil.copy2", corrupting_copy)
+
+    with pytest.raises(IOError, match="Checksum mismatch"):
+        run_handler(spool, {"Source": str(src / "a.csv"), "Dest": str(dest), "Checksum": "True"})
+
+    [record] = spool_records(spool)
+    assert record["Status"] == "FAILED"
+    assert "Checksum mismatch" in record["Error"]
+
+
+def test_folders_matching_the_pattern_are_skipped(folders, spool_records):
+    src, dest, spool = folders
+    (src / "old.csv").mkdir()
+
+    run_handler(spool, {"Source": str(src / "*.csv"), "Dest": str(dest)})
+
+    assert names(dest) == ["a.csv", "b.csv"]
 
 
 def test_missing_source_or_destination_is_a_clear_error(folders):

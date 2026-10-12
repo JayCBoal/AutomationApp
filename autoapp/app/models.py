@@ -1,11 +1,21 @@
 import datetime
 import re
 from sqlalchemy import (
-    Column, Integer, String, Text, Boolean, DateTime, ForeignKey, Enum, UniqueConstraint
+    BigInteger, Column, Integer, String, Text, Boolean, DateTime, ForeignKey, Enum, UniqueConstraint,
+    false, func, text, true
 )
 from sqlalchemy.orm import declarative_base, relationship, validates
 
 Base = declarative_base()
+
+# Each default is declared twice: "default" is applied by this code, "server_default" by the
+# database itself, so that rows inserted with plain SQL (a seed script, a DBA) get it too.
+
+
+def utcnow():
+    """Current UTC time without timezone info, which is how every DateTime column here is stored."""
+    return datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
+
 
 # ============================================================================
 # MasterObject Polymorphic Base Model
@@ -18,9 +28,9 @@ class MasterObject(Base):
         Enum('APPLICATION', 'ENTITY', 'SITE', 'CREDENTIAL', 'TAG', 'JOB', name='object_type_enum'),
         nullable=False
     )
-    CreatedDateTime = Column(DateTime, default=datetime.datetime.utcnow)
-    CreatedBy = Column(String(100), default='system')
-    ModifiedDateTime = Column(DateTime, onupdate=datetime.datetime.utcnow)
+    CreatedDateTime = Column(DateTime, default=utcnow, server_default=func.now())
+    CreatedBy = Column(String(100), default='system', server_default='system')
+    ModifiedDateTime = Column(DateTime, onupdate=utcnow)
     ModifiedBy = Column(String(100), nullable=True)
 
     __mapper_args__ = {
@@ -43,7 +53,7 @@ class Application(MasterObject):
     Name = Column(String(100), nullable=False, unique=True)
     Abbr = Column(String(10), nullable=False, unique=True)
     Description = Column(Text, nullable=True)
-    IsActive = Column(Boolean, default=True)
+    IsActive = Column(Boolean, default=True, server_default=true())
 
     __mapper_args__ = {
         'polymorphic_identity': 'APPLICATION',
@@ -57,6 +67,7 @@ class Entity(MasterObject):
     Name = Column(String(64), nullable=False, unique=True)
     Abbr = Column(String(10), nullable=False)
     Description = Column(String(256), nullable=True)
+    IsActive = Column(Boolean, default=True, server_default=true())
 
     # Explicitly define foreign_keys to resolve ambiguity with Endpoint references
     sites = relationship(
@@ -79,9 +90,10 @@ class Site(MasterObject):
     Entity_MasterObject_id = Column(Integer, ForeignKey("Entities.MasterObject_id", ondelete="SET NULL"), nullable=True)
     Name = Column(String(64), nullable=False, unique=True)
     Host = Column(String(128), nullable=False)
-    Port = Column(Integer, default=22)
-    Protocol = Column(String(16), default="SFTP")
+    Port = Column(Integer, default=22, server_default=text('22'))
+    Protocol = Column(String(16), default="SFTP", server_default="SFTP")
     Description = Column(String(256), nullable=True)
+    IsActive = Column(Boolean, default=True, server_default=true())
 
     entity = relationship(
         "Entity",
@@ -101,7 +113,7 @@ class Credential(MasterObject):
     Name = Column(String(100), nullable=False, unique=True)
     CredType = Column(String(50), nullable=False)
     SecretData = Column(Text, nullable=True)
-    IsActive = Column(Boolean, default=True)
+    IsActive = Column(Boolean, default=True, server_default=true())
 
     __mapper_args__ = {
         'polymorphic_identity': 'CREDENTIAL',
@@ -131,7 +143,7 @@ class Job(MasterObject):
     # The job's unique name: stable, environment-independent, and what the WLA scheduler passes to the runner
     JobKey = Column(String(320), nullable=False, unique=True)
     Description = Column(Text, nullable=True)
-    IsActive = Column(Boolean, default=True)
+    IsActive = Column(Boolean, default=True, server_default=true())
 
     @validates("JobKey")
     def _validate_job_key(self, _attribute, value):
@@ -161,7 +173,7 @@ class Variable(Base):
     MasterObject_id = Column(Integer, ForeignKey('MasterObjects.id', ondelete='CASCADE'), nullable=False)
     VarName = Column(String(100), nullable=False)
     VarValue = Column(Text, nullable=True)
-    IsSecret = Column(Boolean, default=False)
+    IsSecret = Column(Boolean, default=False, server_default=false())
     Description = Column(Text, nullable=True)
 
 
@@ -190,7 +202,7 @@ class Endpoint(Base):
     Path = Column(String(256), nullable=False)
     FilenamePattern = Column(String(128), nullable=False)
     Description = Column(String(256), nullable=True)
-    ModifiedDateTime = Column(DateTime, onupdate=datetime.datetime.utcnow)
+    ModifiedDateTime = Column(DateTime, onupdate=utcnow)
     ModifiedBy = Column(String(50), nullable=True)
 
     site = relationship("Site")
@@ -207,7 +219,7 @@ class StepType(Base):
     TypeName = Column("Name", String(100), nullable=False)
     HandlerClass = Column("Code", String(50), nullable=False, unique=True)
     Description = Column(Text, nullable=True)
-    IsActive = Column(Boolean, default=True)
+    IsActive = Column(Boolean, default=True, server_default=true())
 
     definitions = relationship("StepDefinition", backref="step_type")
 
@@ -218,8 +230,8 @@ class StepDefinition(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     StepType_id = Column(Integer, ForeignKey('StepTypes.id', ondelete='CASCADE'), nullable=False)
     ParamName = Column("ParameterName", String(100), nullable=False) # <--- Python attribute is ParamName
-    DataType = Column(String(20), default='STRING')
-    IsRequired = Column(Boolean, default=True)
+    DataType = Column(String(20), default='STRING', server_default='STRING')
+    IsRequired = Column(Boolean, default=True, server_default=true())
     DefaultValue = Column(Text, nullable=True)
     Description = Column(Text, nullable=True)
 
@@ -230,9 +242,9 @@ class JobStep(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     job_id = Column("Job_MasterObject_id", Integer, ForeignKey('Jobs.MasterObject_id', ondelete='CASCADE'), nullable=False)
     StepType_id = Column(Integer, ForeignKey('StepTypes.id'), nullable=False)
-    StepOrder = Column(Integer, default=1)
-    Title = Column("StepTitle", String(150), nullable=True, default="Execution Step")
-    IsActive = Column(Boolean, default=True)
+    StepOrder = Column(Integer, default=1, server_default=text('1'))
+    Title = Column("StepTitle", String(150), nullable=True, default="Execution Step", server_default="Execution Step")
+    IsActive = Column(Boolean, default=True, server_default=true())
 
     step_type = relationship("StepType")
     parameters = relationship("JobStepParameter", backref="job_step", cascade="all, delete-orphan", passive_deletes=True)
@@ -248,32 +260,82 @@ class JobStepParameter(Base):
 
 
 # ============================================================================
-# Operational Telemetry & Execution Audits
+# Run History, File Operations & Change Audits
 # ============================================================================
-class Operation(Base):
-    __tablename__ = 'Operations'
+class JobRun(Base):
+    """One execution of a job by the runner. The scheduler stays the authority on scheduling;
+    this is AutoApp's side of the run, and what each file operation points back to."""
+    __tablename__ = 'JobRuns'
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    ExecutionInstanceID = Column(String(64), nullable=False, index=True)
+    # Generated by the runner each time it starts, so every execution is distinct
+    RunID = Column(String(36), nullable=False, unique=True)
+    # Kept as text as well as a link, so history survives the job being deleted
+    JobKey = Column(String(320), nullable=False, index=True)
+    Job_MasterObject_id = Column(Integer, ForeignKey('Jobs.MasterObject_id', ondelete='SET NULL'), nullable=True)
+    # What the scheduler passed: its instance ID, and a run/restart count where it reuses the ID
+    SchedulerInstanceID = Column(String(64), nullable=False, index=True)
+    RunNumber = Column(Integer, nullable=False, default=1, server_default=text('1'))
+    SchedulerName = Column(String(100), nullable=True)
+    Host = Column(String(255), nullable=True)
+    Status = Column(String(20), nullable=False, default='RUNNING', server_default='RUNNING')
+    ErrorMessage = Column(Text, nullable=True)
+    StartedDateTime = Column(DateTime, nullable=True)
+    EndedDateTime = Column(DateTime, nullable=True)
+
+    job = relationship("Job")
+    operations = relationship("Operation", back_populates="run", cascade="all, delete-orphan",
+                              passive_deletes=True, order_by="Operation.Seq")
+
+
+class Operation(Base):
+    """
+    One thing a step did. For a file step that is one file: where it came from, where it
+    went, and how big it was at each end. A step that handles no files (a SQL statement, a
+    REST call) leaves the file columns empty and describes what it did in Details.
+    """
+    __tablename__ = 'Operations'
+    __table_args__ = (
+        # Seq is the record's position in the run's spool; it makes loading the same spool twice harmless
+        UniqueConstraint('JobRun_id', 'Seq', name='uq_run_seq'),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    JobRun_id = Column(Integer, ForeignKey('JobRuns.id', ondelete='CASCADE'), nullable=False, index=True)
+    Seq = Column(Integer, nullable=False)
     JobStep_id = Column(Integer, ForeignKey('JobSteps.id', ondelete='SET NULL'), nullable=True)
+    StepOrder = Column(Integer, nullable=True)
     OpType = Column(String(50), nullable=False)
     OpStatus = Column(String(20), nullable=False)
-    BytesTransferred = Column(Integer, default=0)
-    SourceURI = Column(Text, nullable=True)
-    DestinationURI = Column(Text, nullable=True)
-    # Registered Endpoints the file came from / went to; NULL for hops inside the working folder
+    # Registered Endpoints the file came from / went to; NULL for a location inside the working folder
     SourceEndpoint_id = Column(Integer, ForeignKey('Endpoints.id', ondelete='SET NULL'), nullable=True)
+    SourcePath = Column(Text, nullable=True)
+    SourceFilename = Column(String(255), nullable=True, index=True)
+    SourceSize = Column(BigInteger, nullable=True)
     DestEndpoint_id = Column(Integer, ForeignKey('Endpoints.id', ondelete='SET NULL'), nullable=True)
+    DestPath = Column(Text, nullable=True)
+    DestFilename = Column(String(255), nullable=True, index=True)
+    DestSize = Column(BigInteger, nullable=True)
+    # SHA-256 of the file, recorded only when the step asks for it (Checksum=True)
+    Checksum = Column(String(64), nullable=True)
+    # Anything else worth keeping about the operation, as JSON; the whole record for a step with no files
     Details = Column(Text, nullable=True)
-    CreatedDateTime = Column(DateTime, default=datetime.datetime.utcnow)
+    ErrorMessage = Column(Text, nullable=True)
+    StartedDateTime = Column(DateTime, nullable=True)
+    EndedDateTime = Column(DateTime, nullable=True)
+
+    run = relationship("JobRun", back_populates="operations")
+    source_endpoint = relationship("Endpoint", foreign_keys=[SourceEndpoint_id])
+    dest_endpoint = relationship("Endpoint", foreign_keys=[DestEndpoint_id])
 
 
 class Audit(Base):
+    """A change to a definition (job, endpoint, variable, ...): who did what, and when."""
     __tablename__ = 'Audits'
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    MasterObject_id = Column(Integer, ForeignKey('MasterObjects.id', ondelete='CASCADE'), nullable=True)
-    ExecutionInstanceID = Column(String(64), nullable=True, index=True)
-    Severity = Column(String(20), default='INFO')
-    Message = Column(Text, nullable=False)
-    CreatedDateTime = Column(DateTime, default=datetime.datetime.utcnow)
+    MasterObject_id = Column(Integer, ForeignKey('MasterObjects.id', ondelete='SET NULL'), nullable=True)
+    Action = Column(String(50), nullable=False)
+    PerformedBy = Column(String(100), default='system', server_default='system')
+    Details = Column(Text, nullable=True)
+    CreatedDateTime = Column(DateTime, default=utcnow, server_default=func.now())

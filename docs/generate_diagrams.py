@@ -23,11 +23,11 @@ TABLE_GROUPS = {
     "Domain registry": ["MasterObjects", "Applications", "Entities", "Sites", "Credentials", "Tags",
                         "Variables", "TagAssignments"],
     "Jobs and steps": ["Jobs", "JobSteps", "JobStepParameters", "StepTypes", "StepDefinitions"],
-    "Endpoints, operations and audits": ["Endpoints", "Operations", "Audits"],
+    "Endpoints, runs, operations and audits": ["Endpoints", "JobRuns", "Operations", "Audits"],
 }
 
 TYPE_NAMES = {"Integer": "int", "String": "string", "Text": "text", "Boolean": "bool",
-              "DateTime": "datetime", "Enum": "enum"}
+              "DateTime": "datetime", "Enum": "enum", "BigInteger": "bigint"}
 
 GENERATED_NOTE = ("_Generated from `autoapp/app/models.py` by `docs/generate_diagrams.py`. "
                   "Do not edit by hand; change the models and run the script._")
@@ -112,9 +112,8 @@ def build_db_schema():
         raise SystemExit(f"Add these tables to TABLE_GROUPS in {Path(__file__).name}: {sorted(missing)}")
 
     out = ["# Database Schema", "", GENERATED_NOTE, "",
-           "This is the schema the Python models create. The MariaDB script in `SQL/` currently differs "
-           "from it in places and also defines `AsyncParentInstances` and `AsyncInstances`, which have "
-           "no model yet.", "",
+           "This is the schema the Python models create. The MariaDB script `SQL/Create_Tables.sql` is "
+           "generated from the same models by `SQL/generate_ddl.py`.", "",
            "## Reading the diagrams", "",
            "- `PK` primary key, `FK` foreign key, `UK` unique.",
            "- A line ending in a crow's foot is the \"many\" side. The label is the foreign key column.",
@@ -187,9 +186,11 @@ flowchart TD
         scope[scope_engine.py<br/>resolves placeholders]
         params[step_params.py<br/>working-folder rule and Endpoint lookup]
         registry[handlers/__init__.py<br/>step type to handler]
-        base[handlers/base_handler.py<br/>timing, operation record, failure audit]
+        base[handlers/base_handler.py<br/>timing, step logging, one record per file]
+        joblog[job_log.py<br/>the job log and its levels]
         file[handlers/file_handler.py<br/>COPY_FILES]
         telemetry[telemetry_client.py<br/>writes the spool file]
+        delivery[spool_delivery.py<br/>posts spool records to the API]
     end
 
     subgraph app [autoapp/app]
@@ -198,7 +199,10 @@ flowchart TD
         schemas[schemas.py<br/>API request and response shapes]
         jobs[routers/jobs.py<br/>POST /api/v1/jobs/init]
         variables[routers/variables.py]
-        telemetry_api[routers/telemetry.py<br/>not working yet]
+        telemetry_api[routers/telemetry.py<br/>POST /api/v1/telemetry/records]
+        ingest[telemetry_ingest.py<br/>loads records into JobRuns and Operations]
+        operations_api[routers/operations.py<br/>operations log and file trace routes]
+        trace[trace.py<br/>search and file trace]
         main[main.py<br/>FastAPI app]
     end
 
@@ -211,6 +215,10 @@ flowchart TD
     registry --> file
     file --> base
     base --> telemetry
+    base --> joblog
+    runner --> joblog
+    file --> joblog
+    telemetry --> delivery
     scope --> models
     params --> models
     database --> models
@@ -218,14 +226,21 @@ flowchart TD
     main --> jobs
     main --> variables
     main --> telemetry_api
+    main --> operations_api
     jobs --> scope
     jobs --> params
     jobs --> registry
     jobs --> schemas
     variables --> scope
-    telemetry_api --> models
+    telemetry_api --> ingest
+    telemetry_api --> schemas
+    ingest --> models
+    operations_api --> trace
+    trace --> models
+    trace --> schemas
 
     telemetry --> spool[(spool .jsonl files)]
+    delivery -->|HTTP| telemetry_api
     database --> db[(AutoApp database)]
 ```'''
 

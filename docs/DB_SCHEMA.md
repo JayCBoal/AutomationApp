@@ -2,7 +2,7 @@
 
 _Generated from `autoapp/app/models.py` by `docs/generate_diagrams.py`. Do not edit by hand; change the models and run the script._
 
-This is the schema the Python models create. The MariaDB script in `SQL/` currently differs from it in places and also defines `AsyncParentInstances` and `AsyncInstances`, which have no model yet.
+This is the schema the Python models create. The MariaDB script `SQL/Create_Tables.sql` is generated from the same models by `SQL/generate_ddl.py`.
 
 ## Reading the diagrams
 
@@ -24,6 +24,7 @@ erDiagram
     StepTypes ||--o{ StepDefinitions : "StepType_id"
     MasterObjects ||--o| Tags : "MasterObject_id"
     MasterObjects ||--o{ Variables : "MasterObject_id"
+    Jobs |o--o{ JobRuns : "Job_MasterObject_id"
     Jobs ||--o{ JobSteps : "Job_MasterObject_id"
     StepTypes ||--o{ JobSteps : "StepType_id"
     MasterObjects ||--o| Sites : "MasterObject_id"
@@ -33,6 +34,7 @@ erDiagram
     Sites |o--o{ Endpoints : "Site_MasterObject_id"
     Applications |o--o{ Endpoints : "Application_MasterObject_id"
     JobSteps ||--o{ JobStepParameters : "JobStep_id"
+    JobRuns ||--o{ Operations : "JobRun_id"
     JobSteps |o--o{ Operations : "JobStep_id"
     Endpoints |o--o{ Operations : "SourceEndpoint_id"
     Endpoints |o--o{ Operations : "DestEndpoint_id"
@@ -62,6 +64,7 @@ erDiagram
         string(64) Name UK "required"
         string(10) Abbr "required"
         string(256) Description
+        bool IsActive
     }
     Sites {
         int MasterObject_id PK, FK
@@ -71,6 +74,7 @@ erDiagram
         int Port
         string(16) Protocol
         string(256) Description
+        bool IsActive
     }
     Credentials {
         int MasterObject_id PK, FK
@@ -156,7 +160,7 @@ erDiagram
     JobSteps ||--o{ JobStepParameters : "JobStep_id"
 ```
 
-## Endpoints, operations and audits
+## Endpoints, runs, operations and audits
 
 ```mermaid
 erDiagram
@@ -171,31 +175,55 @@ erDiagram
         datetime ModifiedDateTime
         string(50) ModifiedBy
     }
+    JobRuns {
+        int id PK
+        string(36) RunID UK "required"
+        string(320) JobKey "required"
+        int Job_MasterObject_id FK
+        string(64) SchedulerInstanceID "required"
+        int RunNumber "required"
+        string(100) SchedulerName
+        string(255) Host
+        string(20) Status "required"
+        text ErrorMessage
+        datetime StartedDateTime
+        datetime EndedDateTime
+    }
     Operations {
         int id PK
-        string(64) ExecutionInstanceID "required"
+        int JobRun_id FK "required"
+        int Seq "required"
         int JobStep_id FK
+        int StepOrder
         string(50) OpType "required"
         string(20) OpStatus "required"
-        int BytesTransferred
-        text SourceURI
-        text DestinationURI
         int SourceEndpoint_id FK
+        text SourcePath
+        string(255) SourceFilename
+        bigint SourceSize
         int DestEndpoint_id FK
+        text DestPath
+        string(255) DestFilename
+        bigint DestSize
+        string(64) Checksum
         text Details
-        datetime CreatedDateTime
+        text ErrorMessage
+        datetime StartedDateTime
+        datetime EndedDateTime
     }
     Audits {
         int id PK
         int MasterObject_id FK
-        string(64) ExecutionInstanceID
-        string(20) Severity
-        text Message "required"
+        string(50) Action "required"
+        string(100) PerformedBy
+        text Details
         datetime CreatedDateTime
     }
     MasterObjects |o--o{ Audits : "MasterObject_id"
+    Jobs |o--o{ JobRuns : "Job_MasterObject_id"
     Sites |o--o{ Endpoints : "Site_MasterObject_id"
     Applications |o--o{ Endpoints : "Application_MasterObject_id"
+    JobRuns ||--o{ Operations : "JobRun_id"
     JobSteps |o--o{ Operations : "JobStep_id"
     Endpoints |o--o{ Operations : "SourceEndpoint_id"
     Endpoints |o--o{ Operations : "DestEndpoint_id"
@@ -207,3 +235,4 @@ erDiagram
 | :--- | :--- |
 | `Variables` | `MasterObject_id`, `VarName` |
 | `TagAssignments` | `Tag_MasterObject_id`, `Target_MasterObject_id` |
+| `Operations` | `JobRun_id`, `Seq` |

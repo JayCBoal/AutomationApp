@@ -14,8 +14,9 @@ The job picks up extract files from one application and hands them to another:
     Step 2 "Archive"            copy  incoming/*.csv              -> archive/<today>/ (working folder)
     Step 3 "Deliver to billing" move  incoming/*.csv              -> Endpoint BILLING_APP_INBOX
 
-Locations outside the job's working folder are registered Endpoints; the
-telemetry spool records which Endpoint each operation read from or wrote to.
+Locations outside the job's working folder are registered Endpoints. The runner
+records every file it handles in a spool file; the demo then loads that into
+the database and prints the route one file took.
 """
 import json
 import os
@@ -28,12 +29,18 @@ REPO_DIR = Path(__file__).resolve().parents[1]
 AUTOAPP_DIR = REPO_DIR / "autoapp"
 sys.path.insert(0, str(AUTOAPP_DIR))
 
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
+try:
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+except ModuleNotFoundError:
+    sys.exit("AutoApp's Python packages are not available in this terminal.\n"
+             f"Switch on the project environment first:\n\n    source {REPO_DIR}/.venv/bin/activate\n\n"
+             "If that file does not exist, see 'Quick start' in README.md.")
 
 from app.models import (
     Application, Base, Endpoint, Job, JobStep, JobStepParameter, StepType, Variable
 )
+from app.trace import search_operations, trace_operation
 
 
 def heading(text):
@@ -50,7 +57,7 @@ def show_tree(folder, skip=()):
 
 
 def seed(db_url, run_dir):
-    """Creates the schema and one runnable job. Returns the JobKey and {endpoint id: name}."""
+    """Creates the schema and one runnable job. Returns the JobKey."""
     engine = create_engine(db_url)
     Base.metadata.create_all(engine)
     db = sessionmaker(bind=engine)()
@@ -109,10 +116,9 @@ def seed(db_url, run_dir):
             print(f"                {name} = {value}")
 
     job_key = job.JobKey
-    endpoint_names = {endpoint.id: endpoint.Name for endpoint in endpoints}
     db.close()
     engine.dispose()
-    return job_key, endpoint_names
+    return job_key
 
 
 def main():
@@ -125,7 +131,7 @@ def main():
 
     heading("1. Seeding the database")
     print(f"    {db_url}")
-    job_key, endpoint_names = seed(db_url, run_dir)
+    job_key = seed(db_url, run_dir)
 
     heading("2. Creating input files in the legal application's outbox")
     (outbox / "Legal_Batch_001.csv").write_text("client,amount\nACME,100\n")
@@ -151,28 +157,50 @@ def main():
     heading("5. Files after the run")
     show_tree(run_dir, skip=("demo.db",))
 
-    heading("6. Telemetry spool")
-
-    def endpoint_label(endpoint_id):
-        return f"Endpoint {endpoint_names[endpoint_id]}" if endpoint_id else "working folder"
-
-    spool_files = sorted((run_dir / "spool").glob("*")) if (run_dir / "spool").exists() else []
+    heading("6. Telemetry spool (what the runner recorded, one line per record)")
+    spool_files = sorted((run_dir / "spool").glob("*.jsonl")) if (run_dir / "spool").exists() else []
     if not spool_files:
         print("    (no spool files were written)")
     for spool_file in spool_files:
         print(f"    {spool_file.name}")
         for line in spool_file.read_text().splitlines():
             record = json.loads(line)
-            if record.get("IsAudit"):
-                print(f"      AUDIT      {record['Action']:<24} {record['Status']:<8} {record['Details'] or ''}")
+            if record["Record"] == "RUN_START":
+                print(f"      RUN_START  job {record['JobKey']}, instance {record['InstanceID']}, "
+                      f"run number {record['RunNumber']}")
+            elif record["Record"] == "RUN_END":
+                print(f"      RUN_END    {record['Status']}  {record['Error'] or ''}")
             else:
-                print(f"      OPERATION  step {record['StepID']} {record['OpType']:<12} {record['Status']:<8} "
-                      f"{record['BytesTransferred']} bytes, {record['ExecutionTimeMs']} ms")
-                print(f"                 from: {endpoint_label(record['SourceEndpointID'])}")
-                print(f"                 to  : {endpoint_label(record['DestEndpointID'])}")
-                for op in record["Details"].get("ops", []):
-                    print(f"                 {op['OpType']:<5} {Path(op['Source']).relative_to(run_dir)}"
-                          f"  ->  {Path(op['Dest']).relative_to(run_dir)}")
+                print(f"      OPERATION  step {record['StepOrder']} {record['OpType']:<5} {record['Status']:<8} "
+                      f"{record['SourceFilename']}  ({record['SourceSize']} bytes)")
+
+    heading("7. Loading the spool into the database")
+    command = [sys.executable, "-m", "engine.spool_delivery", "--spool-dir", str(run_dir / "spool")]
+    print("    " + " ".join(command) + "\n")
+    sys.stdout.flush()
+    subprocess.run(command, cwd=AUTOAPP_DIR, env={**os.environ, "DATABASE_URL": db_url})
+
+    heading("8. File trace: the route of one file, from the database")
+    engine = create_engine(db_url)
+    db = sessionmaker(bind=engine)()
+    delivered = search_operations(db, filename="Legal_Batch_001.csv", endpoint="BILLING_APP_INBOX")
+    if not delivered:
+        print("    (no delivery of Legal_Batch_001.csv was recorded)")
+    else:
+        def place(location):
+            if location.endpoint:
+                return f"Endpoint {location.endpoint} [application {location.application}]"
+            return "working folder: " + str(Path(location.path).relative_to(run_dir / "work"))
+
+        trace = trace_operation(db, delivered[0].id)
+        print(f"    {trace.filename}")
+        for number, hop in enumerate(trace.hops, start=1):
+            print(f"      {number}. {hop.op_type:<5} {hop.status:<8} job {hop.job_key}, "
+                  f"instance {hop.instance_id}, step {hop.step_order}")
+            print(f"           from: {place(hop.source)}")
+            print(f"           to  : {place(hop.dest)}   ({hop.dest.size} bytes)")
+    db.close()
+    engine.dispose()
 
     print(f"\nEverything from this run is in:\n    {run_dir}\n")
 

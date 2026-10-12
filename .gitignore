@@ -9,3 +9,5 @@ env/config.json
 .venv/
 venv/
 .pytest_cache/
+demo/output/
+_test_out/

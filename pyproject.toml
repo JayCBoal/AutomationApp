@@ -1,0 +1,5 @@
+[tool.pytest.ini_options]
+testpaths = ["autoapp/tests"]
+pythonpath = ["autoapp"]
+# -ra: after the run, list every test that did not plainly pass, with the reason
+addopts = "-ra"

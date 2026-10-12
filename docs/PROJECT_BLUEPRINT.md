@@ -1,108 +1,210 @@
-# AutoApp Architecture & Project Blueprint
+# AutoApp Blueprint
 
-## 1. Executive Summary & Vision
+How AutoApp works. Each section says what is **built** (in the code and covered by tests) and what is **planned** (designed but not implemented). Last reviewed 2026-10-11.
 
-**AutoApp (Automation App)** is a lightweight, workload-automation-agnostic execution framework and metadata management system[cite: 1, 2]. 
+## 1. Execution flow
 
-Its primary purpose is to **decouple execution payload logic** (parameters, step execution, target credentials, and operational logging) from **sequencing and orchestration logic** (time schedules, SLAs, agent distribution, and upstream/downstream dependencies)[cite: 1, 2].
+```
++--------------------------------------------------------------+
+|  WLA scheduler (Control-M, AutoSys, ActiveBatch, cron, ...)  |
+|  Owns schedules, dependencies, SLAs.                         |
++------------------------------+-------------------------------+
+                               |  runs on an agent:
+                               |  runner --job-key K --instance-id I
+                               v
++--------------------------------------------------------------+
+|  AutoApp runner (engine/runner.py)                           |
+|  1. Finds the job by JobKey.                                 |
+|  2. Builds the variable scope for the job.                   |
+|  3. For each active step, in StepOrder:                      |
+|       resolves parameters and file locations,                |
+|       dispatches to the handler for the step type,           |
+|       writes an operation record to the spool.               |
+|  4. Exits 0 (success) or 1 (failure).                        |
++---------------+------------------------------+---------------+
+                |                              |
+                v                              v
++-------------------------------+   +--------------------------+
+|  AutoApp database             |   |  Telemetry spool         |
+|  jobs, steps, variables,      |   |  one .jsonl file per run |
+|  endpoints, operations        |   |  (to be loaded into the  |
++-------------------------------+   |  Operations table)       |
+                                    +--------------------------+
+```
 
-By offloading job step definitions and dynamic parameters to a central database (`AutomationDB`), AutoApp eliminates vendor lock-in with enterprise Workload Automation (WLA) platforms (e.g., BMC Control-M, Redwood RunMyJobs, AutoSys, ActiveBatch) while streamlining job definitions across environments[cite: 1, 2].
+**Built**
 
----
+- The runner as drawn above. A failing step stops the job. A job with no active steps, an unknown job key or an unknown step type fails with a clear message.
+- The runner reads the database directly, through SQLAlchemy.
 
-## 2. Core Architecture & Execution Flow
+**Planned**
 
-AutoApp sits alongside standard WLA scheduling engines, utilizing native WLA agents to execute scripts while drawing execution steps dynamically from the database[cite: 1, 2].
+- Pull model: the runner fetches its payload over HTTPS from `POST /api/v1/jobs/init` instead of connecting to the database. The endpoint exists; the runner does not use it yet.
+- Push model for isolated network zones: the scheduler fetches the payload and passes it to the agent.
+- Restart controls from the 2024 prototype (start at step, stop after step, skip steps) and per-step success, warning and failure return codes.
 
-+-----------------------------------------------------------------------+
-|                         WLA Scheduler Engine                          |
-|             (e.g., BMC Control-M, RunMyJobs, AutoSys)                 |
-|                                                                       |
-|  * Manages macro-scheduling, SLAs, & dependency sequencing.          |
-|  * Invokes AutoApp script via native Agent with standard CLI metadata.|
-+-----------------------------------+-----------------------------------+
-| (Executes via Agent)
-v
-+-----------------------------------------------------------------------+
-|                         AutoApp Execution Engine                      |
-|                                                                       |
-|  1. Resolves dynamic variables and environment configurations.        |
-|  2. Fetches step definitions & parameters (Pull via DB/API or Push).  |
-|  3. Dispatches execution to Factory Step Handlers (SFTP, SQL, REST).  |
-|  4. Logs discrete business events & returns standard OS exit code.    |
-+-----------------------------------+-----------------------------------+
-|                                 |
-v                                 v
-+-----------------------------------+   +-------------------------------+
-|         AutomationDB              |   |          AutoApp UI           |
-|  (MariaDB / Modern ORM Layer)     |   |         (Web Portal)          |
-|                                   |<--+                               |
-|  * Process & Job Definitions      |   |  * Parametric Job Management  |
-|  * Tag Taxonomy & Variable Scopes |   |  * Operations Audit Viewer    |
-|  * Encrypted Credentials & Sites  |   |  * Asynchronous Tracking      |
-|  * Operations & Audit Tracking    |   |                               |
-+-----------------------------------+   +-------------------------------+
+## 2. Data model
 
+Defined in `autoapp/app/models.py`. Diagrams: [DB_SCHEMA.md](DB_SCHEMA.md) and [PYTHON_MODEL.md](PYTHON_MODEL.md). Development uses SQLite; `DATABASE_URL` selects another database (MariaDB is the intended production target).
 
-### Key Execution Characteristics
-* **Late-Binding Parameters:** Payload values, credentials, target directories, and file patterns are evaluated dynamically at runtime[cite: 1, 2].
-* **Standardized Operations Audit:** Every file copy, API invocation, or SQL execution emits structured business operations records rather than relying on raw console stdout/stderr[cite: 1, 2].
-* **Asynchronous Process Model:** Tracks long-running external webhooks and third-party tasks via dedicated tracking tables (`AsyncInstances` / `AsyncParentInstances`) and polling callbacks without consuming scheduler execution threads[cite: 1, 2].
+### MasterObjects supertype
 
----
+`Applications`, `Entities`, `Sites`, `Credentials`, `Tags` and `Jobs` each share their primary key with a row in `MasterObjects` (joined-table inheritance). This gives every domain object one global ID, so `Variables` and `TagAssignments` can attach to any of them.
 
-## 3. Database Schema Overview & MasterObjects Supertype Pattern
+| Object | Meaning |
+| :--- | :--- |
+| Application | An internal system that produces or consumes files |
+| Entity | An external counterparty: client, vendor, partner |
+| Site | A technical location (host, port, protocol) belonging to an Entity |
+| Credential | A secret used to reach a site or system |
+| Job | The unit a scheduler runs; an ordered list of steps |
+| Tag | A label, with its own variables, that can be attached to any object |
 
-The relational datastore (`AutomationDB`) utilizes a **Global Supertype Pattern (`MasterObjects`)** implemented via Joined-Table / Class-Table Inheritance in the ORM layer[cite: 1, 3, 4]:
+Jobs are deliberately **not** linked to an Application or Entity. A job may touch several of each. The relationship is expressed through the endpoints its steps use, and (planned) through tags.
 
-* **Domain Entities (`MasterObjects` Supertype):** Core business entities (`Applications`, `Entities`, `Sites`, `Credentials`, `Tags`, `Processes`, `Jobs`) inherit directly from `MasterObjects`[cite: 3, 4]. They use `MasterObject_id` as both their **Primary Key** and **Foreign Key** pointing back to `MasterObjects(id)`[cite: 3, 4]. This structural design provides:
-  * A globally unique identifier across all core domain entities in the platform[cite: 3, 4].
-  * Polymorphic relationship mapping for custom key-value pairs (`Variables` table) and taxonomy tags (`TagAssignments` table)[cite: 3, 4].
-  * Direct compatibility with ORM polymorphic inheritance models (SQLAlchemy / SQLModel)[cite: 3, 4].
-* **Hierarchy & Execution Support Tables:** High-volume operational and execution tables (`Operations`, `Audits`, `JobSteps`, `JobStepParameters`, `StepTypes`, `StepDefinitions`, `AsyncInstances`) retain standard auto-incrementing local IDs or UUIDs to maintain high write performance and decouple runtime execution logs from domain registry management[cite: 3, 4].
-* **Unified Endpoints Model:** Target paths, transfer directories, and filename patterns are consolidated into a single `Endpoints` model (replacing legacy separate `Sources` and `Deliveries` tables)[cite: 4]. Endpoints use an `EndpointType` ENUM (`'SOURCE'`, `'DELIVERY'`) and link technical destinations to parent `Sites` and `Entities`[cite: 4].
+### Jobs and JobKey
 
----
+The job is the core unit, as it is in every scheduler: the set of steps that run together in one place. There is no level above it. Grouping related jobs, and deciding the order they run in, is the scheduler's business. (A `Processes` level existed until 2026-10-11; see the change log.)
 
-## 4. Planned & Architecture Enhancements
+`Jobs.JobKey` is the job's unique name. It is human-readable, independent of environment, and what the scheduler passes. The numeric primary key differs between databases and is never used outside AutoApp. Because the key also names the job's working folder, it is limited to letters, digits, `-`, `_` and `.`.
 
-### A. Hierarchical Tag Taxonomy & Dynamic Variable Scoping
-Variables resolve dynamically through a deterministic scope evaluation cascade managed by the `ScopeResolutionEngine`[cite: 3]:
+### Steps
 
-$$\text{SYS} \longrightarrow \text{ENTITY} \longrightarrow \text{APP} \longrightarrow \text{PROC} \longrightarrow \text{TAG} \longrightarrow \text{JOB} \longrightarrow \text{STEP}$$
+- `StepTypes`: the catalog of step types. `Code` selects the handler.
+- `StepDefinitions`: the parameters each step type accepts.
+- `JobSteps`: a job's steps, with `StepOrder`, `StepTitle` and `IsActive`.
+- `JobStepParameters`: name and value pairs for a step.
 
-* **Nested Inheritance & Explicit Scope Syntax:** Supports universal `${...}` interpolation for implicit cascade lookup (`${var}`), parent/associated scope targeting (`${APP.var}`), explicit entity targeting (`${ENTITY:Name.var}`), and dynamic runtime system macros (`${SYS:YYYYMMDD}`)[cite: 3, 4].
-* **Direct Job Resolution:** Schedulers pass a single `Job_MasterObject_id` or `JobKey` at execution time; AutoApp automatically resolves upward parent `Process`, `Application`, and `Entity` context in a single evaluation pass[cite: 3, 4].
+**Planned:** validating a step's parameters against `StepDefinitions` (required parameters, defaults). Today the definitions are not consulted.
 
-### B. Dual Payload Delivery Model (Pull vs. Push)
-* **Pull Model (Default / Standard Edge Agents):** Agents fetch step configurations at execution time over HTTPS (Port 443) via `POST /api/v1/jobs/init`, distributing system load and bypassing scheduler bottlenecks[cite: 1, 2, 3].
-* **Push Model (Air-Gapped / Ephemeral Nodes):** For zero-trust DMZ nodes or ephemeral containers, the WLA scheduler pre-fetches the payload via the AutoApp API and pushes a signed JSON payload directly to the executing agent[cite: 1, 2, 3].
+### Endpoints
 
-### C. ORM Modernization (SQLAlchemy / SQLModel)
-* Modernized direct database driver interactions into a **SQLAlchemy ORM** layer[cite: 1, 3, 4].
-* Provides database portability across **MariaDB**, **PostgreSQL**, **Microsoft SQL Server (MSSQL)**, **SQLite**, and **Oracle Database**[cite: 1, 3].
-* Enables strongly typed models, compile-time validation, and parameterized query execution to eliminate SQL injection risks[cite: 1].
+`Endpoints` is the register of places where files enter or leave AutoApp's control. It replaced the prototype's `Sources` and `Deliveries` tables. Each endpoint has:
 
-### D. Modular Plugin / Step Factory Pattern
-* Procedural execution loops in runner scripts are refactored into an object-oriented **Step Handler Factory** (`engine/handlers/`)[cite: 1, 2, 3, 4].
-* Step handlers (`SFTPHandler`, `SQLHandler`, `RESTHandler`, `FileOpHandler`) inherit from a common `BaseStepHandler` class, isolating step-specific logic and allowing seamless custom extensions[cite: 1, 2, 3, 4].
+- `Name`: unique; job steps reference it by this name.
+- `Application`: the internal system it belongs to, if any.
+- `Site`: the technical location it lives on, if any. The site's Entity is the endpoint's entity.
+- `Path` and `FilenamePattern`: where, and which files. Both may contain placeholders.
 
-### E. Security & Secrets Vault Integration
-* Securing the `Credentials` and `Sites` tables using AES-256 encryption at rest[cite: 1].
-* Adding runtime connectors to enterprise secrets vaults (e.g., HashiCorp Vault, AWS Secrets Manager) to resolve passwords and API tokens dynamically without persisting plain text[cite: 1].
+An endpoint has no direction. The same folder can be a destination for one job and a source for the next; direction comes from which side of a step uses it.
 
-### F. REST API Backend & Frontend Modernization
-* Building a **FastAPI** backend (`app/main.py`) to serve as the unified REST layer between the database, web interface, and remote edge runners[cite: 1, 3, 4].
-* Modernizing the web user interface into an interactive portal featuring dynamic variable editors and tag managers bound to `MasterObject_id`[cite: 1, 3, 4].
+### Operations and Audits
 
----
+`Operations` holds one row per operation performed, including `SourceEndpoint_id` and `DestEndpoint_id`. `Audits` holds job-level events.
 
-## 5. Summary Roadmap
+**Planned:** nothing writes to these tables yet. See section 6.
 
-| Phase | Core Deliverables | Focus Areas |
-| :--- | :--- | :--- |
-| **Phase 1: Core REST API & Context Engine** | FastAPI initialization routes, Scope resolution engine, variable interpolation | `POST /api/v1/jobs/init`, `${...}` placeholder resolution, scope precedence[cite: 3] |
-| **Phase 2: Seed Data & Step Catalog** | `StepTypes`, `StepDefinitions`, seed `MasterObjects` insert scripts | Base step catalog, parameter signature seeding, initial entity/tag variables[cite: 3, 4] |
-| **Phase 3: Core Execution Runner (MVP)** | Modular Step Factory, parameter interpolation, CLI runner (`runner.py`) | Handlers (`SFTP`, `SQL`, `REST`, `File`), end-to-end execution demonstrator[cite: 1, 3, 4] |
-| **Phase 4: Web UI & Backend CRUD** | Universal Variables Editor, Universal Tagging picker, transactional controllers | `MasterObjects` transactional controllers, interactive web portal[cite: 1, 3, 4] |
-| **Phase 5: Resilient Telemetry & Spooling** | Telemetry REST API, client wrapper, offline disk spooler daemon | Real-time event streaming (`/telemetry/ops`), offline `.jsonl` buffer, batch drain[cite: 3, 4] |
+### Known inconsistency
+
+The MariaDB DDL in `SQL/` and the SQL seed script disagree with the models in several places. The models are the working definition.
+
+## 3. Variables and placeholders
+
+Step parameters, endpoint paths and variable values may contain `${...}` placeholders. `engine/scope_engine.py` resolves them.
+
+**Built**
+
+| Syntax | Resolves to |
+| :--- | :--- |
+| `${Name}` | The variable `Name`, searched through the cascade below |
+| `${JOB.Name}` | The variable on the job, specifically |
+| `${APP.Name}`, `${ENTITY.Name}` | Inside an endpoint only: the variable on that endpoint's Application, or its Site's Entity |
+| `${APP:LEGAL_APP.Name}`, `${ENTITY:JAYCO.Name}` | The variable on a named Application or Entity, from anywhere |
+| `${SYS:YYYYMMDD}`, `${SYS:INSTANCE_ID}`, `${SYS:TIMESTAMP}`, `${SYS:WORKING_FOLDER}` | Values supplied by the runner |
+
+- Cascade order, lowest priority first: `SYS`, `ENTITY`, `APP`, `TAG`, `JOB`. A higher level overrides a lower one of the same name.
+- A variable's value may contain placeholders; they are resolved too, up to 10 levels deep. A circular reference is an error.
+- A placeholder that cannot be resolved is an error naming the placeholder. Nothing runs with a literal `${...}` in a path.
+
+**Planned**
+
+- `TAG` scope: variables inherited from tags attached to a job, including tag hierarchies. This is also how related jobs will share variables. The models do not yet expose tag assignments to the engine.
+- `STEP` scope: variables set on an individual step.
+
+## 4. File locations
+
+The rule: **a location outside the job's working folder must be a registered endpoint.**
+
+**Built** (`engine/step_params.py`)
+
+- Each job has its own working folder: `<working root>/<JobKey>`. No other job can use it, so a file passed from one job to another goes through an endpoint, which also records the handoff. The working root comes from `--working-root` or the `AUTOAPP_WORKING_ROOT` environment variable.
+- Each side of a file step is given one of two ways:
+  - `Source` / `Dest`: a raw path. It must be inside the working folder; a relative path is taken relative to it. Anything else is rejected.
+  - `SourceEndpoint` / `DestEndpoint`: the name of an endpoint.
+  - Setting both for the same side is an error.
+- An endpoint's `Path` and `FilenamePattern` are resolved in the endpoint's own context, so `${APP.x}` means that endpoint's application. A source endpoint resolves to `Path/FilenamePattern`; a destination endpoint resolves to `Path`.
+- The operation record for the step carries the IDs of the endpoints used. A hop inside the working folder carries none.
+
+This is what makes a file trace possible: an operation that reads from an endpoint is a file entering, one that writes to an endpoint is a file leaving, and the endpoint says which application or entity that was.
+
+**Planned**
+
+- Endpoints on remote sites. They can be registered, but the only handler today works on local paths and rejects them.
+- Checking delivered files against the destination endpoint's `FilenamePattern`, and rename masks on delivery.
+
+## 5. Step handlers
+
+**Built**
+
+- `engine/handlers/base_handler.py`: the common wrapper. It times the step, writes the operation record, and writes an audit record on failure.
+- `engine/handlers/file_handler.py`: step type `COPY_FILES` (alias `FILE_OP`). Local copy or move with wildcard matching and optional folder creation.
+- `engine/handlers/__init__.py`: the registry mapping step type codes to handlers.
+
+**Planned**
+
+- Delete files, SQL execution, SFTP transfer, REST call, send email. The prototype had most of these as plain functions.
+
+## 6. Telemetry
+
+**Built** (`engine/telemetry_client.py`)
+
+- The runner writes every operation and audit event as one JSON line to a spool file unique to the run.
+- The file is named `.jsonl.tmp` while the job is running and renamed to `.jsonl` when it finishes, so a loader never picks up a half-written file.
+- Writing locally means logging adds no network delay to the job and survives a database or network outage.
+
+**Planned**
+
+- A loader that reads completed spool files into `Operations` and `Audits`.
+- Telemetry API routes (`/api/v1/telemetry/ops`, `/ops/batch`, `/audit`). The routes exist in the code but do not work: they use column names the models do not have.
+- A file trace query across operations and endpoints.
+
+## 7. REST API
+
+FastAPI application in `autoapp/app/`.
+
+| Route | State |
+| :--- | :--- |
+| `GET /health` | Built |
+| `POST /api/v1/jobs/init` | Built; tested by calling the route function, not over HTTP |
+| `GET /api/v1/variables/resolve` | Built; untested |
+| `POST /api/v1/telemetry/...` | Present but broken |
+
+**Planned:** authentication, CRUD routes for the web interface, HTTP-level tests.
+
+## 8. Security
+
+Nothing in this section is built.
+
+- `Credentials.SecretData` is stored as plain text.
+- `/jobs/init` returns every variable, including those flagged `IsSecret`.
+- The API has no authentication.
+
+**Planned:** encryption at rest, connectors to an external secrets vault, API authentication, and withholding secret values from API responses.
+
+## 9. Asynchronous processes
+
+Nothing in this section is built in the rewrite. The 2024 prototype tracked external tasks in `AsyncParentInstances` and `AsyncInstances` with a polling job; the tables exist in the DDL only.
+
+## 10. User interfaces
+
+Not started.
+
+**Planned:** AutoApp is meant to be used from inside a scheduling product, with its own web interface as a second option. Both are clients of the REST API, so the CRUD API is the prerequisite for either.
+
+## 11. Testing
+
+- Tests are in `autoapp/tests/` and run with `python3 -m pytest`.
+- Each test builds its own temporary SQLite database and temporary folders. No test touches the working directory or a shared database.
+- Tests run the real code. AutoApp's own components are not mocked. The runner tests launch the runner as a separate process, as a scheduler would.
+- A new test is checked by breaking the code it covers and confirming the test fails.
+- `demo/run_demo.py` is not a test. It asserts nothing; it runs a sample job and shows what happened.

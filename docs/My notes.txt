@@ -1,0 +1,3 @@
+My notes:
+
+* I think we need to revisit the Process/Job dichotomy again. WLAs do not make this distinction and I don't know how the WLA is going to call the runner script if it requires this syntax `python3 runner.py --process DEV-PROCESS --job JOBA --instance-id 12345`.

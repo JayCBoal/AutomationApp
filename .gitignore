@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+*.db
+spool/
+test_spool/
+test_workspace/
+test_data/
+env/config.json
+.venv/
+venv/
+.pytest_cache/

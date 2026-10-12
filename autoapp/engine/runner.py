@@ -90,7 +90,7 @@ def run_job(db: Session, job_key: str, instance_id: str, spool_dir: str,
 
 def main():
     parser = argparse.ArgumentParser(description="AutoApp Lightweight Execution Runner")
-    parser.add_argument("--job-key", required=True, help="JobKey of the target Job (e.g. DEV-PROC--JOBA)")
+    parser.add_argument("--job-key", required=True, help="JobKey of the target Job (e.g. DEV-LEGAL-CLIENT_EXTRACT)")
     parser.add_argument("--instance-id", required=True, help="Unique execution Instance ID passed from WLA")
     parser.add_argument("--spool-dir", default="./spool", help="Directory for telemetry spool files")
     parser.add_argument("--working-root", default=None,

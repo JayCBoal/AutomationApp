@@ -24,7 +24,6 @@ class JobInitResponse(BaseModel):
     status: str
     execution_instance_id: str
     job_id: int
-    process_id: int
     working_folder: str
     variables: Dict[str, Any]
     steps: List[JobStepPayloadSchema]

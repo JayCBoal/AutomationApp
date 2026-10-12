@@ -5,7 +5,7 @@ against a throwaway database. Checks the exit code, the files and the spool.
 Layout used by these tests, all inside pytest's temp folder:
     app_outbox/              an application's folder, registered as Endpoint LEGAL_EXTRACTS
     app_inbox/               another application's folder, registered as Endpoint BILLING_INBOX
-    work/<process name>/     the job's working folder
+    work/<JobKey>/           the job's working folder
 """
 import os
 import subprocess
@@ -58,7 +58,7 @@ def names(folder):
 def test_job_moves_files_from_one_endpoint_to_another_through_the_working_folder(
         seed, run_runner, endpoints, outbox, tmp_path, spool_records):
     source, dest = endpoints
-    job = seed.job(seed.process("DEV-PROC"), "LOAD")
+    job = seed.job("DEV-LOAD")
     # Seeded out of order on purpose: steps must run by StepOrder.
     seed.step(job, 3, title="Deliver", Source="incoming/*.csv", DestEndpoint="BILLING_INBOX", Move="True")
     seed.step(job, 1, title="Collect", SourceEndpoint="LEGAL_EXTRACTS", Dest="incoming")
@@ -66,7 +66,7 @@ def test_job_moves_files_from_one_endpoint_to_another_through_the_working_folder
 
     result = run_runner(job.JobKey, instance_id="RUN_001")
 
-    work = tmp_path / "work" / "DEV-PROC"
+    work = tmp_path / "work" / "DEV-LOAD"
     batch = ["Legal_Batch_1.csv", "Legal_Batch_2.csv"]
     assert result.returncode == 0, result.stderr
     assert names(outbox) == batch + ["other.txt"]            # collected by copy; source untouched
@@ -86,7 +86,7 @@ def test_job_moves_files_from_one_endpoint_to_another_through_the_working_folder
 
 
 def test_raw_path_outside_the_working_folder_fails_the_job(seed, run_runner, outbox, tmp_path, spool_records):
-    job = seed.job(seed.process("DEV-PROC"), "LOAD")
+    job = seed.job("DEV-LOAD")
     seed.step(job, 1, Source=str(outbox / "*.csv"), Dest="incoming")
 
     result = run_runner(job.JobKey)
@@ -94,24 +94,24 @@ def test_raw_path_outside_the_working_folder_fails_the_job(seed, run_runner, out
     assert result.returncode == 1
     assert "outside the job's working folder" in result.stderr
     assert "SourceEndpoint" in result.stderr
-    assert not (tmp_path / "work" / "DEV-PROC" / "incoming").exists()
+    assert not (tmp_path / "work" / "DEV-LOAD" / "incoming").exists()
     assert spool_records(tmp_path / "spool")[-1]["Action"] == "JOB_FAILED"
 
 
 def test_unresolved_placeholder_fails_the_job_before_touching_files(seed, run_runner, endpoints, tmp_path, spool_records):
-    job = seed.job(seed.process("DEV-PROC"), "LOAD")
+    job = seed.job("DEV-LOAD")
     seed.step(job, 1, SourceEndpoint="LEGAL_EXTRACTS", Dest="${NoSuchFolder}/out")
 
     result = run_runner(job.JobKey)
 
     assert result.returncode == 1
     assert "${NoSuchFolder}" in result.stderr
-    assert names(tmp_path / "work" / "DEV-PROC") == []
+    assert names(tmp_path / "work" / "DEV-LOAD") == []
     assert spool_records(tmp_path / "spool")[-1]["Action"] == "JOB_FAILED"
 
 
 def test_failing_step_stops_the_job(seed, run_runner, endpoints, tmp_path, spool_records):
-    job = seed.job(seed.process("DEV-PROC"), "LOAD")
+    job = seed.job("DEV-LOAD")
     seed.step(job, 1, SourceEndpoint="LEGAL_EXTRACTS", Dest="missing", CreateFolder="False")
     seed.step(job, 2, SourceEndpoint="LEGAL_EXTRACTS", DestEndpoint="BILLING_INBOX")
 
@@ -123,7 +123,7 @@ def test_failing_step_stops_the_job(seed, run_runner, endpoints, tmp_path, spool
 
 
 def test_unknown_step_type_fails_the_job(seed, run_runner):
-    job = seed.job(seed.process("DEV-PROC"), "LOAD")
+    job = seed.job("DEV-LOAD")
     seed.step(job, 1, code="SQL_EXEC", Query="SELECT 1")
 
     result = run_runner(job.JobKey)
@@ -132,30 +132,28 @@ def test_unknown_step_type_fails_the_job(seed, run_runner):
     assert "SQL_EXEC" in result.stderr
 
 
-def test_job_is_found_by_key_not_by_name(seed, run_runner, endpoints, tmp_path):
-    """Two processes each have a job called LOAD; only the one whose key is passed runs."""
-    for process_name in ("DEV-PROC-A", "DEV-PROC-B"):
-        job = seed.job(seed.process(process_name), "LOAD")
-        seed.step(job, 1, SourceEndpoint="LEGAL_EXTRACTS", Dest="incoming")
+def test_only_the_job_whose_key_is_passed_runs(seed, run_runner, endpoints, tmp_path):
+    for key in ("DEV-LOAD-A", "DEV-LOAD-B"):
+        seed.step(seed.job(key), 1, SourceEndpoint="LEGAL_EXTRACTS", Dest="incoming")
 
-    result = run_runner("DEV-PROC-B--LOAD")
+    result = run_runner("DEV-LOAD-B")
 
     assert result.returncode == 0, result.stderr
-    assert (tmp_path / "work" / "DEV-PROC-B" / "incoming").exists()
-    assert not (tmp_path / "work" / "DEV-PROC-A").exists()
+    assert (tmp_path / "work" / "DEV-LOAD-B" / "incoming").exists()
+    assert not (tmp_path / "work" / "DEV-LOAD-A").exists()
 
 
 def test_unknown_job_fails(seed, run_runner):
-    seed.job(seed.process("DEV-PROC"), "LOAD")
+    seed.job("DEV-LOAD")
 
-    result = run_runner("NO-SUCH-PROC--NO_SUCH_JOB")
+    result = run_runner("NO_SUCH_JOB")
 
     assert result.returncode == 1
-    assert "NO-SUCH-PROC--NO_SUCH_JOB" in result.stderr
+    assert "NO_SUCH_JOB" in result.stderr
 
 
 def test_job_with_no_steps_fails(seed, run_runner):
-    job = seed.job(seed.process("DEV-PROC"), "LOAD")
+    job = seed.job("DEV-LOAD")
 
     result = run_runner(job.JobKey)
 

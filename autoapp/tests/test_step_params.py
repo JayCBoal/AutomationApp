@@ -13,12 +13,12 @@ from engine.step_params import resolve_step
 
 @pytest.fixture
 def job(seed):
-    return seed.job(seed.process("DEV-PROC"), "LOAD")
+    return seed.job("DEV-LOAD")
 
 
 @pytest.fixture
 def working_folder(tmp_path):
-    return tmp_path / "work" / "DEV-PROC"
+    return tmp_path / "work" / "DEV-LOAD"
 
 
 @pytest.fixture

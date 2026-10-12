@@ -32,7 +32,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.models import (
-    Application, Base, Endpoint, Job, JobStep, JobStepParameter, Process, StepType, Variable
+    Application, Base, Endpoint, Job, JobStep, JobStepParameter, StepType, Variable
 )
 
 
@@ -81,9 +81,7 @@ def seed(db_url, run_dir):
     ]
 
     copy_type = add(StepType(TypeName="Copy Files", HandlerClass="COPY_FILES"))
-    proc = add(Process(Name="DEMO-LEGAL-JAYCO-CLNT_EXTRACT", Description="Demo process"))
-    job = add(Job(process_id=proc.MasterObject_id, Name="COLLECT_AND_DELIVER",
-                  JobKey=f"{proc.Name}--COLLECT_AND_DELIVER", Description="Demo job"))
+    job = add(Job(JobKey="DEMO-LEGAL-COLLECT_AND_DELIVER", Description="Demo job"))
     set_var(job, "FilePattern", "Legal_Batch_*.csv")
 
     steps = [
@@ -98,8 +96,6 @@ def seed(db_url, run_dir):
 
     db.commit()
 
-    print(f"    Process : {proc.Name}")
-    print(f"    Job     : {job.Name}")
     print(f"    JobKey  : {job.JobKey}")
     print(f"    Variable: FilePattern = Legal_Batch_*.csv   [job]")
     for app in (legal_app, billing_app):

@@ -4,7 +4,7 @@ from contextlib import contextmanager
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 from sqlalchemy.orm import Session
-from app.models import Application, Entity, Job, MasterObject, Process, Tag, Variable
+from app.models import Application, Entity, Job, MasterObject, Tag, Variable
 
 
 class ScopeResolutionEngine:
@@ -12,10 +12,10 @@ class ScopeResolutionEngine:
 
     # Matches ${SCOPE:target.var}, ${SCOPE.var}, or ${var}
     EXPLICIT_TARGET_PATTERN = re.compile(
-        r"\$\{(APP|ENTITY|PROC|JOB|TAG):([^.]+)\.([^}]+)\}"
+        r"\$\{(APP|ENTITY|JOB|TAG):([^.]+)\.([^}]+)\}"
     )
     EXPLICIT_SCOPE_PATTERN = re.compile(
-        r"\$\{(SYS|APP|ENTITY|PROC|JOB)\.([^}]+)\}"
+        r"\$\{(SYS|APP|ENTITY|JOB)\.([^}]+)\}"
     )
     IMPLICIT_VAR_PATTERN = re.compile(r"\$\{([a-zA-Z0-9_:]+)\}")
     ANY_PLACEHOLDER_PATTERN = re.compile(r"\$\{[^}]+\}")
@@ -24,7 +24,7 @@ class ScopeResolutionEngine:
     MAX_NESTING_DEPTH = 10
 
     # Default hierarchy precedence (Low priority -> High priority)
-    DEFAULT_PRECEDENCE = ["SYS", "ENTITY", "APP", "PROC", "TAG", "JOB"]
+    DEFAULT_PRECEDENCE = ["SYS", "ENTITY", "APP", "TAG", "JOB"]
 
     def __init__(
         self,
@@ -43,7 +43,6 @@ class ScopeResolutionEngine:
             "SYS": {},
             "APP": {},
             "ENTITY": {},
-            "PROC": {},
             "JOB": {},
             "TAG": {},  # Format: {"TagName": {"VarName": "Value"}}
             "TARGETED": {
@@ -95,35 +94,28 @@ class ScopeResolutionEngine:
         }
         self.scoped_vars["SYS"].update(self.global_config)
 
-        # 2. Retrieve Job and Process
+        # 2. Retrieve Job
         job: Optional[Job] = (
             self.db.query(Job).filter(Job.MasterObject_id == self.job_id).first()
         )
         if not job:
             raise ValueError(f"Job with MasterObject_id {self.job_id} not found.")
 
-        process: Optional[Process] = job.process
-
-        # 3. Working folder: <working root>/<process name>, shared by the jobs of a process
+        # 3. Working folder: <working root>/<JobKey>, private to the job
         working_root = self.global_config.get("WORKING_ROOT") or os.environ.get("AUTOAPP_WORKING_ROOT")
-        if working_root and process:
-            self.scoped_vars["SYS"]["WORKING_FOLDER"] = os.path.join(working_root, process.Name)
+        if working_root:
+            self.scoped_vars["SYS"]["WORKING_FOLDER"] = os.path.join(working_root, job.JobKey)
 
         # 4. Populate Associated Scopes
         # ENTITY and APP belong to an Endpoint, not to the job; see interpolate(text, endpoint=...)
-        if process:
-            self.scoped_vars["PROC"] = self._get_variables_for_master_object(
-                process.MasterObject_id
-            )
         self.scoped_vars["JOB"] = self._get_variables_for_master_object(
             job.MasterObject_id
         )
 
         # 5. Resolve Tags (Root -> Leaf merge)
         associated_tags: List[Tag] = []
-        for obj in [process, job]:
-            if obj and hasattr(obj, "tags"):
-                associated_tags.extend(obj.tags)
+        if hasattr(job, "tags"):
+            associated_tags.extend(job.tags)
 
         self._tag_cascade_vars = {}
         for tag in associated_tags:

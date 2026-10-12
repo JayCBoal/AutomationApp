@@ -16,7 +16,7 @@ router = APIRouter(prefix="/api/v1/jobs", tags=["Job Execution"])
 def initialize_job(payload: JobInitRequest, db: Session = Depends(get_db)):
     """Resolves the job's variable scope and returns its steps with parameters interpolated."""
 
-    # 1. Lookup Job by its JobKey; the parent Process follows from the Job
+    # 1. Lookup Job by its JobKey
     job = db.query(Job).filter(Job.JobKey == payload.job_key).first()
     if not job:
         raise HTTPException(
@@ -71,7 +71,6 @@ def initialize_job(payload: JobInitRequest, db: Session = Depends(get_db)):
         status="SUCCESS",
         execution_instance_id=payload.instance_id,
         job_id=job.MasterObject_id,
-        process_id=job.process_id,
         working_folder=working_folder,
         variables=resolved_vars,
         steps=compiled_steps

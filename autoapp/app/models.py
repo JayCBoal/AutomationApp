@@ -1,8 +1,9 @@
 import datetime
+import re
 from sqlalchemy import (
     Column, Integer, String, Text, Boolean, DateTime, ForeignKey, Enum, UniqueConstraint
 )
-from sqlalchemy.orm import declarative_base, relationship
+from sqlalchemy.orm import declarative_base, relationship, validates
 
 Base = declarative_base()
 
@@ -14,7 +15,7 @@ class MasterObject(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     ObjectType = Column(
-        Enum('APPLICATION', 'ENTITY', 'SITE', 'CREDENTIAL', 'TAG', 'PROCESS', 'JOB', name='object_type_enum'),
+        Enum('APPLICATION', 'ENTITY', 'SITE', 'CREDENTIAL', 'TAG', 'JOB', name='object_type_enum'),
         nullable=False
     )
     CreatedDateTime = Column(DateTime, default=datetime.datetime.utcnow)
@@ -120,44 +121,25 @@ class Tag(MasterObject):
     }
 
 
-class Process(MasterObject):
-    __tablename__ = 'Processes'
-
-    MasterObject_id = Column(Integer, ForeignKey('MasterObjects.id', ondelete='CASCADE'), primary_key=True)
-    Name = Column(String(150), nullable=False, unique=True)
-    Description = Column(Text, nullable=True)
-    IsActive = Column(Boolean, default=True)
-
-    # Disambiguate relationship by explicitly defining foreign_keys
-    jobs = relationship(
-        "Job",
-        foreign_keys="[Job.process_id]",
-        backref="process",
-        cascade="all, delete-orphan",
-        passive_deletes=True
-    )
-
-    __mapper_args__ = {
-        'polymorphic_identity': 'PROCESS',
-    }
-
-
 class Job(MasterObject):
     __tablename__ = 'Jobs'
 
+    # JobKey doubles as the name of the job's working folder, so it must be a safe folder name
+    JOB_KEY_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
+
     MasterObject_id = Column(Integer, ForeignKey('MasterObjects.id', ondelete='CASCADE'), primary_key=True)
-    process_id = Column(
-        "Process_MasterObject_id",
-        Integer,
-        ForeignKey('Processes.MasterObject_id', ondelete='CASCADE'),
-        nullable=False
-    )
-    Name = Column(String(150), nullable=False)
-    # Stable, environment-independent identifier the WLA scheduler passes to the runner
+    # The job's unique name: stable, environment-independent, and what the WLA scheduler passes to the runner
     JobKey = Column(String(320), nullable=False, unique=True)
     Description = Column(Text, nullable=True)
-    ExecutionOrder = Column(Integer, default=1)
     IsActive = Column(Boolean, default=True)
+
+    @validates("JobKey")
+    def _validate_job_key(self, _attribute, value):
+        if not value or not self.JOB_KEY_PATTERN.match(value):
+            raise ValueError(
+                f"Invalid JobKey '{value}': use letters, digits, '-', '_' and '.', starting with a letter or digit."
+            )
+        return value
 
     steps = relationship("JobStep", backref="job", cascade="all, delete-orphan", passive_deletes=True)
 

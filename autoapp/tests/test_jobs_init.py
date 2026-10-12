@@ -25,17 +25,15 @@ def init(db, job_key, instance_id="INST_1"):
 def test_returns_steps_in_order_with_locations_resolved(db, seed, working_root):
     endpoint = seed.endpoint("LEGAL_EXTRACTS", "/apps/legal/outbox", "${Pattern}",
                              application=seed.application("LEGAL_APP"))
-    proc = seed.process("DEV-PROC")
-    job = seed.job(proc, "LOAD", Pattern="*.csv")
+    job = seed.job("DEV-LOAD", Pattern="*.csv")
     seed.step(job, 2, title="Second", Source="incoming/*.csv", Dest="archive/${SYS:INSTANCE_ID}")
     seed.step(job, 1, title="First", SourceEndpoint="LEGAL_EXTRACTS", Dest="incoming")
 
-    response = init(db, "DEV-PROC--LOAD", instance_id="INST_9")
+    response = init(db, "DEV-LOAD", instance_id="INST_9")
 
-    work = working_root / "DEV-PROC"
+    work = working_root / "DEV-LOAD"
     first, second = response.steps
     assert response.job_id == job.MasterObject_id
-    assert response.process_id == proc.MasterObject_id
     assert response.working_folder == str(work)
     assert [first.title, second.title] == ["First", "Second"]
     assert first.handler_class == "COPY_FILES"
@@ -47,20 +45,20 @@ def test_returns_steps_in_order_with_locations_resolved(db, seed, working_root):
 
 
 def test_unknown_job_key_is_404(db, seed):
-    seed.job(seed.process("DEV-PROC"), "LOAD")
+    seed.job("DEV-LOAD")
 
     with pytest.raises(HTTPException) as error:
-        init(db, "DEV-PROC--NOPE")
+        init(db, "DEV-NOPE")
 
     assert error.value.status_code == 404
 
 
 def test_unresolved_placeholder_is_422_and_names_the_step(db, seed):
-    job = seed.job(seed.process("DEV-PROC"), "LOAD")
+    job = seed.job("DEV-LOAD")
     seed.step(job, 1, title="Collect", Source="${NoSuchVariable}/in", Dest="out")
 
     with pytest.raises(HTTPException) as error:
-        init(db, "DEV-PROC--LOAD")
+        init(db, "DEV-LOAD")
 
     assert error.value.status_code == 422
     assert "Collect" in error.value.detail
@@ -68,23 +66,22 @@ def test_unresolved_placeholder_is_422_and_names_the_step(db, seed):
 
 
 def test_raw_path_outside_the_working_folder_is_422(db, seed):
-    job = seed.job(seed.process("DEV-PROC"), "LOAD")
+    job = seed.job("DEV-LOAD")
     seed.step(job, 1, Source="/etc/*.conf", Dest="out")
 
     with pytest.raises(HTTPException) as error:
-        init(db, "DEV-PROC--LOAD")
+        init(db, "DEV-LOAD")
 
     assert error.value.status_code == 422
     assert "outside the job's working folder" in error.value.detail
 
 
-def test_job_is_found_by_key_not_by_name(db, seed):
-    """Two processes each have a job called LOAD; the key picks the right one."""
-    seed.step(seed.job(seed.process("DEV-PROC-A"), "LOAD"), 1, Source="a", Dest="out")
-    job_b = seed.job(seed.process("DEV-PROC-B"), "LOAD")
+def test_the_key_picks_the_right_job(db, seed):
+    seed.step(seed.job("DEV-LOAD-A"), 1, Source="a", Dest="out")
+    job_b = seed.job("DEV-LOAD-B")
     seed.step(job_b, 1, Source="b", Dest="out")
 
-    response = init(db, "DEV-PROC-B--LOAD")
+    response = init(db, "DEV-LOAD-B")
 
     assert response.job_id == job_b.MasterObject_id
-    assert response.steps[0].parameters["Source"].endswith("DEV-PROC-B/b")
+    assert response.steps[0].parameters["Source"].endswith("DEV-LOAD-B/b")

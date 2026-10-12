@@ -17,7 +17,6 @@ DROP TABLE IF EXISTS StepTypes;
 DROP TABLE IF EXISTS TagAssignments;
 DROP TABLE IF EXISTS Variables;
 DROP TABLE IF EXISTS Jobs;
-DROP TABLE IF EXISTS Processes;
 DROP TABLE IF EXISTS Tags;
 DROP TABLE IF EXISTS Credentials;
 DROP TABLE IF EXISTS Sites;
@@ -32,7 +31,7 @@ SET FOREIGN_KEY_CHECKS = 1;
 -- ----------------------------------------------------------------------------
 CREATE TABLE MasterObjects (
     id INT AUTO_INCREMENT PRIMARY KEY,
-    ObjectType ENUM('APPLICATION', 'ENTITY', 'SITE', 'CREDENTIAL', 'TAG', 'PROCESS', 'JOB') NOT NULL,
+    ObjectType ENUM('APPLICATION', 'ENTITY', 'SITE', 'CREDENTIAL', 'TAG', 'JOB') NOT NULL,
     CreatedDateTime DATETIME DEFAULT CURRENT_TIMESTAMP,
     CreatedBy VARCHAR(100) DEFAULT 'system',
     ModifiedDateTime DATETIME ON UPDATE CURRENT_TIMESTAMP,
@@ -88,24 +87,12 @@ CREATE TABLE Tags (
     FOREIGN KEY (MasterObject_id) REFERENCES MasterObjects(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-CREATE TABLE Processes (
+CREATE TABLE Jobs (
     MasterObject_id INT PRIMARY KEY,
-    Name VARCHAR(150) NOT NULL UNIQUE,
+    JobKey VARCHAR(320) NOT NULL UNIQUE,
     Description TEXT NULL,
     IsActive TINYINT(1) DEFAULT 1,
     FOREIGN KEY (MasterObject_id) REFERENCES MasterObjects(id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
-CREATE TABLE Jobs (
-    MasterObject_id INT PRIMARY KEY,
-    Process_MasterObject_id INT NOT NULL,
-    Name VARCHAR(150) NOT NULL,
-    JobKey VARCHAR(320) NOT NULL UNIQUE,
-    Description TEXT NULL,
-    ExecutionOrder INT DEFAULT 1,
-    IsActive TINYINT(1) DEFAULT 1,
-    FOREIGN KEY (MasterObject_id) REFERENCES MasterObjects(id) ON DELETE CASCADE,
-    FOREIGN KEY (Process_MasterObject_id) REFERENCES Processes(MasterObject_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ----------------------------------------------------------------------------

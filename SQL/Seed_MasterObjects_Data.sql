@@ -86,37 +86,23 @@ INSERT INTO Endpoints (Name, Application_MasterObject_id, Site_MasterObject_id, 
 
 
 -- ----------------------------------------------------------------------------
--- 4. Processes & Jobs (Decoupled Architecture)
+-- 4. Jobs
 -- ----------------------------------------------------------------------------
 
--- Process 1: Client Data Extract Process
-INSERT INTO MasterObjects (ObjectType, CreatedBy) VALUES ('PROCESS', 'system');
-SET @proc_extract_id = LAST_INSERT_ID();
-
-INSERT INTO Processes (MasterObject_id, Name, Description, Severity) VALUES 
-(@proc_extract_id, 'DEV-LEGAL-JAYCO-ALL_CLNT_EXTRACT', 'Client Data Extract Process', 1);
-
--- Job 1: EXTRACT_DATA
+-- Job 1: client data extract
 INSERT INTO MasterObjects (ObjectType, CreatedBy) VALUES ('JOB', 'system');
 SET @job_extract_id = LAST_INSERT_ID();
 
-INSERT INTO Jobs (MasterObject_id, Process_MasterObject_id, Name, JobKey, JobOrder, Description) VALUES 
-(@job_extract_id, @proc_extract_id, 'EXTRACT_DATA', 'DEV-LEGAL-JAYCO-ALL_CLNT_EXTRACT--EXTRACT_DATA', 1, 'Executes Extract File Copy/Archiving');
+INSERT INTO Jobs (MasterObject_id, JobKey, Description) VALUES 
+(@job_extract_id, 'DEV-LEGAL-JAYCO-ALL_CLNT_EXTRACT', 'Executes Extract File Copy/Archiving');
 
 
--- Process 2: Massmarket Feed Process
-INSERT INTO MasterObjects (ObjectType, CreatedBy) VALUES ('PROCESS', 'system');
-SET @proc_feed_id = LAST_INSERT_ID();
-
-INSERT INTO Processes (MasterObject_id, Name, Description, Severity) VALUES 
-(@proc_feed_id, 'DEV-ABC-MASSMARKET-FEED_CLNT', 'Massmarket Feed Process', 1);
-
--- Job 2: SEND_DATA
+-- Job 2: massmarket feed
 INSERT INTO MasterObjects (ObjectType, CreatedBy) VALUES ('JOB', 'system');
 SET @job_send_id = LAST_INSERT_ID();
 
-INSERT INTO Jobs (MasterObject_id, Process_MasterObject_id, Name, JobKey, JobOrder, Description) VALUES 
-(@job_send_id, @proc_feed_id, 'SEND_DATA', 'DEV-ABC-MASSMARKET-FEED_CLNT--SEND_DATA', 1, 'Sends Feed Data to Target');
+INSERT INTO Jobs (MasterObject_id, JobKey, Description) VALUES 
+(@job_send_id, 'DEV-ABC-MASSMARKET-FEED_CLNT', 'Sends Feed Data to Target');
 
 
 -- ----------------------------------------------------------------------------
@@ -132,11 +118,11 @@ SET @tag_dept_legal_id = LAST_INSERT_ID();
 INSERT INTO Tags (MasterObject_id, Name, Slug, Category, Description) VALUES 
 (@tag_dept_legal_id, 'Dept:Legal', 'dept-legal', 'Department', 'Legal Department Automation');
 
--- Assign Tags to Processes via MasterObject IDs
+-- Assign Tags to Jobs via MasterObject IDs
 INSERT INTO TagAssignments (Tag_MasterObject_id, Target_MasterObject_id) VALUES
-(@tag_env_dev_id, @proc_extract_id),
-(@tag_dept_legal_id, @proc_extract_id),
-(@tag_env_dev_id, @proc_feed_id);
+(@tag_env_dev_id, @job_extract_id),
+(@tag_dept_legal_id, @job_extract_id),
+(@tag_env_dev_id, @job_send_id);
 
 
 -- ----------------------------------------------------------------------------
@@ -147,8 +133,8 @@ INSERT INTO Variables (MasterObject_id, VarName, VarValue, Description, CreatedB
 (@entity_legal_id, 'WorkingFolder', '/home/jayboal/Testing/working/DEV/LEGAL/JAYCO/ALL_CLNT_EXTRACT', 'Legal default working folder', 'system'),
 (@entity_legal_id, 'ArchiveFolder', '/home/jayboal/Testing/archive/DEV/LEGAL/JAYCO/ALL_CLNT_EXTRACT', 'Legal default archive folder', 'system'),
 
--- Process Level Variable Overrides
-(@proc_extract_id, 'SourceFilenamePattern', 'Extract_<yyyyMMdd>.csv', 'File pattern for client extract', 'system'),
-(@proc_feed_id, 'SourceFilenamePattern', '<yyyyMMdd>_*file*.txt', 'File pattern for massmarket feed', 'system');
+-- Job Level Variable Overrides
+(@job_extract_id, 'SourceFilenamePattern', 'Extract_<yyyyMMdd>.csv', 'File pattern for client extract', 'system'),
+(@job_send_id, 'SourceFilenamePattern', '<yyyyMMdd>_*file*.txt', 'File pattern for massmarket feed', 'system');
 
 SET FOREIGN_KEY_CHECKS = 1;

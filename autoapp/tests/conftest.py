@@ -12,7 +12,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.models import (
-    Application, Base, Endpoint, Entity, Job, JobStep, JobStepParameter, Process, Site, StepType, Variable
+    Application, Base, Endpoint, Entity, Job, JobStep, JobStepParameter, Site, StepType, Variable
 )
 
 
@@ -47,13 +47,8 @@ class Seeder:
             self.db.add(Variable(MasterObject_id=owner.MasterObject_id, VarName=name, VarValue=value))
         self.db.flush()
 
-    def process(self, name="DEV-TEST-PROC", **variables):
-        proc = self._add(Process(Name=name))
-        self.set_vars(proc, **variables)
-        return proc
-
-    def job(self, process, name="TEST_JOB", **variables):
-        job = self._add(Job(process_id=process.MasterObject_id, Name=name, JobKey=f"{process.Name}--{name}"))
+    def job(self, key="TEST_JOB", **variables):
+        job = self._add(Job(JobKey=key))
         self.set_vars(job, **variables)
         return job
 

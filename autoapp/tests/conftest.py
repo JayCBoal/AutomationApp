@@ -53,7 +53,7 @@ class Seeder:
         return proc
 
     def job(self, process, name="TEST_JOB", **variables):
-        job = self._add(Job(process_id=process.MasterObject_id, Name=name))
+        job = self._add(Job(process_id=process.MasterObject_id, Name=name, JobKey=f"{process.Name}--{name}"))
         self.set_vars(job, **variables)
         return job
 

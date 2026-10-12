@@ -100,8 +100,8 @@ INSERT INTO Processes (MasterObject_id, Name, Description, Severity) VALUES
 INSERT INTO MasterObjects (ObjectType, CreatedBy) VALUES ('JOB', 'system');
 SET @job_extract_id = LAST_INSERT_ID();
 
-INSERT INTO Jobs (MasterObject_id, Process_MasterObject_id, Name, JobOrder, Description) VALUES 
-(@job_extract_id, @proc_extract_id, 'EXTRACT_DATA', 1, 'Executes Extract File Copy/Archiving');
+INSERT INTO Jobs (MasterObject_id, Process_MasterObject_id, Name, JobKey, JobOrder, Description) VALUES 
+(@job_extract_id, @proc_extract_id, 'EXTRACT_DATA', 'DEV-LEGAL-JAYCO-ALL_CLNT_EXTRACT--EXTRACT_DATA', 1, 'Executes Extract File Copy/Archiving');
 
 
 -- Process 2: Massmarket Feed Process
@@ -115,8 +115,8 @@ INSERT INTO Processes (MasterObject_id, Name, Description, Severity) VALUES
 INSERT INTO MasterObjects (ObjectType, CreatedBy) VALUES ('JOB', 'system');
 SET @job_send_id = LAST_INSERT_ID();
 
-INSERT INTO Jobs (MasterObject_id, Process_MasterObject_id, Name, JobOrder, Description) VALUES 
-(@job_send_id, @proc_feed_id, 'SEND_DATA', 1, 'Sends Feed Data to Target');
+INSERT INTO Jobs (MasterObject_id, Process_MasterObject_id, Name, JobKey, JobOrder, Description) VALUES 
+(@job_send_id, @proc_feed_id, 'SEND_DATA', 'DEV-ABC-MASSMARKET-FEED_CLNT--SEND_DATA', 1, 'Sends Feed Data to Target');
 
 
 -- ----------------------------------------------------------------------------

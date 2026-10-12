@@ -14,11 +14,11 @@ AUTOAPP_DIR = Path(__file__).resolve().parents[1]
 
 @pytest.fixture
 def run_runner(db, db_url, tmp_path):
-    def _run(job_id, instance_id="RUN_001"):
+    def _run(job_key, instance_id="RUN_001"):
         db.commit()
         return subprocess.run(
             [sys.executable, "-m", "engine.runner",
-             "--job-id", str(job_id),
+             "--job-key", job_key,
              "--instance-id", instance_id,
              "--spool-dir", str(tmp_path / "spool")],
             cwd=AUTOAPP_DIR,
@@ -49,7 +49,7 @@ def test_job_runs_its_steps_in_order(seed, run_runner, inbound, tmp_path, spool_
     seed.step(job, 2, title="Deliver", Source="${Inbound}/${Pattern}", Dest="${Outbound}", Move="True")
     seed.step(job, 1, title="Archive", Source="${Inbound}/${Pattern}", Dest="${Archive}/${SYS:INSTANCE_ID}")
 
-    result = run_runner(job.MasterObject_id, instance_id="RUN_001")
+    result = run_runner(job.JobKey, instance_id="RUN_001")
 
     assert result.returncode == 0, result.stderr
     assert names(archive / "RUN_001") == ["Legal_Batch_1.csv", "Legal_Batch_2.csv"]
@@ -66,7 +66,7 @@ def test_unresolved_placeholder_fails_the_job_before_touching_files(seed, run_ru
     job = seed.job(proc)
     seed.step(job, 1, Source="${Inbound}/*.csv", Dest="${NoSuchFolder}/out")
 
-    result = run_runner(job.MasterObject_id)
+    result = run_runner(job.JobKey)
 
     assert result.returncode == 1
     assert "${NoSuchFolder}" in result.stderr
@@ -81,7 +81,7 @@ def test_failing_step_stops_the_job(seed, run_runner, inbound, tmp_path, spool_r
     seed.step(job, 1, Source="${Inbound}/*.csv", Dest=str(tmp_path / "missing"), CreateFolder="False")
     seed.step(job, 2, Source="${Inbound}/*.csv", Dest="${Outbound}")
 
-    result = run_runner(job.MasterObject_id)
+    result = run_runner(job.JobKey)
 
     assert result.returncode == 1
     assert not (tmp_path / "outbound").exists()
@@ -92,25 +92,39 @@ def test_unknown_step_type_fails_the_job(seed, run_runner, inbound, tmp_path):
     job = seed.job(seed.process())
     seed.step(job, 1, code="SQL_EXEC", Query="SELECT 1")
 
-    result = run_runner(job.MasterObject_id)
+    result = run_runner(job.JobKey)
 
     assert result.returncode == 1
     assert "SQL_EXEC" in result.stderr
 
 
+def test_job_is_found_by_key_not_by_name(seed, run_runner, inbound, tmp_path):
+    """Two processes each have a job called LOAD; only the one whose key is passed runs."""
+    proc_a = seed.process("DEV-PROC-A", Out=str(tmp_path / "out_a"))
+    proc_b = seed.process("DEV-PROC-B", Out=str(tmp_path / "out_b"))
+    for proc in (proc_a, proc_b):
+        seed.step(seed.job(proc, "LOAD"), 1, Source=str(inbound / "*.csv"), Dest="${Out}")
+
+    result = run_runner("DEV-PROC-B--LOAD")
+
+    assert result.returncode == 0, result.stderr
+    assert (tmp_path / "out_b").exists()
+    assert not (tmp_path / "out_a").exists()
+
+
 def test_unknown_job_fails(seed, run_runner):
     seed.job(seed.process())
 
-    result = run_runner(9999)
+    result = run_runner("NO-SUCH-PROC--NO_SUCH_JOB")
 
     assert result.returncode == 1
-    assert "9999" in result.stderr
+    assert "NO-SUCH-PROC--NO_SUCH_JOB" in result.stderr
 
 
 def test_job_with_no_steps_fails(seed, run_runner):
     job = seed.job(seed.process())
 
-    result = run_runner(job.MasterObject_id)
+    result = run_runner(job.JobKey)
 
     assert result.returncode == 1
     assert "no active steps" in result.stderr

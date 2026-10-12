@@ -93,23 +93,29 @@ def test_unknown_job_raises(db, seed):
         engine.build_context()
 
 
-# --- Known gaps -------------------------------------------------------------
-# These describe behaviour the engine should have but does not yet. They are
-# reported as XFAIL. strict=True means that once the engine is fixed the test
-# is reported as a failure until this marker is removed, so a gap cannot close
-# (or reopen) unnoticed.
-
-@pytest.mark.xfail(strict=True, reason="scope engine does not resolve variables nested inside variables")
 def test_variable_containing_another_variable_is_fully_resolved(db, seed):
     proc = seed.process(Root="/data", WorkingFolder="${Root}/working")
-    job = seed.job(proc)
+    job = seed.job(proc, Target="${WorkingFolder}/${SYS:INSTANCE_ID}")
 
-    assert engine_for(db, job).interpolate("${WorkingFolder}") == "/data/working"
+    assert engine_for(db, job, "INST_7").interpolate("${Target}/out.csv") == "/data/working/INST_7/out.csv"
 
 
-@pytest.mark.xfail(strict=True, reason="scope engine passes unknown placeholders through instead of raising")
-def test_unresolved_placeholder_raises(db, seed):
-    engine = engine_for(db, seed.job(seed.process()))
+def test_unresolved_placeholder_raises_and_names_it(db, seed):
+    engine = engine_for(db, seed.job(seed.process(Known="x")))
 
-    with pytest.raises(ValueError):
-        engine.interpolate("${NoSuchVariable}/in")
+    with pytest.raises(ValueError, match=r"\$\{NoSuchVariable\}"):
+        engine.interpolate("${Known}/${NoSuchVariable}/in")
+
+
+def test_unresolved_placeholder_inside_a_variable_raises(db, seed):
+    engine = engine_for(db, seed.job(seed.process(WorkingFolder="${Missing}/working")))
+
+    with pytest.raises(ValueError, match=r"\$\{Missing\}"):
+        engine.interpolate("${WorkingFolder}")
+
+
+def test_circular_variable_reference_raises(db, seed):
+    engine = engine_for(db, seed.job(seed.process(A="${B}", B="${A}")))
+
+    with pytest.raises(ValueError, match="circular"):
+        engine.interpolate("${A}")

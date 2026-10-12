@@ -99,6 +99,7 @@ def seed_database():
         job_extract = Job(
             process_id=proc_extract.MasterObject_id,
             Name="RUN_EXTRACT",
+            JobKey="DEV-LEGAL-EXTRACT--RUN_EXTRACT",
             Description="Extracts files and logs audit entry",
             ExecutionOrder=1,
             IsActive=True,

@@ -100,6 +100,7 @@ CREATE TABLE Jobs (
     MasterObject_id INT PRIMARY KEY,
     Process_MasterObject_id INT NOT NULL,
     Name VARCHAR(150) NOT NULL,
+    JobKey VARCHAR(320) NOT NULL UNIQUE,
     Description TEXT NULL,
     ExecutionOrder INT DEFAULT 1,
     IsActive TINYINT(1) DEFAULT 1,

@@ -51,7 +51,8 @@ def seed(db_url, run_dir):
     proc = Process(Name="DEMO-LEGAL-JAYCO-CLNT_EXTRACT", Description="Demo process")
     db.add_all([copy_type, proc])
     db.flush()
-    job = Job(process_id=proc.MasterObject_id, Name="ARCHIVE_AND_DELIVER", Description="Demo job")
+    job = Job(process_id=proc.MasterObject_id, Name="ARCHIVE_AND_DELIVER",
+              JobKey=f"{proc.Name}--ARCHIVE_AND_DELIVER", Description="Demo job")
     db.add(job)
     db.flush()
 
@@ -81,10 +82,11 @@ def seed(db_url, run_dir):
             db.add(JobStepParameter(job_step_id=step.id, ParamName=name, ParamValue=value))
 
     db.commit()
-    job_id = job.MasterObject_id
+    job_key = job.JobKey
 
     print(f"    Process : {proc.Name}")
-    print(f"    Job     : {job.Name} (id {job_id})")
+    print(f"    Job     : {job.Name}")
+    print(f"    JobKey  : {job_key}")
     for owner_label, values in (("process", variables[proc]), ("job", variables[job])):
         for name, value in values.items():
             print(f"    Variable: {name} = {value}   [{owner_label}]")
@@ -95,7 +97,7 @@ def seed(db_url, run_dir):
 
     db.close()
     engine.dispose()
-    return job_id
+    return job_key
 
 
 def main():
@@ -108,7 +110,7 @@ def main():
 
     heading("1. Seeding the database")
     print(f"    {db_url}")
-    job_id = seed(db_url, run_dir)
+    job_key = seed(db_url, run_dir)
 
     heading("2. Creating input files")
     (inbound / "Legal_Batch_001.csv").write_text("client,amount\nACME,100\n")
@@ -118,7 +120,7 @@ def main():
 
     heading("3. Running the job (the command a scheduler would issue)")
     command = [sys.executable, "-m", "engine.runner",
-               "--job-id", str(job_id),
+               "--job-key", job_key,
                "--instance-id", instance_id,
                "--spool-dir", str(run_dir / "spool")]
     print(f"    cd {AUTOAPP_DIR}")

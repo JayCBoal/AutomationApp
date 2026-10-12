@@ -8,14 +8,13 @@ Runs every active step of one Job, in StepOrder, and returns an OS exit code
 import argparse
 import logging
 import os
-import re
 import sys
 from typing import Any, Dict
 
 from sqlalchemy.orm import Session
 
 from app.database import SessionLocal
-from app.models import JobStep
+from app.models import Job, JobStep
 from engine.handlers import get_handler
 from engine.scope_engine import ScopeResolutionEngine
 from engine.telemetry_client import LocalSpoolTelemetryClient
@@ -23,26 +22,16 @@ from engine.telemetry_client import LocalSpoolTelemetryClient
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("AutoApp.Runner")
 
-UNRESOLVED_PATTERN = re.compile(r"\$\{[^}]+\}")
-
 
 def resolve_step_params(step: JobStep, scope_engine: ScopeResolutionEngine) -> Dict[str, Any]:
-    """Interpolates a step's parameters; refuses to continue if any placeholder is left over."""
-    params = {p.ParamName: scope_engine.interpolate(p.ParamValue) for p in step.parameters}
-
-    unresolved = sorted({
-        placeholder
-        for value in params.values() if isinstance(value, str)
-        for placeholder in UNRESOLVED_PATTERN.findall(value)
-    })
-    if unresolved:
-        raise ValueError(
-            f"Step {step.StepOrder} ('{step.Title}') has unresolved placeholder(s): {', '.join(unresolved)}"
-        )
-    return params
+    """Interpolates a step's parameters; an unresolved placeholder fails the step."""
+    try:
+        return {p.ParamName: scope_engine.interpolate(p.ParamValue) for p in step.parameters}
+    except ValueError as e:
+        raise ValueError(f"Step {step.StepOrder} ('{step.Title}'): {e}") from e
 
 
-def run_job(db: Session, job_id: int, instance_id: str, spool_dir: str) -> int:
+def run_job(db: Session, job_key: str, instance_id: str, spool_dir: str) -> int:
     """Executes the job and returns the exit code to hand back to the scheduler."""
     actor = f"Runner_PID_{os.getpid()}"
 
@@ -51,10 +40,15 @@ def run_job(db: Session, job_id: int, instance_id: str, spool_dir: str) -> int:
         def audit(action: str, status: str, details: Dict[str, Any] = None) -> None:
             telemetry.log_audit(
                 action=action, actor=actor, resource_type="Job",
-                resource_id=str(job_id), status=status, details=details
+                resource_id=job_key, status=status, details=details
             )
 
         try:
+            job = db.query(Job).filter(Job.JobKey == job_key).first()
+            if not job:
+                raise ValueError(f"No job with JobKey '{job_key}' exists.")
+            job_id = job.MasterObject_id
+
             scope_engine = ScopeResolutionEngine(db=db, job_id=job_id, instance_id=instance_id)
             scope_engine.build_context()
 
@@ -65,7 +59,7 @@ def run_job(db: Session, job_id: int, instance_id: str, spool_dir: str) -> int:
                 .all()
             )
             if not steps:
-                raise ValueError(f"Job {job_id} has no active steps.")
+                raise ValueError(f"Job '{job_key}' has no active steps.")
 
             audit("JOB_STARTED", "STARTED", {"step_count": len(steps)})
 
@@ -82,25 +76,25 @@ def run_job(db: Session, job_id: int, instance_id: str, spool_dir: str) -> int:
                 handler.run(resolved_params)
 
         except Exception as e:
-            logger.error(f"Job {job_id} failed: {e}")
+            logger.error(f"Job '{job_key}' failed: {e}")
             audit("JOB_FAILED", "FAILED", {"error": str(e)})
             return 1
 
         audit("JOB_COMPLETED", "SUCCESS")
-        logger.info(f"Job {job_id} completed successfully.")
+        logger.info(f"Job '{job_key}' completed successfully.")
         return 0
 
 
 def main():
     parser = argparse.ArgumentParser(description="AutoApp Lightweight Execution Runner")
-    parser.add_argument("--job-id", required=True, type=int, help="MasterObject ID of the target Job")
+    parser.add_argument("--job-key", required=True, help="JobKey of the target Job (e.g. DEV-PROC--JOBA)")
     parser.add_argument("--instance-id", required=True, help="Unique execution Instance ID passed from WLA")
     parser.add_argument("--spool-dir", default="./spool", help="Directory for telemetry spool files")
     args = parser.parse_args()
 
     db: Session = SessionLocal()
     try:
-        exit_code = run_job(db, args.job_id, args.instance_id, args.spool_dir)
+        exit_code = run_job(db, args.job_key, args.instance_id, args.spool_dir)
     finally:
         db.close()
     sys.exit(exit_code)

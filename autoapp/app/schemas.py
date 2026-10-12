@@ -4,9 +4,8 @@ from typing import List, Optional, Dict, Any
 
 # --- Job Init Schemas ---
 class JobInitRequest(BaseModel):
-    job_name: str = Field(..., description="Name or unique key of the target Job")
+    job_key: str = Field(..., description="JobKey of the target Job")
     instance_id: str = Field(..., description="Unique execution instance identifier")
-    process_name: Optional[str] = Field(None, description="Optional parent Process name override")
     run_count: Optional[int] = Field(1, description="Execution run attempt counter")
     wla_scheduler_id: Optional[str] = Field("LOCAL_DEV", description="Triggering scheduler ID")
     

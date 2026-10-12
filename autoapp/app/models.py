@@ -153,6 +153,8 @@ class Job(MasterObject):
         nullable=False
     )
     Name = Column(String(150), nullable=False)
+    # Stable, environment-independent identifier the WLA scheduler passes to the runner
+    JobKey = Column(String(320), nullable=False, unique=True)
     Description = Column(Text, nullable=True)
     ExecutionOrder = Column(Integer, default=1)
     IsActive = Column(Boolean, default=True)

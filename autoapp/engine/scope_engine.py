@@ -16,6 +16,10 @@ class ScopeResolutionEngine:
         r"\$\{(SYS|APP|ENTITY|PROC|JOB)\.([^}]+)\}"
     )
     IMPLICIT_VAR_PATTERN = re.compile(r"\$\{([a-zA-Z0-9_:]+)\}")
+    ANY_PLACEHOLDER_PATTERN = re.compile(r"\$\{[^}]+\}")
+
+    # A variable's value may itself contain placeholders; stop after this many passes
+    MAX_NESTING_DEPTH = 10
 
     # Default hierarchy precedence (Low priority -> High priority)
     DEFAULT_PRECEDENCE = ["SYS", "ENTITY", "APP", "PROC", "TAG", "JOB"]
@@ -184,10 +188,33 @@ class ScopeResolutionEngine:
         return None
 
     def interpolate(self, text: str) -> str:
-        """Interpolates placeholders matching ${...} syntax."""
+        """
+        Interpolates placeholders matching ${...} syntax, including placeholders
+        inside variable values. Raises ValueError if any placeholder cannot be resolved.
+        """
         if not isinstance(text, str) or "${" not in text:
             return text
 
+        original = text
+        for _ in range(self.MAX_NESTING_DEPTH):
+            resolved = self._interpolate_once(text)
+            if resolved == text:
+                break
+            text = resolved
+        else:
+            raise ValueError(
+                f"Placeholders in '{original}' are nested more than {self.MAX_NESTING_DEPTH} levels deep "
+                f"(circular variable reference?)"
+            )
+
+        unresolved = sorted(set(self.ANY_PLACEHOLDER_PATTERN.findall(text)))
+        if unresolved:
+            raise ValueError(f"Unresolved placeholder(s) in '{original}': {', '.join(unresolved)}")
+
+        return text
+
+    def _interpolate_once(self, text: str) -> str:
+        """Single substitution pass; unknown placeholders are left in place."""
         # 1. Resolve Explicit Targeted Syntax: ${SCOPE:TargetName.VarName}
         def replace_explicit_target(match):
             scope_type, target_name, var_name = (

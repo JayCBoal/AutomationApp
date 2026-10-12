@@ -10,6 +10,14 @@ class BaseHandler(ABC):
     Provides standardized step execution wrapping, execution timing, 
     and local spool telemetry logging.
     """
+    # Parameters that hold file locations, mapped to their role ("source" or "dest").
+    # Each may be given as a raw path inside the working folder (e.g. Source) or as
+    # the name of a registered Endpoint (e.g. SourceEndpoint). See engine/step_params.py.
+    PATH_PARAMS: Dict[str, str] = {}
+
+    # Whether the handler can reach Endpoints that live on a remote Site
+    SUPPORTS_REMOTE_SITES = False
+
     def __init__(self, step_config: Dict[str, Any], telemetry_client: TelemetryClient):
         self.step_config = step_config
         self.step_id = step_config.get("StepID")
@@ -70,7 +78,9 @@ class BaseHandler(ABC):
                 dest_path=result_data.get("dest_path"),
                 dest_filename=result_data.get("dest_filename"),
                 bytes_transferred=result_data.get("bytes_transferred"),
-                details=details
+                details=details,
+                source_endpoint_id=self.step_config.get("SourceEndpointID"),
+                dest_endpoint_id=self.step_config.get("DestEndpointID")
             )
 
         return {"status": status, "execution_time_ms": elapsed_ms, "result": result_data}

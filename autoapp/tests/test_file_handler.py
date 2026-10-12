@@ -126,3 +126,12 @@ def test_failure_is_recorded_in_the_spool(folders, spool_records):
     assert audit["Action"] == "STEP_EXECUTION_FAILURE"
     assert operation["Status"] == "FAILED"
     assert "error_message" in operation["Details"]
+
+
+def test_missing_source_or_destination_is_a_clear_error(folders):
+    src, dest, spool = folders
+
+    with pytest.raises(ValueError, match="source"):
+        run_handler(spool, {"Dest": str(dest)})
+    with pytest.raises(ValueError, match="destination"):
+        run_handler(spool, {"Source": str(src / "*.csv")})

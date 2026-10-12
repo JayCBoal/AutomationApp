@@ -1,4 +1,6 @@
+import os
 import re
+from contextlib import contextmanager
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 from sqlalchemy.orm import Session
@@ -52,6 +54,12 @@ class ScopeResolutionEngine:
 
         # Merged cascade dictionary
         self.resolved_cascade: Dict[str, Any] = {}
+        self._tag_cascade_vars: Dict[str, Any] = {}
+
+    @property
+    def working_folder(self) -> Optional[str]:
+        """The job's working folder (${SYS:WORKING_FOLDER}), or None if no working root is configured."""
+        return self.scoped_vars["SYS"].get("WORKING_FOLDER")
 
     def _get_variables_for_master_object(
         self, master_object_id: int
@@ -75,7 +83,7 @@ class ScopeResolutionEngine:
             curr = getattr(curr, "parent_tag", None)
         return list(reversed(chain))
 
-    def build_context(self, endpoint: Optional[Any] = None) -> Dict[str, Any]:
+    def build_context(self) -> Dict[str, Any]:
         """Populates scope caches and eager-merges the execution context dictionary."""
         now = datetime.now()
 
@@ -96,26 +104,13 @@ class ScopeResolutionEngine:
 
         process: Optional[Process] = job.process
 
-        # 3. Endpoint & Site Resolution (Indirect Entity Lookup)
-        # Applications attach directly to Endpoints; Entities attach indirectly via Sites (Endpoint -> Site -> Entity)
-        if endpoint:
-            app = getattr(endpoint, "application", None)
-            site = getattr(endpoint, "site", None)
-            entity = site.entity if site else None
-        else:
-            app = None
-            site = None
-            entity = None
+        # 3. Working folder: <working root>/<process name>, shared by the jobs of a process
+        working_root = self.global_config.get("WORKING_ROOT") or os.environ.get("AUTOAPP_WORKING_ROOT")
+        if working_root and process:
+            self.scoped_vars["SYS"]["WORKING_FOLDER"] = os.path.join(working_root, process.Name)
 
         # 4. Populate Associated Scopes
-        if entity:
-            self.scoped_vars["ENTITY"] = self._get_variables_for_master_object(
-                entity.MasterObject_id
-            )
-        if app:
-            self.scoped_vars["APP"] = self._get_variables_for_master_object(
-                app.MasterObject_id
-            )
+        # ENTITY and APP belong to an Endpoint, not to the job; see interpolate(text, endpoint=...)
         if process:
             self.scoped_vars["PROC"] = self._get_variables_for_master_object(
                 process.MasterObject_id
@@ -126,11 +121,11 @@ class ScopeResolutionEngine:
 
         # 5. Resolve Tags (Root -> Leaf merge)
         associated_tags: List[Tag] = []
-        for obj in [app, site, entity, process, job]:
+        for obj in [process, job]:
             if obj and hasattr(obj, "tags"):
                 associated_tags.extend(obj.tags)
 
-        tag_cascade_vars: Dict[str, Any] = {}
+        self._tag_cascade_vars = {}
         for tag in associated_tags:
             tag_chain = self._resolve_tag_hierarchy_root_to_leaf(tag)
             for t in tag_chain:
@@ -139,20 +134,42 @@ class ScopeResolutionEngine:
                 )
                 tag_name = getattr(t, "TagName", getattr(t, "Name", str(t.MasterObject_id)))
                 self.scoped_vars["TAG"][tag_name] = t_vars
-                tag_cascade_vars.update(t_vars)
+                self._tag_cascade_vars.update(t_vars)
 
         # 6. Eager Context Dict Merge based on Configurable Precedence
+        self.resolved_cascade = self._merge_cascade()
+        return self.resolved_cascade
+
+    def _merge_cascade(self) -> Dict[str, Any]:
+        """Merges the scope caches into one dictionary, lowest priority first."""
         precedence = self.global_config.get(
             "CASCADE_PRECEDENCE", self.DEFAULT_PRECEDENCE
         )
-
+        merged: Dict[str, Any] = {}
         for scope in precedence:
             if scope == "TAG":
-                self.resolved_cascade.update(tag_cascade_vars)
+                merged.update(self._tag_cascade_vars)
             elif scope in self.scoped_vars:
-                self.resolved_cascade.update(self.scoped_vars[scope])
+                merged.update(self.scoped_vars[scope])
+        return merged
 
-        return self.resolved_cascade
+    @contextmanager
+    def _endpoint_scope(self, endpoint: Any):
+        """
+        Temporarily fills the APP and ENTITY scopes from an Endpoint.
+        Applications attach directly to Endpoints; Entities attach via Sites (Endpoint -> Site -> Entity).
+        """
+        saved = (self.scoped_vars["APP"], self.scoped_vars["ENTITY"], self.resolved_cascade)
+
+        app = endpoint.application
+        entity = endpoint.site.entity if endpoint.site else None
+        self.scoped_vars["APP"] = self._get_variables_for_master_object(app.MasterObject_id) if app else {}
+        self.scoped_vars["ENTITY"] = self._get_variables_for_master_object(entity.MasterObject_id) if entity else {}
+        self.resolved_cascade = self._merge_cascade()
+        try:
+            yield
+        finally:
+            self.scoped_vars["APP"], self.scoped_vars["ENTITY"], self.resolved_cascade = saved
 
     def _fetch_explicit_target_var(
         self, scope_type: str, target_name: str, var_name: str
@@ -187,14 +204,23 @@ class ScopeResolutionEngine:
 
         return None
 
-    def interpolate(self, text: str) -> str:
+    def interpolate(self, text: str, endpoint: Optional[Any] = None) -> str:
         """
         Interpolates placeholders matching ${...} syntax, including placeholders
         inside variable values. Raises ValueError if any placeholder cannot be resolved.
+
+        When an Endpoint is given, ${APP.x} and ${ENTITY.x} (and the implicit cascade)
+        resolve against that Endpoint's Application and its Site's Entity.
         """
         if not isinstance(text, str) or "${" not in text:
             return text
 
+        if endpoint is not None:
+            with self._endpoint_scope(endpoint):
+                return self._interpolate(text)
+        return self._interpolate(text)
+
+    def _interpolate(self, text: str) -> str:
         original = text
         for _ in range(self.MAX_NESTING_DEPTH):
             resolved = self._interpolate_once(text)

@@ -16,6 +16,8 @@ class JobStepPayloadSchema(BaseModel):
     handler_class: str
     title: str
     parameters: Dict[str, Any]
+    source_endpoint_id: Optional[int] = None
+    dest_endpoint_id: Optional[int] = None
 
 
 class JobInitResponse(BaseModel):

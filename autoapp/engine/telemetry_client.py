@@ -35,7 +35,9 @@ class LocalSpoolTelemetryClient:
         dest_path: Optional[str] = None,
         dest_filename: Optional[str] = None,
         bytes_transferred: Optional[int] = None,
-        details: Optional[Dict[str, Any]] = None
+        details: Optional[Dict[str, Any]] = None,
+        source_endpoint_id: Optional[int] = None,
+        dest_endpoint_id: Optional[int] = None
     ) -> None:
         """
         Appends an operation log entry directly to the process-isolated spool file.
@@ -51,6 +53,8 @@ class LocalSpoolTelemetryClient:
             "DestPath": dest_path,
             "DestFilename": dest_filename,
             "BytesTransferred": bytes_transferred,
+            "SourceEndpointID": source_endpoint_id,
+            "DestEndpointID": dest_endpoint_id,
             "Details": details or {},
             "LoggedAtUtc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         }

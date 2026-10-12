@@ -5,7 +5,9 @@ from typing import Dict, Any, List, Optional
 from app.database import get_db
 from app.models import Job, JobStep
 from app.schemas import JobInitRequest, JobInitResponse, JobStepPayloadSchema
+from engine.handlers import get_handler
 from engine.scope_engine import ScopeResolutionEngine
+from engine.step_params import resolve_step
 
 router = APIRouter(prefix="/api/v1/jobs", tags=["Job Execution"])
 
@@ -40,27 +42,30 @@ def initialize_job(payload: JobInitRequest, db: Session = Depends(get_db)):
 
     compiled_steps: List[JobStepPayloadSchema] = []
     for step in job_steps:
-        interpolated_params: Dict[str, Any] = {}
-        for param in step.parameters:
-            try:
-                interpolated_params[param.ParamName] = engine.interpolate(param.ParamValue)
-            except ValueError as e:
-                raise HTTPException(
-                    status_code=422,
-                    detail=f"Step {step.StepOrder} ('{step.Title}'), parameter '{param.ParamName}': {e}"
-                )
+        step_type = step.step_type.HandlerClass if step.step_type else None
+        try:
+            handler_cls = get_handler(step_type) if step_type else None
+        except ValueError:
+            handler_cls = None  # no handler on this server; parameters are still interpolated
+
+        try:
+            resolved = resolve_step(step, handler_cls, engine, db)
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail=str(e))
 
         compiled_steps.append(
             JobStepPayloadSchema(
                 step_number=step.StepOrder,
                 step_type=step.step_type.TypeName if step.step_type else "GENERIC",
-                handler_class=step.step_type.HandlerClass if step.step_type else "BaseHandler",
+                handler_class=step_type or "BaseHandler",
                 title=step.Title,
-                parameters=interpolated_params
+                parameters=resolved.params,
+                source_endpoint_id=resolved.source_endpoint_id,
+                dest_endpoint_id=resolved.dest_endpoint_id
             )
         )
 
-    working_folder = str(engine.scoped_vars["SYS"].get("WORKING_FOLDER", ""))
+    working_folder = engine.working_folder or ""
 
     return JobInitResponse(
         status="SUCCESS",

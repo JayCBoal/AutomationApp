@@ -80,9 +80,9 @@ INSERT INTO Sites (MasterObject_id, Name, Entity_MasterObject_id, Host, Port, Pr
 -- ----------------------------------------------------------------------------
 -- 3. Consolidated Endpoints
 -- ----------------------------------------------------------------------------
-INSERT INTO Endpoints (EndpointType, Application_MasterObject_id, Entity_MasterObject_id, Site_MasterObject_id, Path, FilenamePattern) VALUES
-('SOURCE', @app_jay_auto_id, @entity_legal_id, @site_applp_id, '/home/jayboal/Testing/applp/ABC/from_app', 'Extract_*.csv'),
-('DELIVERY', @app_jay_auto_id, @entity_massmarket_id, @site_applp_id, '/home/jayboal/Testing/applp/ABC/to_app', '*.txt');
+INSERT INTO Endpoints (Name, Application_MasterObject_id, Site_MasterObject_id, Path, FilenamePattern) VALUES
+('ABC_FROM_APP_EXTRACTS', @app_jay_auto_id, @site_applp_id, '/home/jayboal/Testing/applp/ABC/from_app', 'Extract_*.csv'),
+('ABC_TO_APP_TEXT', @app_jay_auto_id, @site_applp_id, '/home/jayboal/Testing/applp/ABC/to_app', '*.txt');
 
 
 -- ----------------------------------------------------------------------------

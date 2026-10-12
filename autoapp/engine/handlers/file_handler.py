@@ -11,9 +11,13 @@ class FileOpHandler(BaseHandler):
     within the AutoApp engine.
     """
 
+    PATH_PARAMS = {"Source": "source", "Dest": "dest"}
+
     def execute_step(self, resolved_params: dict) -> dict:
         source_pattern = resolved_params.get("Source")
         dest_path = resolved_params.get("Dest")
+        if not source_pattern or not dest_path:
+            raise ValueError("A file step needs both a source (Source or SourceEndpoint) and a destination (Dest or DestEndpoint).")
         move = str(resolved_params.get("Move", "False")).lower() in ("true", "1", "yes")
         create_folder = str(resolved_params.get("CreateFolder", "True")).lower() in ("true", "1", "yes")
 

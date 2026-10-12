@@ -119,3 +119,45 @@ def test_circular_variable_reference_raises(db, seed):
 
     with pytest.raises(ValueError, match="circular"):
         engine.interpolate("${A}")
+
+
+def test_working_folder_is_working_root_plus_process_name(db, seed, tmp_path):
+    job = seed.job(seed.process("DEV-LEGAL-PROC"))
+    engine = ScopeResolutionEngine(
+        db=db, job_id=job.MasterObject_id, instance_id="X", global_config={"WORKING_ROOT": str(tmp_path)}
+    )
+    engine.build_context()
+
+    assert engine.working_folder == str(tmp_path / "DEV-LEGAL-PROC")
+    assert engine.interpolate("${SYS:WORKING_FOLDER}/in") == str(tmp_path / "DEV-LEGAL-PROC" / "in")
+
+
+def test_working_folder_is_undefined_without_a_working_root(db, seed, monkeypatch):
+    monkeypatch.delenv("AUTOAPP_WORKING_ROOT", raising=False)
+    engine = engine_for(db, seed.job(seed.process()))
+
+    assert engine.working_folder is None
+
+
+def test_app_and_entity_scopes_come_from_the_endpoint(db, seed):
+    legal_app = seed.application("LEGAL_APP", Root="/apps/legal")
+    jayco = seed.entity("JAYCO", ClientCode="JC01")
+    app_endpoint = seed.endpoint("LEGAL_OUT", "${APP.Root}/outbox", application=legal_app)
+    site_endpoint = seed.endpoint("JAYCO_IN", "/inbound/${ENTITY.ClientCode}", site=seed.site("JAYCO_SFTP", jayco))
+    engine = engine_for(db, seed.job(seed.process()))
+
+    assert engine.interpolate(app_endpoint.Path, endpoint=app_endpoint) == "/apps/legal/outbox"
+    assert engine.interpolate(site_endpoint.Path, endpoint=site_endpoint) == "/inbound/JC01"
+
+
+def test_app_scope_is_empty_outside_an_endpoint_and_does_not_leak_between_them(db, seed):
+    legal_app = seed.application("LEGAL_APP", Root="/apps/legal")
+    billing_app = seed.application("BILLING_APP", Root="/apps/billing")
+    legal = seed.endpoint("LEGAL_OUT", "${APP.Root}/out", application=legal_app)
+    billing = seed.endpoint("BILLING_IN", "${APP.Root}/in", application=billing_app)
+    engine = engine_for(db, seed.job(seed.process()))
+
+    assert engine.interpolate(legal.Path, endpoint=legal) == "/apps/legal/out"
+    assert engine.interpolate(billing.Path, endpoint=billing) == "/apps/billing/in"
+    with pytest.raises(ValueError, match=r"\$\{APP\.Root\}"):
+        engine.interpolate("${APP.Root}/anything")

@@ -136,9 +136,8 @@ CREATE TABLE TagAssignments (
 -- ----------------------------------------------------------------------------
 CREATE TABLE Endpoints (
     id INT AUTO_INCREMENT PRIMARY KEY,
-    EndpointType ENUM('SOURCE', 'DELIVERY') NOT NULL,
+    Name VARCHAR(100) NOT NULL UNIQUE,
     Site_MasterObject_id INT NULL,
-    Entity_MasterObject_id INT NULL,
     Application_MasterObject_id INT NULL,
     Path VARCHAR(256) NOT NULL,
     FilenamePattern VARCHAR(128) NOT NULL,
@@ -146,7 +145,6 @@ CREATE TABLE Endpoints (
     ModifiedDateTime DATETIME ON UPDATE CURRENT_TIMESTAMP,
     ModifiedBy VARCHAR(50) NULL,
     FOREIGN KEY (Site_MasterObject_id) REFERENCES Sites(MasterObject_id) ON DELETE SET NULL,
-    FOREIGN KEY (Entity_MasterObject_id) REFERENCES Entities(MasterObject_id) ON DELETE SET NULL,
     FOREIGN KEY (Application_MasterObject_id) REFERENCES Applications(MasterObject_id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
@@ -200,9 +198,13 @@ CREATE TABLE Operations (
     Job_MasterObject_id INT NULL,
     OpType VARCHAR(50) NOT NULL,
     OpStatus VARCHAR(20) NOT NULL,
+    SourceEndpoint_id INT NULL,
+    DestEndpoint_id INT NULL,
     Details TEXT NULL,
     ExecutedDateTime DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (Job_MasterObject_id) REFERENCES Jobs(MasterObject_id) ON DELETE SET NULL
+    FOREIGN KEY (Job_MasterObject_id) REFERENCES Jobs(MasterObject_id) ON DELETE SET NULL,
+    FOREIGN KEY (SourceEndpoint_id) REFERENCES Endpoints(id) ON DELETE SET NULL,
+    FOREIGN KEY (DestEndpoint_id) REFERENCES Endpoints(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE Audits (

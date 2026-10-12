@@ -59,3 +59,13 @@ def test_records_are_written_in_order_one_per_line(tmp_path, spool_records):
             client.log_operation(op_type="COPY_FILES", step_id=step_id, status="SUCCESS", execution_time_ms=1)
 
     assert [r["StepID"] for r in spool_records(tmp_path)] == [1, 2, 3]
+
+
+def test_operation_record_carries_endpoint_ids(tmp_path, spool_records):
+    with LocalSpoolTelemetryClient(spool_dir=str(tmp_path), instance_id="T5") as client:
+        client.log_operation(op_type="COPY_FILES", step_id=1, status="SUCCESS", execution_time_ms=1,
+                             source_endpoint_id=11, dest_endpoint_id=None)
+
+    [record] = spool_records(tmp_path)
+    assert record["SourceEndpointID"] == 11
+    assert record["DestEndpointID"] is None

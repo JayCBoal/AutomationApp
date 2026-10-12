@@ -12,7 +12,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.models import (
-    Application, Base, Entity, Job, JobStep, JobStepParameter, Process, StepType, Variable
+    Application, Base, Endpoint, Entity, Job, JobStep, JobStepParameter, Process, Site, StepType, Variable
 )
 
 
@@ -66,6 +66,16 @@ class Seeder:
         app = self._add(Application(Name=name, Abbr=name[:10]))
         self.set_vars(app, **variables)
         return app
+
+    def site(self, name, entity, host="sftp.example.com"):
+        return self._add(Site(Name=name, Host=host, Entity_MasterObject_id=entity.MasterObject_id))
+
+    def endpoint(self, name, path, pattern="*", application=None, site=None):
+        return self._add(Endpoint(
+            Name=name, Path=str(path), FilenamePattern=pattern,
+            Application_MasterObject_id=application.MasterObject_id if application else None,
+            Site_MasterObject_id=site.MasterObject_id if site else None,
+        ))
 
     def step_type(self, code="COPY_FILES", name="Copy Files"):
         existing = self.db.query(StepType).filter(StepType.HandlerClass == code).first()

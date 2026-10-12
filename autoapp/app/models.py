@@ -201,7 +201,8 @@ class Endpoint(Base):
     __tablename__ = 'Endpoints'
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    EndpointType = Column(Enum('SOURCE', 'DELIVERY', name='endpoint_type_enum'), nullable=False)
+    # Stable name that job steps use to reference this endpoint (SourceEndpoint / DestEndpoint)
+    Name = Column(String(100), nullable=False, unique=True)
     Site_MasterObject_id = Column(Integer, ForeignKey('Sites.MasterObject_id', ondelete='SET NULL'), nullable=True)
     Application_MasterObject_id = Column(Integer, ForeignKey('Applications.MasterObject_id', ondelete='SET NULL'), nullable=True)
     Path = Column(String(256), nullable=False)
@@ -278,6 +279,9 @@ class Operation(Base):
     BytesTransferred = Column(Integer, default=0)
     SourceURI = Column(Text, nullable=True)
     DestinationURI = Column(Text, nullable=True)
+    # Registered Endpoints the file came from / went to; NULL for hops inside the working folder
+    SourceEndpoint_id = Column(Integer, ForeignKey('Endpoints.id', ondelete='SET NULL'), nullable=True)
+    DestEndpoint_id = Column(Integer, ForeignKey('Endpoints.id', ondelete='SET NULL'), nullable=True)
     Details = Column(Text, nullable=True)
     CreatedDateTime = Column(DateTime, default=datetime.datetime.utcnow)
 

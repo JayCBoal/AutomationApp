@@ -47,6 +47,16 @@ Notable structural, schema and design changes to AutoApp, newest first. Line-by-
 - **Added:** values of secret variables are masked in the log.
 - **Rationale:** carries forward the 2024 prototype's logging, where the job log said what each step did and a step could be made quiet.
 
+### Web interface: first pages
+
+- **Decided:** the web interface is static pages (HTML, CSS, plain JavaScript and the small Alpine.js library) that call the REST API, with no build step.
+- **Added:** `autoapp/ui/`, served by the API server at `/ui/`: the Main Index and the Operations Log, with the file trace and CSV export.
+- **Added:** dark theme by default, light theme as an option.
+- **Added:** search criteria on `GET /api/v1/operations`: source and destination endpoint, path and filename separately; application, entity and site on either side; operation type.
+- **Added:** browser tests, which drive the page in headless Chromium against a real server.
+- **Changed:** the telemetry route refuses a value that is too long for its column, with a message naming the field. Before, SQLite stored it and MariaDB failed with a database error.
+- **Rationale:** static pages need nothing compiled, can be opened and edited directly, and depend only on the API, so they would survive the back end being ported to another language.
+
 ### MariaDB
 
 - **Verified:** `SQL/Create_Tables.sql` and `SQL/Seed_Sample_Data.sql` run on MariaDB 11.8, and the whole test suite passes against it.

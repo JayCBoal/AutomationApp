@@ -15,18 +15,36 @@ router = APIRouter(prefix="/api/v1/operations", tags=["Operations Log"])
 def list_operations(
     filename: Optional[str] = Query(None, description="Part of a filename, on either side of the operation"),
     endpoint: Optional[str] = Query(None, description="Part of an endpoint name, on either side"),
+    source_endpoint: Optional[str] = Query(None, description="Part of the source endpoint's name"),
+    source_path: Optional[str] = Query(None, description="Part of the source path"),
+    source_filename: Optional[str] = Query(None, description="Part of the source filename"),
+    dest_endpoint: Optional[str] = Query(None, description="Part of the destination endpoint's name"),
+    dest_path: Optional[str] = Query(None, description="Part of the destination path"),
+    dest_filename: Optional[str] = Query(None, description="Part of the destination filename"),
+    application: Optional[str] = Query(None, description="Part of an application name, on either side"),
+    entity: Optional[str] = Query(None, description="Part of an entity name, on either side"),
+    site: Optional[str] = Query(None, description="Part of a site name, on either side"),
     job_key: Optional[str] = Query(None, description="Part of a JobKey"),
     instance_id: Optional[str] = Query(None, description="The scheduler's instance ID, exact"),
+    op_type: Optional[str] = Query(None, description="Operation type, exact: COPY, MOVE, ..."),
     status: Optional[str] = Query(None, description="SUCCESS or FAILED"),
     date_from: Optional[datetime] = Query(None, description="Operations that ended at or after this time (UTC)"),
     date_to: Optional[datetime] = Query(None, description="Operations that ended at or before this time (UTC)"),
     limit: int = Query(MAX_RESULTS, ge=1, le=MAX_RESULTS),
     db: Session = Depends(get_db),
 ):
-    """The operations log: one row per file handled, newest first."""
-    return search_operations(db, filename=filename, endpoint=endpoint, job_key=job_key,
-                             instance_id=instance_id, status=status,
-                             date_from=date_from, date_to=date_to, limit=limit)
+    """
+    The operations log: one row per thing a step did, newest first.
+    Text criteria ignore case and match anywhere in the field. Times are UTC.
+    """
+    return search_operations(
+        db, filename=filename, endpoint=endpoint,
+        source_endpoint=source_endpoint, source_path=source_path, source_filename=source_filename,
+        dest_endpoint=dest_endpoint, dest_path=dest_path, dest_filename=dest_filename,
+        application=application, entity=entity, site=site,
+        job_key=job_key, instance_id=instance_id, op_type=op_type, status=status,
+        date_from=date_from, date_to=date_to, limit=limit,
+    )
 
 
 @router.get("/{operation_id}/trace", response_model=FileTrace)

@@ -230,7 +230,7 @@ What the runner prints while a job runs, for the scheduler to capture against th
   - After one failed post the runner stops trying for that run and leaves the file in the spool.
   - `python3 -m engine.spool_delivery --spool-dir D [--api-url U]` sends whatever was left behind. Without an API address it loads the database directly, which suits a development machine.
 - **Loading** (`app/telemetry_ingest.py`, route `POST /api/v1/telemetry/records`). Records are validated and stored in `JobRuns` and `Operations`. Loading is safe to repeat: a run is identified by its `RunID` and an operation by its position in the run, and anything already stored is skipped. A batch containing a bad record is refused whole.
-- **Operations log** (`GET /api/v1/operations`). Search by filename, endpoint, job key, instance ID, status and time range. One row per file, newest first.
+- **Operations log** (`GET /api/v1/operations`). Search by source or destination endpoint, path and filename; by application, entity or site on either side; and by job key, instance ID, operation type, status and time range. Newest first, at most 500 rows.
 - **File trace** (`app/trace.py`, route `GET /api/v1/operations/{id}/trace`). Starting from any operation, returns the whole route of that file. Operations are linked by location: one that read a file from a path follows the one that last wrote that file to that path. This:
   - crosses steps and jobs;
   - follows a file through a rename;
@@ -257,6 +257,7 @@ FastAPI application in `autoapp/app/`. The interactive description of every rout
 | `POST /api/v1/telemetry/records` | Built; tested over HTTP |
 | `GET /api/v1/operations` | Built; tested over HTTP |
 | `GET /api/v1/operations/{id}/trace` | Built; tested over HTTP |
+| `GET /ui/...` and `/` | The web interface's files; `/` redirects to it |
 
 **Planned:** authentication, CRUD routes for the web interface.
 
@@ -276,17 +277,34 @@ Nothing in this section is built in the rewrite. The 2024 prototype tracked exte
 
 ## 11. User interfaces
 
-Not started.
+**Built** (`autoapp/ui/`)
 
-**Planned:** AutoApp is meant to be used from inside a scheduling product, with its own web interface as a second option. Both are clients of the REST API, so the CRUD API is the prerequisite for either.
+- The web interface is static pages: HTML, one stylesheet and plain JavaScript, with no build step. The API server serves them at `/ui/`, and they read everything through the REST API, never the database.
+- One small library, Alpine.js, fills the pages from data. A copy is kept in `ui/vendor/`, so the pages need no internet connection.
+- `common.js` holds what every page shares: the header and navigation bar, the theme switch, calling the API, formatting, and CSV export.
+- Dark theme by default, with a light theme one click away. The choice is remembered in the browser.
+- **Operations Log** page:
+  - Search criteria grouped as in the 2024 mockup: when and what, source, destination, automation, and application, entity or site on either side.
+  - One row per operation, with a source block and a destination block.
+  - A **Trace** link opens the file's whole route, with branches indented.
+  - **Export as CSV** exports the rows on screen with every field.
+  - A search, or an open trace, can be bookmarked: the criteria are kept in the page address.
+  - Times are shown, and date criteria entered, in the viewer's time zone. The API works in UTC.
+- **Main Index** page, linking to every page. Pages not built yet are shown greyed out.
+
+**Planned**
+
+- Every other page in [UI_VISION.md](UI_VISION.md). The pages that edit definitions need the CRUD API first.
+- AutoApp is meant to be used from inside a scheduling product, with this web interface as a second option. Both are clients of the same REST API.
 
 ## 12. Testing
 
-- Tests are in `autoapp/tests/` and run with `python3 -m pytest` (153 tests: about half a minute on SQLite, a little over a minute on MariaDB).
+- Tests are in `autoapp/tests/` and run with `python3 -m pytest` (177 tests: about a minute on SQLite, two on MariaDB).
 - Each test builds its own temporary SQLite database and temporary folders. No test touches the working directory or a shared database.
 - The same suite runs against MariaDB when `AUTOAPP_TEST_DATABASE_URL` names a test database. Its tables are built once per run from `SQL/Create_Tables.sql`, the script an installation would use, and emptied before each test.
 - Tests run the real code. AutoApp's own components are not mocked. The runner tests launch the runner as a separate process, as a scheduler would.
 - API tests go through real HTTP requests. The delivery tests start a real API server in its own process.
+- The web interface is tested in a real browser (headless Chromium, driven by Playwright) against a real server: the tests click, type and read what is on screen.
 - The only things replaced in tests are at the edge of the system: the file copy (to imitate a transfer cut short) and the network call (to see what the runner would send).
 - A new test is checked by breaking the code it covers and confirming the test fails.
 - `demo/run_demo.py` is not a test. It asserts nothing; it runs a sample job and shows what happened.

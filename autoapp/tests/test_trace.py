@@ -105,6 +105,51 @@ def test_log_can_be_searched(collect_and_deliver, seed, run_runner, api):
     assert len(api.operations(limit=3)) == 3
 
 
+def test_log_can_be_searched_by_one_side_only(collect_and_deliver, run_runner, api):
+    """Two files through three steps: collect (endpoint -> incoming), archive, deliver (incoming -> endpoint)."""
+    run_runner("DEV-COLLECT", "88421")
+
+    assert len(api.operations(source_endpoint="legal")) == 2           # only the collect step reads from it
+    assert len(api.operations(dest_endpoint="legal")) == 0
+    assert len(api.operations(dest_endpoint="billing_inbox")) == 2
+    assert len(api.operations(source_path="/INCOMING")) == 4           # archive and deliver read from incoming
+    assert len(api.operations(dest_path="/incoming")) == 2
+    assert len(api.operations(dest_path="/archive")) == 2
+    assert len(api.operations(source_filename="batch_2", dest_path="archive")) == 1
+    assert len(api.operations(dest_filename="BATCH_1")) == 3
+    assert len(api.operations(op_type="move")) == 2
+    assert len(api.operations(op_type="COPY")) == 4
+    assert len(api.operations(op_type="COP")) == 0                     # the type is exact
+
+
+def test_log_can_be_searched_by_application_entity_and_site(seed, endpoints, run_runner, api, tmp_path):
+    """An endpoint on a site belongs to that site's entity. Ingested by hand: no step type reaches remote sites yet."""
+    from app.telemetry_ingest import ingest_records
+    bank = seed.entity("ACME_BANK")
+    upload = seed.endpoint("ACME_PAYMENTS", "/inbound", "*.csv", application=seed.application("PAYMENTS_APP"),
+                           site=seed.site("ACME_SFTP", bank))
+    job = seed.job("DEV-LOAD")
+    seed.step(job, 1, SourceEndpoint="LEGAL_EXTRACTS", Dest="incoming")
+    run_runner("DEV-LOAD", "88421")
+    ingest_records(seed.db, [
+        {"Record": "RUN_START", "RunID": "r-remote", "Seq": 1, "JobKey": "DEV-SEND", "InstanceID": "88500",
+         "StartedAtUtc": "2026-10-12T10:00:00Z"},
+        {"Record": "OPERATION", "RunID": "r-remote", "Seq": 2, "OpType": "UPLOAD", "Status": "SUCCESS",
+         "SourcePath": "/work/out", "SourceFilename": "PAY_1.csv", "DestPath": "/inbound",
+         "DestFilename": "PAY_1.csv", "DestEndpointID": upload.id, "EndedAtUtc": "2026-10-12T10:00:01Z"},
+    ])
+
+    assert len(api.operations()) == 3
+    assert len(api.operations(application="legal_app")) == 2           # source side of the two collects
+    assert len(api.operations(application="payments")) == 1            # destination side of the upload
+    assert len(api.operations(entity="acme")) == 1
+    assert len(api.operations(site="acme_sftp")) == 1
+    assert len(api.operations(entity="nobody")) == 0
+    [sent] = api.operations(site="ACME")
+    assert (sent["dest"]["endpoint"], sent["dest"]["application"], sent["dest"]["entity"], sent["dest"]["site"]) == (
+        "ACME_PAYMENTS", "PAYMENTS_APP", "ACME_BANK", "ACME_SFTP")
+
+
 def test_log_can_be_searched_by_time(collect_and_deliver, run_runner, api):
     run_runner("DEV-COLLECT", "88421")
     operations = api.operations()

@@ -157,6 +157,18 @@ def test_a_malformed_record_is_refused_and_nothing_is_stored(client, db, tmp_pat
     assert db.query(Operation).count() == 0
 
 
+def test_a_value_too_long_for_its_column_is_refused_with_a_reason(client, db, tmp_path, spool_records):
+    """Otherwise it would be stored cut short on one database and crash another."""
+    records = spool_a_run(tmp_path, spool_records)
+    records[1]["Status"] = "S" * 21                       # the column holds 20 characters
+
+    response = client.post(ROUTE, json={"records": records})
+
+    assert response.status_code == 422
+    assert "Status" in response.text and "20 characters" in response.text
+    assert db.query(JobRun).count() == 0
+
+
 def test_an_unknown_record_type_is_refused(client, db, tmp_path, spool_records):
     records = spool_a_run(tmp_path, spool_records)
     records[1]["Record"] = "SOMETHING_ELSE"

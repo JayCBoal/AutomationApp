@@ -22,29 +22,21 @@ Updated 2026-10-12. The order under "Work queue" is a proposal; the items under 
 
 8. **Repository housekeeping.** `AutomationApp/_gemini_debris/` and the zip files in `PriorArt/CodeRepo/backup/` can be deleted once no longer wanted.
 
-9. **Front end.** Confirm plain static pages (HTML and a small script library, no build step) that call the REST API. See [UI_VISION.md](UI_VISION.md).
+9. **Leftovers from removing the process level.** Confirm that dropping `Jobs.Name` and `Jobs.ExecutionOrder`, and the mockup's Severity field, is acceptable.
 
-10. **Leftovers from removing the process level.** Confirm that dropping `Jobs.Name` and `Jobs.ExecutionOrder`, and the mockup's Severity field, is acceptable.
-
-Decided and removed from this list: telemetry direction (spool first, delivered through the API), the schema's source of truth (the Python models), what a file step does when nothing matches (fails unless `AllowNoFiles` is set), and upper and lower case in names (case-sensitive everywhere). See [CHANGE_LOG.md](CHANGE_LOG.md).
+Decided and removed from this list: telemetry direction (spool first, delivered through the API), the schema's source of truth (the Python models), what a file step does when nothing matches (fails unless `AllowNoFiles` is set), upper and lower case in names (case-sensitive everywhere), and the front end (static pages calling the API). See [CHANGE_LOG.md](CHANGE_LOG.md).
 
 ## Work queue
 
 Ordered toward a demonstration: a job built in the job editor, run by a scheduler, and traced file by file. The job editor and the file trace are the two things to show.
 
-### Next: first page
+### Next: the job editor
 
-1. **Operations Log page.** The first page of the web interface: a read-only search over `GET /api/v1/operations`, with a Trace link. Depends on decision 9.
+1. **Step catalog and validation.** The editor is driven by the catalog: choosing a step type shows that type's parameters as form fields. Populate `StepTypes` and `StepDefinitions` for each handler, mark which parameters are file locations, and check a step's parameters against the definitions (required present, defaults applied, unknown rejected).
 
-2. **Migrations.** Adopt Alembic so that later schema changes are applied to an existing database instead of rebuilding it.
+2. **CRUD API.** Create, read, update and delete for jobs, steps, step parameters, variables, endpoints, applications, entities and sites. Both the web interface and any scheduler integration are clients of this.
 
-### Then: the job editor
-
-4. **Step catalog and validation.** The editor is driven by the catalog: choosing a step type shows that type's parameters as form fields. Populate `StepTypes` and `StepDefinitions` for each handler, mark which parameters are file locations, and check a step's parameters against the definitions (required present, defaults applied, unknown rejected).
-
-5. **CRUD API.** Create, read, update and delete for jobs, steps, step parameters, variables, endpoints, applications, entities and sites. Both the web interface and any scheduler integration are clients of this.
-
-6. **Job editor (web interface).** Specified in [UI_VISION.md](UI_VISION.md).
+3. **Job editor (web interface).** Specified in [UI_VISION.md](UI_VISION.md).
    - Build a job as an ordered list of steps chosen from the catalog.
    - Endpoint picker: a file step chooses an existing endpoint or creates one in place.
    - Variable editor on any object, with a preview of what each placeholder resolves to.
@@ -52,20 +44,23 @@ Ordered toward a demonstration: a job built in the job editor, run by a schedule
 
 ### Then: breadth
 
-7. **More step handlers.** Each one also adds a catalog entry, so it appears in the editor.
+4. **More step handlers.** Each one also adds a catalog entry, so it appears in the editor.
    - Delete files
    - SQL execution
    - SFTP transfer (this is what makes endpoints on remote sites usable)
    - REST call
    - Send email
 
-8. **Tags.** Depends on decision 3. Expose tag assignments in the models, add the `TAG` scope to the variable cascade.
+5. **Tags.** Depends on decision 3. Expose tag assignments in the models, add the `TAG` scope to the variable cascade.
 
-9. **Runner controls.** Depends on decision 6.
+6. **Runner controls.** Depends on decision 6.
 
-10. **Scheduler integration.** Depends on decision 7.
+7. **Scheduler integration.** Depends on decision 7.
 
 ### Later
+
+- **Migrations.** Adopt Alembic once there is a database whose data must survive a schema change.
+- **Job History and Audit Log pages.** Read-only search pages in the pattern of the Operations Log. Job History needs a `GET /api/v1/runs` route; the Audit Log needs the CRUD API to be writing audits.
 
 - **Trace across machines.** The trace compares paths as text. Add the site or host to the comparison once steps reach remote sites or agents on more than one machine.
 - **Skip the rest when nothing was collected.** If a job's first step is allowed to find nothing, every later step that reads the same folder needs `AllowNoFiles` too. A step option to end the job successfully at that point would be tidier.
@@ -73,13 +68,13 @@ Ordered toward a demonstration: a job built in the job editor, run by a schedule
 - **Retention.** A purge rule for `Operations`, which grows by one row per file.
 - **Killed runs.** Pick up spool files left as `.jsonl.tmp` by a run that did not end normally, and mark the run accordingly.
 
-11. **Runner uses the API.** Depends on decision 2.
+8. **Runner uses the API.** Depends on decision 2.
 
-12. **Security.** Encrypt `Credentials.SecretData`; stop returning `IsSecret` variables; API authentication; vault connectors. Needed before anyone other than the author uses it.
+9. **Security.** Encrypt `Credentials.SecretData`; stop returning `IsSecret` variables; API authentication; vault connectors. Needed before anyone other than the author uses it.
 
-13. **Asynchronous processes.** Port the prototype's async instance tracking and polling.
+10. **Asynchronous processes.** Port the prototype's async instance tracking and polling.
 
-14. **Dependency declaration.** Move dependencies from `requirements.txt` into `pyproject.toml` and make the project installable.
+11. **Dependency declaration.** Move dependencies from `requirements.txt` into `pyproject.toml` and make the project installable.
 
 ## Done
 

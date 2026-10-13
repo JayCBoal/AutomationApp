@@ -21,7 +21,7 @@ from typing import Dict, List, Optional
 from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session, aliased
 
-from app.models import Endpoint, JobRun, Operation
+from app.models import Application, Endpoint, Entity, JobRun, Operation, Site
 from app.schemas import FileLocation, FileTrace, OperationOut, TraceHop
 
 MAX_RESULTS = 500
@@ -64,8 +64,18 @@ def search_operations(
     db: Session,
     filename: Optional[str] = None,
     endpoint: Optional[str] = None,
+    source_endpoint: Optional[str] = None,
+    source_path: Optional[str] = None,
+    source_filename: Optional[str] = None,
+    dest_endpoint: Optional[str] = None,
+    dest_path: Optional[str] = None,
+    dest_filename: Optional[str] = None,
+    application: Optional[str] = None,
+    entity: Optional[str] = None,
+    site: Optional[str] = None,
     job_key: Optional[str] = None,
     instance_id: Optional[str] = None,
+    op_type: Optional[str] = None,
     status: Optional[str] = None,
     date_from: Optional[datetime] = None,
     date_to: Optional[datetime] = None,
@@ -73,25 +83,54 @@ def search_operations(
 ) -> List[OperationOut]:
     """
     Finds operations, newest first. Text criteria ignore case and match anywhere
-    in the field; filename and endpoint match either side of the operation.
+    in the field. filename, endpoint, application, entity and site match either
+    side of the operation; the source_ and dest_ criteria match one side only.
+    The instance ID, operation type and status must match exactly.
     """
-    source_endpoint, dest_endpoint = aliased(Endpoint), aliased(Endpoint)
-    query = (
-        db.query(Operation)
-        .join(JobRun, Operation.JobRun_id == JobRun.id)
-        .outerjoin(source_endpoint, Operation.SourceEndpoint_id == source_endpoint.id)
-        .outerjoin(dest_endpoint, Operation.DestEndpoint_id == dest_endpoint.id)
-    )
-    if filename:
-        query = query.filter(or_(Operation.SourceFilename.ilike(f"%{filename}%"),
-                                 Operation.DestFilename.ilike(f"%{filename}%")))
-    if endpoint:
-        query = query.filter(or_(source_endpoint.Name.ilike(f"%{endpoint}%"),
-                                 dest_endpoint.Name.ilike(f"%{endpoint}%")))
-    if job_key:
-        query = query.filter(JobRun.JobKey.ilike(f"%{job_key}%"))
+    def contains(column, value):
+        return column.ilike(f"%{value}%")
+
+    # Each side's endpoint, and through it the application, the site and the site's entity
+    sides = {}
+    query = db.query(Operation).join(JobRun, Operation.JobRun_id == JobRun.id)
+    for side, endpoint_id in (("source", Operation.SourceEndpoint_id), ("dest", Operation.DestEndpoint_id)):
+        ep = aliased(Endpoint)
+        app, site_, entity_ = Application.__table__.alias(), Site.__table__.alias(), Entity.__table__.alias()
+        query = (
+            query.outerjoin(ep, endpoint_id == ep.id)
+            .outerjoin(app, ep.Application_MasterObject_id == app.c.MasterObject_id)
+            .outerjoin(site_, ep.Site_MasterObject_id == site_.c.MasterObject_id)
+            .outerjoin(entity_, site_.c.Entity_MasterObject_id == entity_.c.MasterObject_id)
+        )
+        sides[side] = dict(endpoint=ep.Name, application=app.c.Name, site=site_.c.Name, entity=entity_.c.Name)
+    source, dest = sides["source"], sides["dest"]
+
+    either_side = [
+        (filename, Operation.SourceFilename, Operation.DestFilename),
+        (endpoint, source["endpoint"], dest["endpoint"]),
+        (application, source["application"], dest["application"]),
+        (entity, source["entity"], dest["entity"]),
+        (site, source["site"], dest["site"]),
+    ]
+    for value, source_column, dest_column in either_side:
+        if value:
+            query = query.filter(or_(contains(source_column, value), contains(dest_column, value)))
+
+    one_side = [
+        (source_endpoint, source["endpoint"]), (source_path, Operation.SourcePath),
+        (source_filename, Operation.SourceFilename),
+        (dest_endpoint, dest["endpoint"]), (dest_path, Operation.DestPath),
+        (dest_filename, Operation.DestFilename),
+        (job_key, JobRun.JobKey),
+    ]
+    for value, column in one_side:
+        if value:
+            query = query.filter(contains(column, value))
+
     if instance_id:
         query = query.filter(JobRun.SchedulerInstanceID == instance_id)
+    if op_type:
+        query = query.filter(Operation.OpType == op_type.upper())
     if status:
         query = query.filter(Operation.OpStatus == status.upper())
     if date_from:

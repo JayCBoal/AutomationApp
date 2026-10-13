@@ -1,6 +1,8 @@
 # UI Vision
 
-What the AutoApp web interface should contain and how it should behave. This is the specification the interface will be built from. Nothing in it is built yet.
+What the AutoApp web interface should contain and how it should behave. This is the specification the interface is built from.
+
+**Built so far:** the Main Index and the Operations Log, including the trace. See the blueprint for how the pages are put together.
 
 It is based on the 2024 mockup deck (linked from the original design document) and adapted to the current data model. Items marked **Proposed** are not in the mockups and need a decision.
 
@@ -46,13 +48,13 @@ A header with the AutoApp name and the page title, and a navigation bar on every
 
 | Page | Kind | Origin | Notes |
 | :--- | :--- | :--- | :--- |
-| Main Index | index | Mockup | Links to every page |
+| Main Index | index | Mockup | **Built.** Links to every page |
 | Application Search / Detail | search, detail | Mockup | Name, abbreviation, description, support distribution list |
 | Entity Search / Detail | search, detail | Mockup (same pattern as Application) | An entity's sites are listed on its detail page |
 | Site Search / Detail | search, detail | Mockup (same pattern) | Host, port, protocol, owning entity, credential |
 | Job Search / Detail | search, detail | Mockup's Process pages, changed | Detail page is the job editor |
 | Endpoint Search / Detail | search, detail | Replaces Source and Delivery pages | See below |
-| Operations Log | search | Mockup, changed | The file trace; see below |
+| Operations Log | search | Mockup, changed | **Built.** The file trace; see below |
 | Job History | search | Mockup | Reads `JobRuns`: one row per run, with status and error |
 | Audit Log | search | Mockup | Read-only. Changes to definitions: who changed what, and when |
 | Async Parent Process Search / Detail | search, detail | Mockup | Deferred until asynchronous processes are rebuilt |
@@ -159,13 +161,13 @@ The catalog that drives the job editor. For administrators.
 
 1. **Related jobs.** Whether the interface needs a way to see several jobs together, for example by tag, now that there is no process to group them.
 2. **Users and permissions.** "Edit is disabled unless the user has permission" needs sign-in, users and roles. None exist yet.
-3. **Look and feel.** The mockups use a grey header and a black navigation bar. Keep this, or restyle?
+3. **Look and feel.** Decided: dark by default with a light option. The light theme keeps the mockups' grey header and black navigation bar.
 4. **Inside a scheduler.** Which of these pages would need to appear within a scheduling product, and in what form.
 5. **Two people editing the same job.** Last save wins, or warn?
 
 ## Suggested build order
 
-1. Operations Log, read-only. Its API is built, so this is a page over existing data, and it is the first thing worth demonstrating.
+1. Operations Log, read-only. **Done.**
 2. Endpoint Search and Detail. The simplest pages with editing; they establish the common search and detail behaviour.
 3. The job editor.
 4. Application, Entity and Site pages, which reuse the Endpoint pattern.

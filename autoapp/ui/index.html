@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>AutoApp</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="css/autoapp.css">
+    <script src="js/common.js"></script>
+    <script defer src="vendor/alpine-3.17.4.min.js"></script>
+</head>
+<body>
+<div id="app-chrome" data-title="Main Index"></div>
+
+<main x-data="{ pages: AutoApp.PAGES.filter(p => p.name !== 'Main Index') }" x-cloak>
+    <h2 class="section">Definitions</h2>
+    <div class="index-grid">
+        <template x-for="page in pages.filter(p => p.group === 'centre')" :key="page.name">
+            <a class="index-card" :class="{ planned: !page.href }" :href="page.href || null"
+               :title="page.href ? '' : 'Not built yet'">
+                <div class="name" x-text="page.name"></div>
+                <div class="about" x-text="page.about + (page.href ? '' : ' (not built yet)')"></div>
+            </a>
+        </template>
+    </div>
+
+    <h2 class="section">Records of what happened</h2>
+    <div class="index-grid">
+        <template x-for="page in pages.filter(p => p.group === 'right')" :key="page.name">
+            <a class="index-card" :class="{ planned: !page.href }" :href="page.href || null"
+               :title="page.href ? '' : 'Not built yet'">
+                <div class="name" x-text="page.name"></div>
+                <div class="about" x-text="page.about + (page.href ? '' : ' (not built yet)')"></div>
+            </a>
+        </template>
+    </div>
+</main>
+</body>
+</html>

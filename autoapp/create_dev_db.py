@@ -78,8 +78,7 @@ Try it (from this folder):
   python3 -m engine.spool_delivery
 
   python3 -m uvicorn app.main:app --port 8000
-      then open  http://localhost:8000/api/v1/operations
-      and        http://localhost:8000/api/v1/operations/7/trace
+      then open  http://localhost:8000/   and choose Operations Log
 """)
 
 

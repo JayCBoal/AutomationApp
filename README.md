@@ -8,13 +8,13 @@ It also keeps a structured record of every file operation, tied to a register of
 
 ## Status
 
-Early rewrite of a 2024 prototype. Working end to end and covered by tests: local file copy and move steps, a record of every file handled, and a file trace through the API. Most other planned features are not built yet. See:
+Early rewrite of a 2024 prototype. Working end to end and covered by tests: local file copy and move steps, a record of every file handled, a file trace, and the first page of the web interface (the Operations Log). Most other planned features are not built yet. See:
 
 - [docs/PROJECT_GOALS.md](docs/PROJECT_GOALS.md): what the project is for
 - [docs/PROJECT_BLUEPRINT.md](docs/PROJECT_BLUEPRINT.md): how it works, with what is built and what is only planned
 - [docs/DB_SCHEMA.md](docs/DB_SCHEMA.md): database schema diagrams
 - [docs/PYTHON_MODEL.md](docs/PYTHON_MODEL.md): diagrams of the ORM classes and the Python modules
-- [docs/UI_VISION.md](docs/UI_VISION.md): what the web interface should contain; not built yet
+- [docs/UI_VISION.md](docs/UI_VISION.md): what the web interface should contain; the Operations Log page is built
 - [docs/TO-DO.md](docs/TO-DO.md): open decisions and the work queue
 - [docs/CHANGE_LOG.md](docs/CHANGE_LOG.md): design changes over time
 
@@ -36,6 +36,8 @@ On Debian or ChromeOS Linux, install the prerequisites first: `sudo apt-get inst
 The demo writes everything it produces to `demo/output/run_<timestamp>/` so you can look at the files and the telemetry yourself.
 
 To keep the files the tests produce: `python3 -m pytest --basetemp=_test_out`.
+
+The browser tests of the web interface need Chromium (`sudo apt-get install chromium`); without it they are skipped and say so.
 
 By default each test builds its own throwaway SQLite database, so the tests need no database server. To run the same tests against MariaDB, name a database kept for testing. Everything in it is deleted, and the tests refuse to run unless its name contains "test":
 
@@ -80,14 +82,16 @@ The job log says what each step did, file by file. `--log-level SUMMARY` reduces
 python3 -m engine.spool_delivery --spool-dir /data/autoapp/spool --api-url http://autoapp-server:8000
 ```
 
-## Running the API
+## Running the server and the web interface
 
 ```bash
 cd autoapp
 DATABASE_URL=sqlite:///./autoapp.db python3 -m uvicorn app.main:app --port 8000
 ```
 
-Every route is described at `http://localhost:8000/docs`. The operations log is at `/api/v1/operations`, and a file's trace at `/api/v1/operations/<id>/trace`.
+Then open `http://localhost:8000/` in a browser. The **Operations Log** page searches every file handled and shows any file's trace. Pages that are not built yet appear greyed out in the navigation bar.
+
+The web interface is plain HTML, CSS and JavaScript in `autoapp/ui/`, with no build step: edit a file and reload the page. It reads everything through the REST API, which is described at `http://localhost:8000/docs`.
 
 ## Layout
 
@@ -95,6 +99,7 @@ Every route is described at `http://localhost:8000/docs`. The operations log is 
 autoapp/
   app/        FastAPI service: database models, schemas, routes
   engine/     runner, variable scope engine, step handlers, telemetry spool and delivery
+  ui/         web interface: static pages that call the API
   tests/      pytest suite
 demo/         run_demo.py and its output
 docs/         goals, blueprint, to-do, change log

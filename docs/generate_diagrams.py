@@ -180,6 +180,7 @@ def name_differences(mappers):
 MODULE_DIAGRAM = '''```mermaid
 flowchart TD
     scheduler([WLA scheduler]) -->|"--job-key, --instance-id"| runner
+    browser([Web browser]) -->|HTTP| ui
 
     subgraph engine [autoapp/engine]
         runner[runner.py<br/>runs a job's steps in order]
@@ -204,6 +205,7 @@ flowchart TD
         operations_api[routers/operations.py<br/>operations log and file trace routes]
         trace[trace.py<br/>search and file trace]
         main[main.py<br/>FastAPI app]
+        ui[ui/<br/>web pages: HTML, CSS, JavaScript]
     end
 
     runner --> scope
@@ -226,6 +228,8 @@ flowchart TD
     main --> jobs
     main --> variables
     main --> telemetry_api
+    main -->|serves| ui
+    ui -->|"HTTP, in the browser"| operations_api
     main --> operations_api
     jobs --> scope
     jobs --> params

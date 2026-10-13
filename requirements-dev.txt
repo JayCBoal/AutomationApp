@@ -1,3 +1,5 @@
 -r requirements.txt
 pytest
 httpx2
+# Browser tests of the web interface. They also need Chromium (sudo apt-get install chromium) and are skipped without it.
+playwright

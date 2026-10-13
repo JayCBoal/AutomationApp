@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Operations Log - AutoApp</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="css/autoapp.css">
+    <script src="js/common.js"></script>
+    <script src="js/operations.js"></script>
+    <script defer src="vendor/alpine-3.17.4.min.js"></script>
+</head>
+<body>
+<div id="app-chrome" data-title="Operations Log"></div>
+
+<main x-data="operationsLog()">
+
+    <!-- Search criteria. Text boxes ignore case and match anywhere in the field. -->
+    <form class="panel" @submit.prevent="search()" aria-label="Search criteria">
+        <div class="criteria">
+            <fieldset>
+                <legend>When and what</legend>
+                <label>From <input type="datetime-local" x-model="criteria.date_from" name="date_from"></label>
+                <label>To <input type="datetime-local" x-model="criteria.date_to" name="date_to"></label>
+                <label>Type
+                    <select x-model="criteria.op_type" name="op_type">
+                        <option value="">Any</option>
+                        <option>COPY</option>
+                        <option>MOVE</option>
+                    </select>
+                </label>
+                <label>Status
+                    <select x-model="criteria.status" name="status">
+                        <option value="">Any</option>
+                        <option>SUCCESS</option>
+                        <option>FAILED</option>
+                    </select>
+                </label>
+            </fieldset>
+            <fieldset>
+                <legend>Source</legend>
+                <label>Endpoint <input type="text" x-model="criteria.source_endpoint" name="source_endpoint"></label>
+                <label>Path <input type="text" x-model="criteria.source_path" name="source_path"></label>
+                <label>Filename <input type="text" x-model="criteria.source_filename" name="source_filename"></label>
+            </fieldset>
+            <fieldset>
+                <legend>Destination</legend>
+                <label>Endpoint <input type="text" x-model="criteria.dest_endpoint" name="dest_endpoint"></label>
+                <label>Path <input type="text" x-model="criteria.dest_path" name="dest_path"></label>
+                <label>Filename <input type="text" x-model="criteria.dest_filename" name="dest_filename"></label>
+            </fieldset>
+            <fieldset>
+                <legend>Automation</legend>
+                <label>Job <input type="text" x-model="criteria.job_key" name="job_key"></label>
+                <label title="The scheduler's instance ID, exactly as it issued it">Instance ID
+                    <input type="text" x-model="criteria.instance_id" name="instance_id"></label>
+            </fieldset>
+            <fieldset>
+                <legend>On either side</legend>
+                <label>Application <input type="text" x-model="criteria.application" name="application"></label>
+                <label>Entity <input type="text" x-model="criteria.entity" name="entity"></label>
+                <label>Site <input type="text" x-model="criteria.site" name="site"></label>
+            </fieldset>
+        </div>
+        <div class="actions">
+            <button type="submit" class="primary" :disabled="loading">Search</button>
+            <button type="button" class="secondary" @click="clear()" :disabled="loading">Clear</button>
+            <span class="spacer"></span>
+            <button type="button" class="secondary" @click="exportCsv()" :disabled="rows.length === 0">Export as CSV</button>
+        </div>
+    </form>
+
+    <!-- Results -->
+    <section class="panel" aria-label="Results" x-cloak>
+        <p class="message error" x-show="error" x-text="error" role="alert"></p>
+        <p class="message" id="result-summary" x-show="!error" x-text="summary"></p>
+        <p class="message capped" x-show="capped">
+            Only the newest <span x-text="rows.length"></span> are shown. Narrow the criteria to see older ones.
+        </p>
+
+        <div class="table-scroll" x-show="rows.length > 0">
+            <table class="results">
+                <thead>
+                    <tr>
+                        <th>Ended</th>
+                        <th>Type</th>
+                        <th>Status</th>
+                        <th>Source</th>
+                        <th>Destination</th>
+                        <th>Job and run</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <template x-for="row in rows" :key="row.id">
+                        <tr>
+                            <td class="nowrap" x-text="time(row.ended)"></td>
+                            <td x-text="row.op_type"></td>
+                            <td>
+                                <span class="status" :class="row.status" x-text="row.status"></span>
+                            </td>
+
+                            <!-- The source block and the destination block have the same layout -->
+                            <template x-for="side in [row.source, row.dest]">
+                                <td class="location">
+                                    <div class="place" :class="{ working: !side.endpoint }" x-text="place(side)"></div>
+                                    <div class="owners" x-show="owners(side)" x-text="owners(side)"></div>
+                                    <div class="file" x-show="side.filename">
+                                        <span x-text="side.filename"></span>
+                                        <span class="muted small" x-show="side.size !== null" x-text="'(' + size(side.size) + ')'"></span>
+                                    </div>
+                                    <div class="path" x-text="side.path"></div>
+                                </td>
+                            </template>
+
+                            <td>
+                                <div x-text="row.job_key"></div>
+                                <div class="muted small">
+                                    <span x-show="row.step_order !== null" x-text="'step ' + row.step_order + ' ·'"></span>
+                                    instance <span x-text="row.instance_id"></span>
+                                    <span x-show="row.run_number > 1" x-text="'· run ' + row.run_number"></span>
+                                    <span x-show="row.scheduler" x-text="'· ' + row.scheduler"></span>
+                                </div>
+                                <div class="small" x-show="details(row)" x-text="details(row)"></div>
+                                <div class="error-text small" x-show="row.error" x-text="row.error"></div>
+                            </td>
+                            <td class="nowrap">
+                                <button type="button" class="link" x-show="hasFile(row)" @click="openTrace(row.id)">Trace</button>
+                            </td>
+                        </tr>
+                    </template>
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <!-- Trace: the whole route of one file, opened from a row's Trace link -->
+    <dialog class="trace" x-ref="traceWindow" @close="traceClosed()" aria-label="File trace">
+        <div class="trace-head">
+            <h2>Trace: <span x-text="trace ? trace.filename : ''"></span></h2>
+            <button type="button" class="secondary" @click="closeTrace()">Close</button>
+        </div>
+        <div class="trace-body">
+            <p class="message" x-show="!trace && !traceError">Loading...</p>
+            <p class="message error" x-show="traceError" x-text="traceError" role="alert"></p>
+            <template x-if="trace">
+                <div>
+                    <p class="message">
+                        <span x-text="trace.hops.length"></span>
+                        <span x-text="trace.hops.length === 1 ? 'operation' : 'operations'"></span>
+                        handled this file, in the order shown. The one you opened is outlined.
+                    </p>
+                    <template x-for="hop in trace.hops" :key="hop.id">
+                        <div class="hop" :class="[hop.status, hop.id === traceFor ? 'selected' : '']"
+                             :style="'margin-left:' + (hop.depth * 22) + 'px'">
+                            <div class="hop-head">
+                                <span class="number" x-text="hop.number + '.'"></span>
+                                <span x-text="hop.op_type"></span>
+                                <span class="status" :class="hop.status" x-text="hop.status"></span>
+                                <span class="muted" x-text="time(hop.ended)"></span>
+                                <span x-text="hop.job_key"></span>
+                                <span class="muted small">
+                                    step <span x-text="hop.step_order"></span> · instance <span x-text="hop.instance_id"></span>
+                                    <span x-show="hop.run_number > 1" x-text="'· run ' + hop.run_number"></span>
+                                </span>
+                                <span class="muted small" x-show="hop.followsNumber !== null"
+                                      x-text="'follows ' + hop.followsNumber"></span>
+                            </div>
+                            <div class="hop-sides">
+                                <template x-for="(side, index) in [hop.source, hop.dest]">
+                                    <div class="location" :style="index === 1 ? 'grid-column: 3' : ''">
+                                        <div class="place" :class="{ working: !side.endpoint }" x-text="place(side)"></div>
+                                        <div class="owners" x-show="owners(side)" x-text="owners(side)"></div>
+                                        <div class="file" x-show="side.filename">
+                                            <span x-text="side.filename"></span>
+                                            <span class="muted small" x-show="side.size !== null" x-text="'(' + size(side.size) + ')'"></span>
+                                        </div>
+                                        <div class="path" x-text="side.path"></div>
+                                    </div>
+                                </template>
+                                <div class="arrow" style="grid-column: 2; grid-row: 1" aria-hidden="true">&rarr;</div>
+                            </div>
+                            <div class="error-text small" x-show="hop.error" x-text="hop.error"></div>
+                        </div>
+                    </template>
+                </div>
+            </template>
+        </div>
+    </dialog>
+
+</main>
+</body>
+</html>

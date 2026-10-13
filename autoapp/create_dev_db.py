@@ -79,8 +79,8 @@ Try it (from this folder):
   python3 -m engine.runner --job-key DEV-BILLING-LOAD --instance-id 1002 --working-root /tmp/autoapp_sample/work
   python3 -m engine.spool_delivery
 
-  python3 -m uvicorn app.main:app --port 8000
-      then open  http://localhost:8000/   and choose Operations Log
+  AUTOAPP_WORKING_ROOT=/tmp/autoapp_sample/work python3 -m uvicorn app.main:app --port 8000
+      then open  http://localhost:8000/   and choose Jobs or Operations Log
 """)
 
 

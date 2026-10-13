@@ -6,6 +6,15 @@ Notable structural, schema and design changes to AutoApp, newest first. Line-by-
 
 ## 2026-10-13
 
+### Job Search page
+
+- **Added:** `GET /api/v1/jobs`, the job search, returning each job with its step counts, the endpoints it uses and its most recent run.
+- **Added:** the Job Search page, with a Check link that runs the pre-run check on a job and an Operations link to that job's operations.
+- **Added:** the search puts every job it returns through the pre-run check. A job that would run shows "Ready to run" in green; one that would not has a bold red "Check" link that lists what is wrong.
+- **Changed:** the behaviour every search page shares moved into `common.js`, and the Operations Log now uses it.
+- **Decided:** no Step Types page. Step types are seen in the job editor.
+- **Decided, for the job editor:** one Submit saves the whole job; a JobKey can be renamed, with a warning; a job with run history is disabled, not deleted; when two people edit the same job, the last save wins.
+
 ### Step catalog and checking
 
 - **Added:** each handler declares its parameters in the code: name, type, required, default and description.

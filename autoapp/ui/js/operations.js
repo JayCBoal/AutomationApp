@@ -6,9 +6,7 @@
  *     GET /api/v1/operations              the search
  *     GET /api/v1/operations/{id}/trace   one file's route
  */
-const MAX_RESULTS = 500;      // the API returns at most this many rows
-
-// The search boxes, in the order they appear. "local time" boxes are converted to UTC for the API.
+// The search boxes. Their names are also the API's criteria.
 const CRITERIA = [
     "date_from", "date_to", "op_type", "status",
     "source_endpoint", "source_path", "source_filename",
@@ -18,72 +16,28 @@ const CRITERIA = [
 ];
 
 function operationsLog() {
-    return {
-        criteria: Object.fromEntries(CRITERIA.map(name => [name, ""])),
-        rows: [],
-        searched: false,
-        loading: false,
-        error: "",
-        timeZone: AutoApp.timeZoneName(),
+    const search = AutoApp.searchPage({
+        criteria: CRITERIA,
+        path: "/operations",
+        noun: "operation",
+        order: "newest first",
+        // The date boxes hold local time; the API works in UTC
+        toApi: values => ({
+            ...values,
+            date_from: AutoApp.localInputToUtc(values.date_from),
+            date_to: AutoApp.localInputToUtc(values.date_to),
+        }),
+        inAddress() { return { trace: this.traceFor }; },      // so an open trace can be bookmarked too
+    });
 
+    return Object.assign(search, {
         trace: null,            // the trace being shown, or null
         traceFor: null,         // id of the operation whose Trace link was clicked
         traceError: "",
 
-        // ---------- Search ----------
-
         init() {
-            // Criteria in the page address are applied, so a search can be bookmarked or sent to someone
-            const address = new URLSearchParams(location.search);
-            for (const name of CRITERIA) if (address.has(name)) this.criteria[name] = address.get(name);
-            this.search();
-            const traceId = address.get("trace");
-            if (traceId) this.openTrace(Number(traceId));
-        },
-
-        get capped() { return this.rows.length >= MAX_RESULTS; },
-
-        get summary() {
-            if (this.loading) return "Searching...";
-            if (!this.searched) return "";
-            if (this.rows.length === 0) return "No operations match these criteria.";
-            return `${this.rows.length} operation${this.rows.length === 1 ? "" : "s"}, newest first. ` +
-                   `Times are shown in your time zone (${this.timeZone}).`;
-        },
-
-        apiCriteria() {
-            return {
-                ...this.criteria,
-                date_from: AutoApp.localInputToUtc(this.criteria.date_from),
-                date_to: AutoApp.localInputToUtc(this.criteria.date_to),
-                limit: MAX_RESULTS,
-            };
-        },
-
-        async search() {
-            this.loading = true;
-            this.error = "";
-            try {
-                this.rows = await AutoApp.get("/operations", this.apiCriteria());
-            } catch (e) {
-                this.rows = [];
-                this.error = e.message;
-            }
-            this.loading = false;
-            this.searched = true;
-            this.rememberInAddress();
-        },
-
-        clear() {
-            for (const name of CRITERIA) this.criteria[name] = "";
-            this.search();
-        },
-
-        rememberInAddress() {
-            const address = new URLSearchParams();
-            for (const name of CRITERIA) if (this.criteria[name]) address.set(name, this.criteria[name]);
-            if (this.traceFor) address.set("trace", this.traceFor);
-            history.replaceState(null, "", location.pathname + (address.toString() ? "?" + address : ""));
+            const address = this.startSearch();
+            if (address.get("trace")) this.openTrace(Number(address.get("trace")));
         },
 
         // ---------- Showing one side of an operation ----------
@@ -156,5 +110,5 @@ function operationsLog() {
             this.traceFor = null;
             this.rememberInAddress();
         },
-    };
+    });
 }

@@ -4,6 +4,7 @@
  *   - the dark / light theme switch
  *   - calling the REST API
  *   - formatting times and sizes, and exporting a table as CSV
+ *   - what every search page does (searchPage, at the end)
  *
  * The pages never read the database. Everything they show comes from the API.
  */
@@ -17,7 +18,7 @@ const AutoApp = (() => {
         { group: "centre", name: "Applications", about: "The systems that produce and consume files" },
         { group: "centre", name: "Entities", about: "Outside parties: vendors, clients, partners" },
         { group: "centre", name: "Sites", about: "An entity's servers" },
-        { group: "centre", name: "Jobs", about: "Job definitions, steps and parameters" },
+        { group: "centre", name: "Jobs", href: "jobs.html", about: "Job definitions, steps and parameters" },
         { group: "centre", name: "Endpoints", about: "The registered places files come from and go to" },
         { group: "right", name: "Operations Log", href: "operations.html", about: "Every file handled, and each file's trace" },
         { group: "right", name: "Job History", about: "Every run of every job" },
@@ -163,5 +164,85 @@ const AutoApp = (() => {
         setTimeout(() => URL.revokeObjectURL(url), 1000);
     }
 
-    return { PAGES, get, parseUtc, formatTime, localInputToUtc, timeZoneName, formatSize, toCsv, download };
+    // ---------- Search pages ----------
+
+    const MAX_RESULTS = 500;      // the API returns at most this many rows
+
+    /**
+     * What every search page has in common: the criteria boxes, running the search,
+     * the line that says how many were found, and keeping the criteria in the page
+     * address so a search can be bookmarked or sent to someone.
+     *
+     * A page calls this for the common parts and adds its own with Object.assign:
+     *
+     *     return Object.assign(AutoApp.searchPage({ ... }), { init() { this.startSearch(); }, ... });
+     *
+     *   criteria   names of the search boxes, which are also the API's criteria
+     *   path       the API route to search, e.g. "/operations"
+     *   noun       what one result is called, e.g. "operation"
+     *   order      how the results are ordered, for the summary line, e.g. "newest first"
+     *   toApi      optional: converts the boxes' values into what the API expects
+     *   inAddress  optional: extra things to keep in the page address (called with the page as "this")
+     */
+    function searchPage({ criteria, path, noun, order, toApi = values => values, inAddress = () => ({}) }) {
+        const page = {
+            criteria: Object.fromEntries(criteria.map(name => [name, ""])),
+            rows: [],
+            searched: false,
+            loading: false,
+            error: "",
+
+            /** Applies any criteria in the page address, runs the search, and returns the address's contents. */
+            startSearch() {
+                const address = new URLSearchParams(location.search);
+                for (const name of criteria) if (address.has(name)) this.criteria[name] = address.get(name);
+                this.search();
+                return address;
+            },
+
+            async search() {
+                this.loading = true;
+                this.error = "";
+                try {
+                    this.rows = await get(path, { ...toApi({ ...this.criteria }), limit: MAX_RESULTS });
+                } catch (e) {
+                    this.rows = [];
+                    this.error = e.message;
+                }
+                this.loading = false;
+                this.searched = true;
+                this.rememberInAddress();
+            },
+
+            clear() {
+                for (const name of criteria) this.criteria[name] = "";
+                this.search();
+            },
+
+            rememberInAddress() {
+                const address = new URLSearchParams();
+                for (const name of criteria) if (this.criteria[name]) address.set(name, this.criteria[name]);
+                for (const [name, value] of Object.entries(inAddress.call(this))) if (value) address.set(name, value);
+                history.replaceState(null, "", location.pathname + (address.toString() ? "?" + address : ""));
+            },
+        };
+
+        // Worked out from the fields above each time they are read
+        Object.defineProperties(page, {
+            capped: { enumerable: true, get() { return this.rows.length >= MAX_RESULTS; } },
+            summary: {
+                enumerable: true,
+                get() {
+                    if (this.loading) return "Searching...";
+                    if (!this.searched) return "";
+                    if (this.rows.length === 0) return `No ${noun}s match these criteria.`;
+                    return `${this.rows.length} ${noun}${this.rows.length === 1 ? "" : "s"}, ${order}. ` +
+                           `Times are shown in your time zone (${timeZoneName()}).`;
+                },
+            },
+        });
+        return page;
+    }
+
+    return { PAGES, get, parseUtc, formatTime, localInputToUtc, timeZoneName, formatSize, toCsv, download, searchPage };
 })();

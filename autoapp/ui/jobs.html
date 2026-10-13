@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Jobs - AutoApp</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="css/autoapp.css">
+    <script src="js/common.js"></script>
+    <script src="js/jobs.js"></script>
+    <script defer src="vendor/alpine-3.17.4.min.js"></script>
+</head>
+<body>
+<div id="app-chrome" data-title="Job Search"></div>
+
+<main x-data="jobSearch()">
+
+    <!-- Search criteria. Text boxes ignore case and match anywhere in the field. -->
+    <form class="panel" @submit.prevent="search()" aria-label="Search criteria">
+        <div class="criteria">
+            <fieldset>
+                <legend>Job</legend>
+                <label>Job key <input type="text" x-model="criteria.job_key" name="job_key"></label>
+                <label>Description <input type="text" x-model="criteria.description" name="description"></label>
+                <label>Status
+                    <select x-model="criteria.active" name="active">
+                        <option value="">Any</option>
+                        <option value="true">Enabled</option>
+                        <option value="false">Disabled</option>
+                    </select>
+                </label>
+            </fieldset>
+            <fieldset>
+                <legend>Uses</legend>
+                <label title="An endpoint that one of the job's steps reads from or writes to">Endpoint
+                    <input type="text" x-model="criteria.endpoint" name="endpoint"></label>
+            </fieldset>
+        </div>
+        <div class="actions">
+            <button type="submit" class="primary" :disabled="loading">Search</button>
+            <button type="button" class="secondary" @click="clear()" :disabled="loading">Clear</button>
+            <span class="spacer"></span>
+            <button type="button" class="secondary" @click="exportCsv()" :disabled="rows.length === 0">Export as CSV</button>
+        </div>
+    </form>
+
+    <!-- Results -->
+    <section class="panel" aria-label="Results" x-cloak>
+        <p class="message error" x-show="error" x-text="error" role="alert"></p>
+        <p class="message" id="result-summary" x-show="!error" x-text="summary"></p>
+        <p class="message capped" x-show="capped">
+            Only the first <span x-text="rows.length"></span> are shown. Narrow the criteria to see the rest.
+        </p>
+
+        <div class="table-scroll" x-show="rows.length > 0">
+            <table class="results">
+                <thead>
+                    <tr>
+                        <th>Job</th>
+                        <th>Status</th>
+                        <th>Steps</th>
+                        <th>Endpoints used</th>
+                        <th>Last run</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <template x-for="job in rows" :key="job.job_key">
+                        <tr>
+                            <td>
+                                <div class="job-key" x-text="job.job_key"></div>
+                                <div class="muted small" x-text="job.description"></div>
+                            </td>
+                            <td>
+                                <span class="status" :class="job.active ? 'Enabled' : 'Disabled'"
+                                      x-text="job.active ? 'Enabled' : 'Disabled'"></span>
+                            </td>
+                            <td class="nowrap" x-text="steps(job)"></td>
+                            <td>
+                                <template x-for="name in job.endpoints" :key="name">
+                                    <span class="tag" x-text="name"></span>
+                                </template>
+                            </td>
+                            <td class="last-run">
+                                <template x-if="job.last_run">
+                                    <div>
+                                        <span class="status" :class="job.last_run.status" x-text="job.last_run.status"></span>
+                                        <span class="nowrap" x-text="time(job.last_run.ended || job.last_run.started)"></span>
+                                        <div class="muted small">
+                                            instance <span x-text="job.last_run.instance_id"></span>
+                                            <span x-show="job.last_run.run_number > 1" x-text="'· run ' + job.last_run.run_number"></span>
+                                        </div>
+                                        <div class="error-text small" x-show="job.last_run.error" x-text="job.last_run.error"></div>
+                                    </div>
+                                </template>
+                                <span class="muted" x-show="!job.last_run">Never run</span>
+                            </td>
+                            <td>
+                                <div class="row-actions">
+                                    <!-- A job that passes the pre-run check says so in green. One that fails
+                                         has a bold red Check link, which lists what is wrong. -->
+                                    <span class="ready-text" x-show="job.ready"
+                                          title="The pre-run check found no problems">Ready to run</span>
+                                    <button type="button" class="link check-link" x-show="!job.ready"
+                                            :title="checkHint(job)" @click="check(job)">Check</button>
+                                    <a :href="operationsLink(job)">Operations</a>
+                                </div>
+                            </td>
+                        </tr>
+                    </template>
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <!-- The result of checking one job, opened from a row's Check link -->
+    <dialog class="popup check" x-ref="checkWindow" aria-label="Job check">
+        <div class="popup-head">
+            <h2>Check: <span x-text="checkedKey"></span></h2>
+            <button type="button" class="secondary" @click="closeCheck()">Close</button>
+        </div>
+        <div class="popup-body">
+            <p class="message" x-show="!checked && !checkError">Checking...</p>
+            <p class="message error" x-show="checkError" x-text="checkError" role="alert"></p>
+            <template x-if="checked && checked.valid">
+                <p class="all-clear">No problems found. This job is ready to run.</p>
+            </template>
+            <template x-if="checked && !checked.valid">
+                <div>
+                    <p class="message error">
+                        <span x-text="checked.problems.length"></span>
+                        <span x-text="checked.problems.length === 1 ? 'problem' : 'problems'"></span>
+                        found. The job would stop before its first step.
+                    </p>
+                    <ul class="problems">
+                        <template x-for="problem in checked.problems">
+                            <li x-text="problem"></li>
+                        </template>
+                    </ul>
+                </div>
+            </template>
+            <p class="message small" x-show="checked" style="margin-top: 14px">
+                Every enabled step was checked against its step type, with its placeholders and file locations
+                resolved. Nothing was run and no file was touched.
+            </p>
+        </div>
+    </dialog>
+
+</main>
+</body>
+</html>

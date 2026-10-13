@@ -135,12 +135,12 @@
     </section>
 
     <!-- Trace: the whole route of one file, opened from a row's Trace link -->
-    <dialog class="trace" x-ref="traceWindow" @close="traceClosed()" aria-label="File trace">
-        <div class="trace-head">
+    <dialog class="popup trace" x-ref="traceWindow" @close="traceClosed()" aria-label="File trace">
+        <div class="popup-head">
             <h2>Trace: <span x-text="trace ? trace.filename : ''"></span></h2>
             <button type="button" class="secondary" @click="closeTrace()">Close</button>
         </div>
-        <div class="trace-body">
+        <div class="popup-body">
             <p class="message" x-show="!trace && !traceError">Loading...</p>
             <p class="message error" x-show="traceError" x-text="traceError" role="alert"></p>
             <template x-if="trace">

@@ -189,9 +189,9 @@ button.link {
     text-decoration: underline;
 }
 
-/* ---------- Trace window ---------- */
+/* ---------- Pop-up windows (the trace, the job check) ---------- */
 
-dialog.trace {
+dialog.popup {
     width: min(1000px, 94vw);
     max-height: 88vh;
     background: var(--panel);
@@ -201,10 +201,10 @@ dialog.trace {
     padding: 0;
     box-shadow: 0 12px 48px var(--shadow);
 }
-dialog.trace::backdrop { background: rgba(0, 0, 0, 0.55); }
-.trace-head { display: flex; align-items: center; gap: 12px; padding: 12px 16px; background: var(--panel-raised); border-bottom: 1px solid var(--border); }
-.trace-head h2 { margin: 0; font-size: 16px; flex: 1; overflow-wrap: anywhere; }
-.trace-body { padding: 14px 16px 18px; overflow-y: auto; max-height: calc(88vh - 56px); }
+dialog.popup::backdrop { background: rgba(0, 0, 0, 0.55); }
+.popup-head { display: flex; align-items: center; gap: 12px; padding: 12px 16px; background: var(--panel-raised); border-bottom: 1px solid var(--border); }
+.popup-head h2 { margin: 0; font-size: 16px; flex: 1; overflow-wrap: anywhere; }
+.popup-body { padding: 14px 16px 18px; overflow-y: auto; max-height: calc(88vh - 56px); }
 .hop {
     border: 1px solid var(--border);
     border-left: 4px solid var(--border);
@@ -233,3 +233,15 @@ h2.section { font-size: 13px; text-transform: uppercase; letter-spacing: 0.6px; 
 
 /* The source and destination blocks share the width left over by the narrow columns */
 table.results td.location { width: 30%; min-width: 220px; }
+
+/* ---------- Job search ---------- */
+
+.tag { display: inline-block; border: 1px solid var(--border); border-radius: 3px; padding: 0 6px; margin: 0 4px 3px 0; font-size: 12px; white-space: nowrap; }
+.status.Enabled { color: var(--success); }
+.status.Disabled { color: var(--muted); }
+.row-actions { display: flex; gap: 12px; white-space: nowrap; }
+ul.problems { margin: 0; padding-left: 20px; }
+ul.problems li { margin-bottom: 8px; overflow-wrap: anywhere; white-space: pre-wrap; }
+.all-clear { color: var(--success); font-weight: 600; }
+.ready-text { color: var(--success); }
+button.check-link { color: var(--failure); font-weight: 700; }

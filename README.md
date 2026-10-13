@@ -14,7 +14,7 @@ Early rewrite of a 2024 prototype. Working end to end and covered by tests: loca
 - [docs/PROJECT_BLUEPRINT.md](docs/PROJECT_BLUEPRINT.md): how it works, with what is built and what is only planned
 - [docs/DB_SCHEMA.md](docs/DB_SCHEMA.md): database schema diagrams
 - [docs/PYTHON_MODEL.md](docs/PYTHON_MODEL.md): diagrams of the ORM classes and the Python modules
-- [docs/UI_VISION.md](docs/UI_VISION.md): what the web interface should contain; the Operations Log page is built
+- [docs/UI_VISION.md](docs/UI_VISION.md): what the web interface should contain; the Job Search and Operations Log pages are built
 - [docs/TO-DO.md](docs/TO-DO.md): open decisions and the work queue
 - [docs/CHANGE_LOG.md](docs/CHANGE_LOG.md): design changes over time
 
@@ -86,10 +86,18 @@ python3 -m engine.spool_delivery --spool-dir /data/autoapp/spool --api-url http:
 
 ```bash
 cd autoapp
-DATABASE_URL=sqlite:///./autoapp.db python3 -m uvicorn app.main:app --port 8000
+DATABASE_URL=sqlite:///./autoapp.db AUTOAPP_WORKING_ROOT=/data/autoapp/work \
+python3 -m uvicorn app.main:app --port 8000
 ```
 
-Then open `http://localhost:8000/` in a browser. The **Operations Log** page searches every file handled and shows any file's trace. Pages that are not built yet appear greyed out in the navigation bar.
+`AUTOAPP_WORKING_ROOT` is the folder that holds the jobs' working folders, the same one the runner is given. The server needs it to check a job's file locations.
+
+Then open `http://localhost:8000/` in a browser:
+
+- **Jobs** finds jobs and shows what each one uses, how its last run went, and whether it would run now: "Ready to run" in green, or a red "Check" link that lists what is wrong.
+- **Operations Log** searches every file handled and shows any file's trace.
+
+Pages that are not built yet appear greyed out in the navigation bar.
 
 The web interface is plain HTML, CSS and JavaScript in `autoapp/ui/`, with no build step: edit a file and reload the page. It reads everything through the REST API, which is described at `http://localhost:8000/docs`.
 

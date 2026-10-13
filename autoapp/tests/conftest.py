@@ -15,6 +15,7 @@ DATABASE IS DELETED, so its name must contain "test".
 """
 import json
 import os
+import shutil
 import socket
 import subprocess
 import sys
@@ -198,7 +199,7 @@ def client(db, db_url):
 
 
 @pytest.fixture
-def live_api(db, db_url):
+def live_api(db, db_url, tmp_path):
     """A real API server in its own process, on the test's database. Yields its address."""
     db.commit()         # see the note in the client fixture
     with socket.socket() as s:
@@ -209,7 +210,8 @@ def live_api(db, db_url):
         [sys.executable, "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", str(port),
          "--log-level", "warning"],
         cwd=AUTOAPP_DIR,
-        env=subprocess_env(db_url),
+        # The server needs to know where working folders live to check a job's file locations
+        env={**subprocess_env(db_url), "AUTOAPP_WORKING_ROOT": str(tmp_path / "work")},
     )
     try:
         deadline = time.time() + 20
@@ -287,3 +289,45 @@ def load_spool(db, tmp_path):
         db.commit()
         return delivered
     return _load
+
+
+# --- Browser tests of the web interface -----------------------------------------------------
+# These fixtures drive real pages in headless Chromium. A test that uses them is skipped, with
+# the reason shown, on a machine that has no Chromium or no 'playwright' package.
+# To watch a test happen, run it with AUTOAPP_TEST_SHOW_BROWSER=1.
+
+@pytest.fixture(scope="session")
+def browser():
+    sync_api = pytest.importorskip("playwright.sync_api", reason="the 'playwright' package is not installed")
+    path = os.getenv("AUTOAPP_TEST_BROWSER") or shutil.which("chromium") or shutil.which("chromium-browser")
+    if not path:
+        pytest.skip("no Chromium browser found (set AUTOAPP_TEST_BROWSER to its path)")
+    with sync_api.sync_playwright() as playwright:
+        browser = playwright.chromium.launch(
+            executable_path=path, args=["--no-sandbox"], headless=not os.getenv("AUTOAPP_TEST_SHOW_BROWSER"))
+        yield browser
+        browser.close()
+
+
+@pytest.fixture
+def page(browser, live_api):
+    """
+    A fresh browser window pointed at the test's API server, with its clock set to New York.
+    Fails the test if the page logs a script error.
+    """
+    context = browser.new_context(base_url=live_api, viewport={"width": 1400, "height": 900},
+                                  timezone_id="America/New_York", accept_downloads=True)
+    page = context.new_page()
+    problems = []
+    page.on("pageerror", lambda error: problems.append(str(error)))
+    page.on("console", lambda message: problems.append(message.text) if message.type == "error" else None)
+    yield page
+    context.close()
+    assert problems == [], f"the page reported errors: {problems}"
+
+
+def wait_for_search(page):
+    """Waits until a search page has finished searching, and returns its result rows."""
+    page.wait_for_function("document.querySelector('#result-summary').textContent.trim() !== '' "
+                           "&& !document.querySelector('#result-summary').textContent.includes('Searching')")
+    return page.locator("table.results tbody tr")

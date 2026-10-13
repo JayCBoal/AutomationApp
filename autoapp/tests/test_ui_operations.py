@@ -2,50 +2,16 @@
 The Operations Log page, in a real browser.
 
 Each test starts a real API server, runs real jobs, opens the page in headless
-Chromium and reads what is on screen. They are skipped, with the reason shown,
-on a machine that has no Chromium or no 'playwright' package.
-
-To watch a test happen, run it with AUTOAPP_TEST_SHOW_BROWSER=1.
+Chromium and reads what is on screen. The browser fixtures are in conftest.py.
 """
 import csv
-import io
-import os
-import shutil
 
 import pytest
 
 from app.telemetry_ingest import ingest_records
-
-sync_api = pytest.importorskip("playwright.sync_api", reason="the 'playwright' package is not installed")
-BROWSER_PATH = os.getenv("AUTOAPP_TEST_BROWSER") or shutil.which("chromium") or shutil.which("chromium-browser")
-pytestmark = pytest.mark.skipif(not BROWSER_PATH, reason="no Chromium browser found (set AUTOAPP_TEST_BROWSER to its path)")
+from conftest import wait_for_search
 
 FILE_1 = "Legal_Batch_1.csv"
-
-
-@pytest.fixture(scope="module")
-def browser():
-    with sync_api.sync_playwright() as playwright:
-        browser = playwright.chromium.launch(
-            executable_path=BROWSER_PATH, args=["--no-sandbox"],
-            headless=not os.getenv("AUTOAPP_TEST_SHOW_BROWSER"),
-        )
-        yield browser
-        browser.close()
-
-
-@pytest.fixture
-def page(browser, live_api):
-    """A fresh browser window pointed at the test's API server. Fails the test if the page logs a script error."""
-    context = browser.new_context(base_url=live_api, viewport={"width": 1400, "height": 900},
-                                  timezone_id="America/New_York", accept_downloads=True)
-    page = context.new_page()
-    problems = []
-    page.on("pageerror", lambda error: problems.append(str(error)))
-    page.on("console", lambda message: problems.append(message.text) if message.type == "error" else None)
-    yield page
-    context.close()
-    assert problems == [], f"the page reported errors: {problems}"
 
 
 @pytest.fixture
@@ -60,9 +26,7 @@ def collect_and_deliver(seed, endpoints):
 
 def open_log(page, address="/ui/operations.html"):
     page.goto(address)
-    page.wait_for_function("document.querySelector('#result-summary').textContent.trim() !== '' "
-                           "&& !document.querySelector('#result-summary').textContent.includes('Searching')")
-    return page.locator("table.results tbody tr")
+    return wait_for_search(page)
 
 
 def search(page):
@@ -391,14 +355,15 @@ def test_navigation_links_only_to_pages_that_exist(page, db):
     open_log(page)
     nav = page.locator("nav.app-nav")
 
-    assert [link.inner_text() for link in nav.locator("a").all()] == ["Main Index", "Operations Log"]
-    assert "Jobs" in [item.inner_text() for item in nav.locator("span.planned").all()]
+    assert [link.inner_text() for link in nav.locator("a").all()] == ["Main Index", "Jobs", "Operations Log"]
+    assert "Endpoints" in [item.inner_text() for item in nav.locator("span.planned").all()]
     assert "current" in nav.get_by_role("link", name="Operations Log").get_attribute("class")
 
     nav.get_by_role("link", name="Main Index").click()
     page.wait_for_selector(".index-card")
-    assert page.locator("a.index-card[href]").count() == 1
-    page.locator("a.index-card[href]").click()
+    assert [card.locator(".name").inner_text() for card in page.locator("a.index-card[href]").all()] == [
+        "Jobs", "Operations Log"]
+    page.locator("a.index-card[href]", has_text="Operations Log").click()
     page.wait_for_url("**/ui/operations.html")
 
 

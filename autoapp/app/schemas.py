@@ -54,6 +54,30 @@ class StepTypeOut(BaseModel):
     parameters: List[StepParameterOut]
 
 
+class LastRun(BaseModel):
+    status: str
+    started: Optional[datetime] = None
+    ended: Optional[datetime] = None
+    instance_id: str
+    run_number: int
+    error: Optional[str] = None
+
+
+class JobSummary(BaseModel):
+    """One row of the job search."""
+    job_key: str
+    description: Optional[str] = None
+    active: bool
+    step_count: int = Field(..., description="Steps that are enabled")
+    disabled_step_count: int
+    endpoints: List[str] = Field(..., description="Names of the endpoints the job's steps read from or write to")
+    ready: bool = Field(..., description="True if the pre-run check finds no problems, so the job would run")
+    problem_count: int = Field(..., description="How many problems the pre-run check finds")
+    last_run: Optional[LastRun] = Field(None, description="The most recent run AutoApp has a record of")
+    modified: Optional[datetime] = None
+    modified_by: Optional[str] = None
+
+
 class JobCheckResult(BaseModel):
     job_key: str
     valid: bool

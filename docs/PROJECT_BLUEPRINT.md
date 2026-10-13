@@ -277,6 +277,7 @@ FastAPI application in `autoapp/app/`. The interactive description of every rout
 | `GET /api/v1/operations` | Built; tested over HTTP |
 | `GET /api/v1/operations/{id}/trace` | Built; tested over HTTP |
 | `GET /api/v1/step-types`, `/step-types/{code}` | Built; tested over HTTP |
+| `GET /api/v1/jobs` | The job search, including whether each job would run. Built; tested over HTTP |
 | `GET /api/v1/jobs/{job_key}/check` | Built; tested over HTTP |
 | `GET /ui/...` and `/` | The web interface's files; `/` redirects to it |
 
@@ -302,7 +303,7 @@ Nothing in this section is built in the rewrite. The 2024 prototype tracked exte
 
 - The web interface is static pages: HTML, one stylesheet and plain JavaScript, with no build step. The API server serves them at `/ui/`, and they read everything through the REST API, never the database.
 - One small library, Alpine.js, fills the pages from data. A copy is kept in `ui/vendor/`, so the pages need no internet connection.
-- `common.js` holds what every page shares: the header and navigation bar, the theme switch, calling the API, formatting, and CSV export.
+- `common.js` holds what every page shares: the header and navigation bar, the theme switch, calling the API, formatting, CSV export, and the behaviour common to every search page (criteria, the results summary, keeping a search in the page address).
 - Dark theme by default, with a light theme one click away. The choice is remembered in the browser.
 - **Operations Log** page:
   - Search criteria grouped as in the 2024 mockup: when and what, source, destination, automation, and application, entity or site on either side.
@@ -311,6 +312,11 @@ Nothing in this section is built in the rewrite. The 2024 prototype tracked exte
   - **Export as CSV** exports the rows on screen with every field.
   - A search, or an open trace, can be bookmarked: the criteria are kept in the page address.
   - Times are shown, and date criteria entered, in the viewer's time zone. The API works in UTC.
+- **Job Search** page:
+  - Search by job key, description, enabled or disabled, and an endpoint the job uses.
+  - Each row shows the job's steps, the endpoints it uses and how its most recent run went, with the error if it failed.
+  - Every job found is put through the pre-run check. A job that would run says **Ready to run** in green. One that would not has a bold red **Check** link, which checks the job again and lists every problem. Nothing is run.
+  - **Operations** opens the Operations Log for that job.
 - **Main Index** page, linking to every page. Pages not built yet are shown greyed out.
 
 **Planned**
@@ -320,7 +326,7 @@ Nothing in this section is built in the rewrite. The 2024 prototype tracked exte
 
 ## 12. Testing
 
-- Tests are in `autoapp/tests/` and run with `python3 -m pytest` (224 tests: one to two minutes on either database).
+- Tests are in `autoapp/tests/` and run with `python3 -m pytest` (245 tests: about one minute on SQLite, two on MariaDB).
 - Each test builds its own temporary SQLite database and temporary folders. No test touches the working directory or a shared database.
 - The same suite runs against MariaDB when `AUTOAPP_TEST_DATABASE_URL` names a test database. Its tables are built once per run from `SQL/Create_Tables.sql`, the script an installation would use, and emptied before each test.
 - Tests run the real code. AutoApp's own components are not mocked. The runner tests launch the runner as a separate process, as a scheduler would.

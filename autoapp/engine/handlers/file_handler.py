@@ -5,11 +5,8 @@ import shutil
 from pathlib import Path
 from engine import job_log
 from engine.handlers.base_handler import BaseHandler
+from engine.step_catalog import BOOLEAN, DEST, LOCATION, SOURCE, Param
 from engine.telemetry_client import utc_now_iso
-
-
-def _is_true(value) -> bool:
-    return str(value).lower() in ("true", "1", "yes")
 
 
 def _sha256(path: str) -> str:
@@ -24,24 +21,31 @@ class FileOpHandler(BaseHandler):
     """
     Execution plugin for managing local file system operations (copy, move)
     within the AutoApp engine.
-
-    Parameters: Source, Dest, Move (default False), CreateFolder (default True),
-    Checksum (default False: when True, the file's SHA-256 is recorded and the
-    copy is verified against it), AllowNoFiles (default False: a step that finds
-    no files to handle fails, unless this is True).
     """
 
-    PATH_PARAMS = {"Source": "source", "Dest": "dest"}
+    CODE = "COPY_FILES"
+    NAME = "Copy Files"
+    DESCRIPTION = "Copies or moves files between a registered endpoint and the job's working folder"
 
-    def execute_step(self, resolved_params: dict) -> dict:
-        source_pattern = resolved_params.get("Source")
-        dest_path = resolved_params.get("Dest")
-        if not source_pattern or not dest_path:
-            raise ValueError("A file step needs both a source (Source or SourceEndpoint) and a destination (Dest or DestEndpoint).")
-        move = _is_true(resolved_params.get("Move", "False"))
-        create_folder = _is_true(resolved_params.get("CreateFolder", "True"))
-        verify_checksum = _is_true(resolved_params.get("Checksum", "False"))
-        allow_no_files = _is_true(resolved_params.get("AllowNoFiles", "False"))
+    PARAMETERS = (
+        Param("Source", LOCATION, location_role=SOURCE, required=True,
+              description="The files to take. A pattern such as *.csv matches several."),
+        Param("Dest", LOCATION, location_role=DEST, required=True,
+              description="The folder to put them in, or a new filename when one file is taken"),
+        Param("Move", BOOLEAN, default="False",
+              description="Remove each file from the source once it has arrived"),
+        Param("CreateFolder", BOOLEAN, default="True",
+              description="Create the destination folder if it does not exist"),
+        Param("Checksum", BOOLEAN, default="False",
+              description="Record each file's SHA-256 and verify the copy against it"),
+        Param("AllowNoFiles", BOOLEAN, default="False",
+              description="Succeed when no files match. Otherwise a step that finds nothing fails."),
+    )
+
+    def execute_step(self, params: dict) -> dict:
+        source_pattern, dest_path = params["Source"], params["Dest"]
+        move, create_folder = params["Move"], params["CreateFolder"]
+        verify_checksum, allow_no_files = params["Checksum"], params["AllowNoFiles"]
         op_type = "MOVE" if move else "COPY"
         done = "Moved" if move else "Copied"
 

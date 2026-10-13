@@ -4,6 +4,23 @@ Notable structural, schema and design changes to AutoApp, newest first. Line-by-
 
 ---
 
+## 2026-10-13
+
+### Step catalog and checking
+
+- **Added:** each handler declares its parameters in the code: name, type, required, default and description.
+- **Added:** `StepDefinitions.DisplayOrder`, `LocationRole` and `AllowedValues`.
+- **Added:** `app/catalog.py`, which copies the declarations into the catalog tables when the API server starts.
+- **Added:** `GET /api/v1/step-types` (the catalog) and `GET /api/v1/jobs/{job_key}/check` (check a job without running it).
+- **Changed:** a job is checked as a whole before its first step runs, and every problem is reported at once. Before, a mistake in step 3 was found only after steps 1 and 2 had moved files.
+- **Changed:** a parameter name the step type does not have is now an error. Before, a misspelt name such as `Mvoe` was silently ignored, so the step ran as a copy.
+- **Changed:** a value of the wrong type, such as `Move=perhaps`, is now an error. Before, anything other than true, 1 or yes was quietly treated as false.
+- **Changed:** handlers receive converted values with defaults filled in. `/api/v1/jobs/init` returns the same.
+- **Removed:** the `FILE_OP` alias for `COPY_FILES`, and the parameter definitions from the sample data script, which the code now supplies.
+- **Rationale:** the job editor needs to know what form to draw for each step type, and one declaration should drive the form, the check and the handler, so they cannot disagree.
+
+---
+
 ## 2026-10-12
 
 ### Run history and per-file operations

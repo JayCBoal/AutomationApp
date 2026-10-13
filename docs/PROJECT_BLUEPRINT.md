@@ -73,11 +73,30 @@ The job is the core unit, as it is in every scheduler: the set of steps that run
 ### Steps
 
 - `StepTypes`: the catalog of step types. `Code` selects the handler.
-- `StepDefinitions`: the parameters each step type accepts.
+- `StepDefinitions`: the parameters each step type takes: name, type, whether required, default, description, display order, and for a file location whether it is a source or a destination.
 - `JobSteps`: a job's steps, with `StepOrder`, `StepTitle` and `IsActive`.
 - `JobStepParameters`: name and value pairs for a step.
 
-**Planned:** validating a step's parameters against `StepDefinitions` (required parameters, defaults). Today the definitions are not consulted.
+### The step catalog
+
+**Built**
+
+- **Declared once, in the code.** Each handler lists its parameters (`engine/step_catalog.py`). Parameter types are `STRING`, `BOOLEAN`, `INTEGER`, `CHOICE` and `LOCATION`.
+- **Published to the database.** `app/catalog.py` copies the declarations into `StepTypes` and `StepDefinitions`. It runs each time the API server starts, and by hand with `python3 -m app.catalog`.
+- **Served by the API.** `GET /api/v1/step-types` returns every step type with its parameters in form order. This is what the job editor will build its step forms from.
+- **Every job is checked before it runs** (`engine/preflight.py`). All active steps are checked and resolved before the first one starts, and every problem is reported at once:
+  - a parameter the step type does not have;
+  - a required parameter missing;
+  - a location given both as a path and as an endpoint;
+  - a value of the wrong type, such as `Move=perhaps`, including one that came from a placeholder;
+  - an unknown endpoint, an unresolved placeholder, a path outside the working folder, an unknown step type.
+- **A job can be checked without running it:** `GET /api/v1/jobs/{job_key}/check` returns the same list of problems.
+- Handlers receive converted values (`True`, not the text `"True"`) with defaults filled in.
+
+**Planned**
+
+- A parameter that depends on another, such as one that only applies when `Move` is on.
+- Hiding a step type from the editor with `StepTypes.IsActive`. The column exists; nothing reads it yet.
 
 ### Endpoints
 
@@ -183,12 +202,12 @@ This is what makes a file trace possible: an operation that reads from an endpoi
 **Built**
 
 - `engine/handlers/base_handler.py`: the common wrapper. It times the step, logs it (see section 6), and gives handlers one call for recording a file they handled.
-- `engine/handlers/file_handler.py`: step type `COPY_FILES` (alias `FILE_OP`). Local copy or move with wildcard matching and optional folder creation.
+- `engine/handlers/file_handler.py`: step type `COPY_FILES`. Local copy or move with wildcard matching and optional folder creation.
   - Each file is recorded separately, whether it succeeded or failed.
   - The size is measured at the source and at the destination; a difference fails the step.
   - `Checksum=True` records the file's SHA-256 and verifies the copy against it.
   - A step that finds no files fails unless `AllowNoFiles=True`.
-- `engine/handlers/__init__.py`: the registry mapping step type codes to handlers.
+- `engine/handlers/__init__.py`: the list of handlers. Adding one there adds its step type to the catalog.
 
 **Planned**
 
@@ -257,6 +276,8 @@ FastAPI application in `autoapp/app/`. The interactive description of every rout
 | `POST /api/v1/telemetry/records` | Built; tested over HTTP |
 | `GET /api/v1/operations` | Built; tested over HTTP |
 | `GET /api/v1/operations/{id}/trace` | Built; tested over HTTP |
+| `GET /api/v1/step-types`, `/step-types/{code}` | Built; tested over HTTP |
+| `GET /api/v1/jobs/{job_key}/check` | Built; tested over HTTP |
 | `GET /ui/...` and `/` | The web interface's files; `/` redirects to it |
 
 **Planned:** authentication, CRUD routes for the web interface.
@@ -299,7 +320,7 @@ Nothing in this section is built in the rewrite. The 2024 prototype tracked exte
 
 ## 12. Testing
 
-- Tests are in `autoapp/tests/` and run with `python3 -m pytest` (177 tests: about a minute on SQLite, two on MariaDB).
+- Tests are in `autoapp/tests/` and run with `python3 -m pytest` (224 tests: one to two minutes on either database).
 - Each test builds its own temporary SQLite database and temporary folders. No test touches the working directory or a shared database.
 - The same suite runs against MariaDB when `AUTOAPP_TEST_DATABASE_URL` names a test database. Its tables are built once per run from `SQL/Create_Tables.sql`, the script an installation would use, and emptied before each test.
 - Tests run the real code. AutoApp's own components are not mocked. The runner tests launch the runner as a separate process, as a scheduler would.

@@ -55,7 +55,7 @@ python3 create_dev_db.py
 
 This creates `autoapp/autoapp.db` (SQLite) with the sample data from `SQL/Seed_Sample_Data.sql`: two applications, three endpoints and two jobs that hand a file from one to the other. It prints the commands to run the jobs and look at the result. It never overwrites an existing database.
 
-For MariaDB, run `SQL/Create_Tables.sql` and then `SQL/Seed_Sample_Data.sql`, and point `DATABASE_URL` at the database, for example `mysql+pymysql://user:password@dbhost/autoapp`. After changing the models, regenerate the table script with `python3 SQL/generate_ddl.py`.
+For MariaDB, run `SQL/Create_Tables.sql` and then `SQL/Seed_Sample_Data.sql`, and point `DATABASE_URL` at the database, for example `mysql+pymysql://user:password@dbhost/autoapp`. The list of step types and their parameters is filled in when the API server starts, or by `python3 -m app.catalog`. After changing the models, regenerate the table script with `python3 SQL/generate_ddl.py`.
 
 ## Running a job
 

@@ -31,6 +31,35 @@ class JobInitResponse(BaseModel):
     steps: List[JobStepPayloadSchema]
 
 
+# --- Step Catalog Schemas ---
+class StepParameterOut(BaseModel):
+    name: str
+    data_type: str = Field(..., description="STRING, BOOLEAN, INTEGER, CHOICE or LOCATION")
+    required: bool
+    default: Optional[str] = None
+    description: Optional[str] = None
+    display_order: int
+    location_role: Optional[str] = Field(None, description="For a LOCATION: SOURCE or DEST")
+    endpoint_parameter: Optional[str] = Field(
+        None, description="For a LOCATION: the name under which it is given as a registered endpoint")
+    allowed_values: Optional[List[str]] = Field(None, description="For a CHOICE")
+
+
+class StepTypeOut(BaseModel):
+    code: str = Field(..., description="Stored on each step; never changes")
+    name: str
+    description: Optional[str] = None
+    active: bool
+    has_handler: bool = Field(..., description="False if this server has no code to run the step type")
+    parameters: List[StepParameterOut]
+
+
+class JobCheckResult(BaseModel):
+    job_key: str
+    valid: bool
+    problems: List[str]
+
+
 # --- Telemetry Schemas ---
 # The records a runner writes to its spool file and posts to /api/v1/telemetry/records.
 # Field names match the spool file, so a spool line can be posted unchanged.

@@ -16,19 +16,14 @@
 -- ----------------------------------------------------------------------------
 -- 1. Step catalog: the step types that have a handler in engine/handlers
 -- ----------------------------------------------------------------------------
-INSERT INTO StepTypes (id, Name, Code, Description) VALUES
-(1, 'Copy Files', 'COPY_FILES', 'Copies or moves files between a registered endpoint and the job''s working folder');
+-- Added only if it is not there already: the API server creates it when it first starts.
+INSERT INTO StepTypes (Name, Code, Description)
+SELECT 'Copy Files', 'COPY_FILES', 'Copies or moves files between a registered endpoint and the job''s working folder'
+WHERE NOT EXISTS (SELECT 1 FROM StepTypes WHERE Code = 'COPY_FILES');
 
-INSERT INTO StepDefinitions (StepType_id, ParameterName, DataType, IsRequired, DefaultValue, Description) VALUES
-(1, 'Source',         'STRING',  0, NULL,    'Path or pattern inside the job''s working folder. Set this or SourceEndpoint.'),
-(1, 'SourceEndpoint', 'STRING',  0, NULL,    'Name of the registered endpoint to read from. Set this or Source.'),
-(1, 'Dest',           'STRING',  0, NULL,    'Folder or filename inside the job''s working folder. Set this or DestEndpoint.'),
-(1, 'DestEndpoint',   'STRING',  0, NULL,    'Name of the registered endpoint to write to. Set this or Dest.'),
-(1, 'Move',           'BOOLEAN', 0, 'False', 'Remove each file from the source once it has arrived'),
-(1, 'CreateFolder',   'BOOLEAN', 0, 'True',  'Create the destination folder if it does not exist'),
-(1, 'Checksum',       'BOOLEAN', 0, 'False', 'Record each file''s SHA-256 and verify the copy against it'),
-(1, 'AllowNoFiles',   'BOOLEAN', 0, 'False', 'Succeed when no files match. By default a step that finds nothing fails.'),
-(1, 'LogLevel',       'STRING',  0, NULL,    'Job log level for this step alone: DEBUG, DETAIL, SUMMARY or SILENT');
+-- The parameters each step type takes are not listed here. They are declared by the handlers
+-- in the code and copied into the StepDefinitions table by:  python3 -m app.catalog
+-- (the API server does the same each time it starts).
 
 -- ----------------------------------------------------------------------------
 -- 2. Master objects. Every application, entity, site, tag and job has one row
@@ -71,11 +66,14 @@ INSERT INTO Jobs (MasterObject_id, JobKey, Description) VALUES
 (5, 'DEV-LEGAL-COLLECT_AND_DELIVER', 'Collects extract files from the legal application, archives them and delivers them to billing'),
 (6, 'DEV-BILLING-LOAD',              'Picks up the files delivered to billing');
 
-INSERT INTO JobSteps (id, Job_MasterObject_id, StepType_id, StepOrder, StepTitle) VALUES
-(1, 5, 1, 1, 'Collect extracts'),
-(2, 5, 1, 2, 'Archive'),
-(3, 5, 1, 3, 'Deliver to billing'),
-(4, 6, 1, 1, 'Pick up from inbox');
+INSERT INTO JobSteps (id, Job_MasterObject_id, StepType_id, StepOrder, StepTitle)
+SELECT 1, 5, id, 1, 'Collect extracts'   FROM StepTypes WHERE Code = 'COPY_FILES';
+INSERT INTO JobSteps (id, Job_MasterObject_id, StepType_id, StepOrder, StepTitle)
+SELECT 2, 5, id, 2, 'Archive'            FROM StepTypes WHERE Code = 'COPY_FILES';
+INSERT INTO JobSteps (id, Job_MasterObject_id, StepType_id, StepOrder, StepTitle)
+SELECT 3, 5, id, 3, 'Deliver to billing' FROM StepTypes WHERE Code = 'COPY_FILES';
+INSERT INTO JobSteps (id, Job_MasterObject_id, StepType_id, StepOrder, StepTitle)
+SELECT 4, 6, id, 1, 'Pick up from inbox' FROM StepTypes WHERE Code = 'COPY_FILES';
 
 INSERT INTO JobStepParameters (JobStep_id, ParameterName, ParameterValue) VALUES
 (1, 'SourceEndpoint', 'LEGAL_APP_EXTRACTS'),

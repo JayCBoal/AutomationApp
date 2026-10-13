@@ -152,6 +152,9 @@ erDiagram
         bool IsRequired
         text DefaultValue
         text Description
+        int DisplayOrder "required"
+        string(10) LocationRole
+        text AllowedValues
     }
     MasterObjects ||--o| Jobs : "MasterObject_id"
     StepTypes ||--o{ StepDefinitions : "StepType_id"

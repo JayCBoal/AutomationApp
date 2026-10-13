@@ -1,6 +1,6 @@
 # To-Do
 
-Updated 2026-10-12. The order under "Work queue" is a proposal; the items under "Decisions needed" are waiting on a choice.
+Updated 2026-10-13. The order under "Work queue" is a proposal; the items under "Decisions needed" are waiting on a choice.
 
 ## Decisions needed
 
@@ -32,11 +32,9 @@ Ordered toward a demonstration: a job built in the job editor, run by a schedule
 
 ### Next: the job editor
 
-1. **Step catalog and validation.** The editor is driven by the catalog: choosing a step type shows that type's parameters as form fields. Populate `StepTypes` and `StepDefinitions` for each handler, mark which parameters are file locations, and check a step's parameters against the definitions (required present, defaults applied, unknown rejected).
+1. **CRUD API.** Create, read, update and delete for jobs, steps, step parameters, variables, endpoints, applications, entities and sites. Both the web interface and any scheduler integration are clients of this.
 
-2. **CRUD API.** Create, read, update and delete for jobs, steps, step parameters, variables, endpoints, applications, entities and sites. Both the web interface and any scheduler integration are clients of this.
-
-3. **Job editor (web interface).** Specified in [UI_VISION.md](UI_VISION.md).
+2. **Job editor (web interface).** Specified in [UI_VISION.md](UI_VISION.md).
    - Build a job as an ordered list of steps chosen from the catalog.
    - Endpoint picker: a file step chooses an existing endpoint or creates one in place.
    - Variable editor on any object, with a preview of what each placeholder resolves to.
@@ -44,20 +42,21 @@ Ordered toward a demonstration: a job built in the job editor, run by a schedule
 
 ### Then: breadth
 
-4. **More step handlers.** Each one also adds a catalog entry, so it appears in the editor.
+3. **More step handlers.** Each one also adds a catalog entry, so it appears in the editor.
    - Delete files
    - SQL execution
    - SFTP transfer (this is what makes endpoints on remote sites usable)
    - REST call
    - Send email
 
-5. **Tags.** Depends on decision 3. Expose tag assignments in the models, add the `TAG` scope to the variable cascade.
+4. **Tags.** Depends on decision 3. Expose tag assignments in the models, add the `TAG` scope to the variable cascade.
 
-6. **Runner controls.** Depends on decision 6.
+5. **Runner controls.** Depends on decision 6.
 
-7. **Scheduler integration.** Depends on decision 7.
+6. **Scheduler integration.** Depends on decision 7.
 
 ### Later
+
 
 - **Migrations.** Adopt Alembic once there is a database whose data must survive a schema change.
 - **Job History and Audit Log pages.** Read-only search pages in the pattern of the Operations Log. Job History needs a `GET /api/v1/runs` route; the Audit Log needs the CRUD API to be writing audits.
@@ -68,13 +67,13 @@ Ordered toward a demonstration: a job built in the job editor, run by a schedule
 - **Retention.** A purge rule for `Operations`, which grows by one row per file.
 - **Killed runs.** Pick up spool files left as `.jsonl.tmp` by a run that did not end normally, and mark the run accordingly.
 
-8. **Runner uses the API.** Depends on decision 2.
+7. **Runner uses the API.** Depends on decision 2.
 
-9. **Security.** Encrypt `Credentials.SecretData`; stop returning `IsSecret` variables; API authentication; vault connectors. Needed before anyone other than the author uses it.
+8. **Security.** Encrypt `Credentials.SecretData`; stop returning `IsSecret` variables; API authentication; vault connectors. Needed before anyone other than the author uses it.
 
-10. **Asynchronous processes.** Port the prototype's async instance tracking and polling.
+9. **Asynchronous processes.** Port the prototype's async instance tracking and polling.
 
-11. **Dependency declaration.** Move dependencies from `requirements.txt` into `pyproject.toml` and make the project installable.
+10. **Dependency declaration.** Move dependencies from `requirements.txt` into `pyproject.toml` and make the project installable.
 
 ## Done
 

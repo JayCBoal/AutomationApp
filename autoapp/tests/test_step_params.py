@@ -11,6 +11,10 @@ from engine.scope_engine import ScopeResolutionEngine
 from engine.step_params import resolve_step
 
 
+# What the handler receives for the parameters a step leaves out
+DEFAULTS = {"Move": False, "CreateFolder": True, "Checksum": False, "AllowNoFiles": False}
+
+
 @pytest.fixture
 def job(seed):
     return seed.job("DEV-LOAD")
@@ -38,7 +42,7 @@ def test_relative_raw_path_is_taken_relative_to_the_working_folder(seed, job, re
 
     resolved = resolve(step)
 
-    assert resolved.params == {"Source": str(working_folder / "incoming" / "*.csv"),
+    assert resolved.params == {**DEFAULTS, "Source": str(working_folder / "incoming" / "*.csv"),
                                "Dest": str(working_folder / "staged")}
     assert resolved.source_endpoint_id is None
     assert resolved.dest_endpoint_id is None
@@ -88,7 +92,7 @@ def test_source_endpoint_resolves_to_its_path_and_filename_pattern(seed, job, re
 
     resolved = resolve(step)
 
-    assert resolved.params == {"Source": "/apps/legal/outbox/Legal_*.csv",
+    assert resolved.params == {**DEFAULTS, "Source": "/apps/legal/outbox/Legal_*.csv",
                                "Dest": str(working_folder / "incoming")}
     assert resolved.source_endpoint_id == endpoint.id
     assert resolved.dest_endpoint_id is None
@@ -115,7 +119,7 @@ def test_each_endpoint_resolves_in_its_own_application_context(seed, job, resolv
 
     resolved = resolve(step)
 
-    assert resolved.params == {"Source": "/apps/legal/outbox/*.csv", "Dest": "/apps/billing/inbox"}
+    assert resolved.params == {**DEFAULTS, "Source": "/apps/legal/outbox/*.csv", "Dest": "/apps/billing/inbox"}
 
 
 def test_endpoint_pattern_can_use_job_variables_and_macros(seed, job, resolve):
@@ -152,14 +156,14 @@ def test_endpoint_on_a_remote_site_is_rejected_for_a_local_file_step(seed, job, 
 
 # --- other parameters and error context ---------------------------------------
 
-def test_non_path_parameters_are_interpolated_and_passed_through(seed, job, resolve):
-    seed.set_vars(job, MoveFlag="True")
-    step = seed.step(job, 1, Source="a/*.csv", Dest="b", Move="${MoveFlag}", CreateFolder="False")
+def test_other_parameters_are_interpolated_then_converted_to_their_type(seed, job, resolve):
+    seed.set_vars(job, MoveFlag="yes")
+    step = seed.step(job, 1, Source="a/*.csv", Dest="b", Move="${MoveFlag}", CreateFolder="false")
 
     resolved = resolve(step)
 
-    assert resolved.params["Move"] == "True"
-    assert resolved.params["CreateFolder"] == "False"
+    assert resolved.params["Move"] is True
+    assert resolved.params["CreateFolder"] is False
 
 
 def test_errors_name_the_step(seed, job, resolve):

@@ -233,7 +233,7 @@ def test_folders_matching_the_pattern_are_skipped(folders, spool_records):
 def test_missing_source_or_destination_is_a_clear_error(folders):
     src, dest, spool = folders
 
-    with pytest.raises(ValueError, match="source"):
+    with pytest.raises(ValueError, match="'Source' is required"):
         run_handler(spool, {"Dest": str(dest)})
-    with pytest.raises(ValueError, match="destination"):
+    with pytest.raises(ValueError, match="'Dest' is required"):
         run_handler(spool, {"Source": str(src / "*.csv")})

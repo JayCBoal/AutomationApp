@@ -1,8 +1,9 @@
 import os
 import time
 from abc import ABC, abstractmethod
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
 from engine import job_log
+from engine.step_catalog import CHOICE, LOCATION, Param, normalize_parameters
 from engine.telemetry_client import LocalSpoolTelemetryClient
 
 class BaseHandler(ABC):
@@ -18,10 +19,30 @@ class BaseHandler(ABC):
         copied, each statement run), and returns a one-line account of the
         whole step in result["details"]["summary"].
     """
-    # Parameters that hold file locations, mapped to their role ("source" or "dest").
-    # Each may be given as a raw path inside the working folder (e.g. Source) or as
-    # the name of a registered Endpoint (e.g. SourceEndpoint). See engine/step_params.py.
-    PATH_PARAMS: Dict[str, str] = {}
+    # What the step type is called: CODE is stored on each step and never changes;
+    # NAME and DESCRIPTION are what the job editor shows.
+    CODE: str = ""
+    NAME: str = ""
+    DESCRIPTION: str = ""
+
+    # The parameters this step type takes, in the order the job editor shows them.
+    # See engine/step_catalog.py.
+    PARAMETERS: Tuple[Param, ...] = ()
+
+    # Parameters every step type takes, shown after its own
+    COMMON_PARAMETERS: Tuple[Param, ...] = (
+        Param("LogLevel", CHOICE, choices=tuple(job_log.LEVELS),
+              description="How much this step writes to the job log, if different from the rest of the job"),
+    )
+
+    @classmethod
+    def parameters(cls) -> Tuple[Param, ...]:
+        return cls.PARAMETERS + cls.COMMON_PARAMETERS
+
+    @classmethod
+    def path_params(cls) -> Dict[str, str]:
+        """The LOCATION parameters, each mapped to its role: "source" or "dest"."""
+        return {p.name: p.location_role.lower() for p in cls.parameters() if p.data_type == LOCATION}
 
     # Whether the handler can reach Endpoints that live on a remote Site
     SUPPORTS_REMOTE_SITES = False
@@ -47,7 +68,7 @@ class BaseHandler(ABC):
         lines = []
         for name, written in self.step_config.get("RawParams", {}).items():
             path_param = name[:-len("Endpoint")] if name.endswith("Endpoint") else None
-            if path_param in self.PATH_PARAMS:
+            if path_param in self.path_params():
                 lines.append(f"{name}: {written}  (resolved: {resolved_params.get(path_param)})")
                 continue
             resolved = resolved_params.get(name)
@@ -70,7 +91,7 @@ class BaseHandler(ABC):
 
         start_time = time.perf_counter()
         try:
-            result_data = self.execute_step(resolved_params) or {}
+            result_data = self.execute_step(normalize_parameters(self.parameters(), resolved_params)) or {}
         except Exception:
             elapsed_ms = int((time.perf_counter() - start_time) * 1000)
             job_log.error(f"END {label}: FAILED ({elapsed_ms} ms)")

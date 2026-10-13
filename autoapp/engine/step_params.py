@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 
 from app.models import Endpoint, JobStep
 from engine.scope_engine import ScopeResolutionEngine
+from engine.step_catalog import check_parameters, normalize_parameters
 
 
 @dataclass
@@ -66,17 +67,28 @@ def _endpoint_path(db: Session, name: str, param_name: str, role: str,
 
 
 def resolve_step(step: JobStep, handler_cls: Any, scope_engine: ScopeResolutionEngine, db: Session) -> ResolvedStep:
-    """Interpolates a step's parameters and resolves its file locations."""
+    """
+    Checks a step's parameters against its step type, interpolates them, resolves
+    its file locations, and converts the values for the handler. Raises ValueError,
+    naming the step, if anything is wrong.
+
+    handler_cls may be None where the step type has no handler on this machine;
+    the parameters are then interpolated but not checked.
+    """
     raw = {p.ParamName: p.ParamValue for p in step.parameters}
     resolved = ResolvedStep()
+    declared = handler_cls.parameters() if handler_cls else None
+    path_params = handler_cls.path_params() if handler_cls else {}
 
     try:
-        for param_name, role in getattr(handler_cls, "PATH_PARAMS", {}).items():
+        if declared is not None:
+            problems = check_parameters(declared, raw)
+            if problems:
+                raise ValueError(" ".join(problems))
+
+        for param_name, role in path_params.items():
             endpoint_name = raw.pop(f"{param_name}Endpoint", None)
             raw_path = raw.pop(param_name, None)
-
-            if endpoint_name and raw_path:
-                raise ValueError(f"Set either '{param_name}' or '{param_name}Endpoint', not both.")
 
             if endpoint_name:
                 endpoint, path = _endpoint_path(db, endpoint_name, param_name, role, handler_cls, scope_engine)
@@ -92,6 +104,9 @@ def resolve_step(step: JobStep, handler_cls: Any, scope_engine: ScopeResolutionE
 
         for name, value in raw.items():
             resolved.params[name] = scope_engine.interpolate(value)
+
+        if declared is not None:
+            resolved.params = normalize_parameters(declared, resolved.params)
 
     except ValueError as e:
         raise ValueError(f"Step {step.StepOrder} ('{step.Title}'): {e}") from e

@@ -58,7 +58,7 @@ A header with the AutoApp name and the page title, and a navigation bar on every
 | Job History | search | Mockup | Reads `JobRuns`: one row per run, with status and error |
 | Audit Log | search | Mockup | Read-only. Changes to definitions: who changed what, and when |
 | Async Parent Process Search / Detail | search, detail | Mockup | Deferred until asynchronous processes are rebuilt |
-| Step Type Detail | detail | Mentioned in the design document, no mockup | **Proposed** layout below |
+| Step Type Detail | detail | Mentioned in the design document, no mockup | **Not planned.** Step types are seen where they matter, in the job editor |
 | Tag Search / Detail | search, detail | **Proposed** | Waits on the tag design |
 | Credential Search / Detail | search, detail | **Proposed** | Secret values are write-only: they can be set, never displayed |
 
@@ -97,10 +97,10 @@ Job   id, JobKey*, Description, Active                             [Edit]
 
 **Proposed**
 
-- **Parameters come from the step catalog.** Choosing a step type shows that type's parameters as form fields, in a defined order, with required ones marked, defaults filled in and a description on hover. Boolean parameters are checkboxes. No free-form parameter names.
+- **Parameters come from the step catalog.** Choosing a step type shows that type's parameters as form fields, in a defined order, with required ones marked, defaults filled in and a description on hover. Boolean parameters are checkboxes. No free-form parameter names. The catalog is built and served at `GET /api/v1/step-types`.
 - **File locations are a choice, not a text box.** Each location parameter offers either an endpoint picker or a path inside the job's working folder. The picker is searchable and has **New...**, which opens a small form to register an endpoint without leaving the page.
 - **Placeholder preview.** Beside any value containing `${...}`, a preview shows what it resolves to for this job, or the error if it cannot be resolved.
-- **Validation before saving.** Submit reports problems against the field that caused them: a missing required parameter, an unknown endpoint, an unresolved placeholder, a path outside the working folder.
+- **Validation before saving.** Submit reports problems against the field that caused them: a missing required parameter, an unknown endpoint, an unresolved placeholder, a path outside the working folder. The check itself is built (`GET /api/v1/jobs/{job_key}/check`); it reports problems per step, not yet per field.
 - **Remove** on jobs and steps, with a confirmation.
 - A **Variables** panel on the job.
 - **Duplicate**, to start a new job from an existing one.

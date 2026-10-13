@@ -1,9 +1,10 @@
 from engine.handlers.file_handler import FileOpHandler
 
-HANDLER_REGISTRY = {
-    "FILE_OP": FileOpHandler,
-    "COPY_FILES": FileOpHandler,
-}
+# Every step type AutoApp can run. Adding a handler here adds it to the catalog the job editor reads.
+HANDLERS = [FileOpHandler]
+
+HANDLER_REGISTRY = {handler.CODE: handler for handler in HANDLERS}
+
 
 def get_handler(step_type: str):
     """

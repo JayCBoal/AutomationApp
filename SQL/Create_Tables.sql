@@ -118,6 +118,9 @@ CREATE TABLE `StepDefinitions` (
 	`IsRequired` BOOL DEFAULT true, 
 	`DefaultValue` TEXT, 
 	`Description` TEXT, 
+	`DisplayOrder` INTEGER NOT NULL DEFAULT 0, 
+	`LocationRole` VARCHAR(10), 
+	`AllowedValues` TEXT, 
 	PRIMARY KEY (id), 
 	FOREIGN KEY(`StepType_id`) REFERENCES `StepTypes` (id) ON DELETE CASCADE
 )ENGINE=InnoDB CHARSET=utf8mb4 COLLATE utf8mb4_bin;

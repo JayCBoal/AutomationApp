@@ -154,6 +154,9 @@ classDiagram
         +bool IsRequired
         +text DefaultValue
         +text Description
+        +int DisplayOrder
+        +string(10) LocationRole
+        +text AllowedValues
     }
     class StepType {
         +int id
@@ -220,6 +223,8 @@ flowchart TD
         runner[runner.py<br/>runs a job's steps in order]
         scope[scope_engine.py<br/>resolves placeholders]
         params[step_params.py<br/>working-folder rule and Endpoint lookup]
+        stepcat[step_catalog.py<br/>parameter declarations, checking, conversion]
+        preflight[preflight.py<br/>checks a whole job before it runs]
         registry[handlers/__init__.py<br/>step type to handler]
         base[handlers/base_handler.py<br/>timing, step logging, one record per file]
         joblog[job_log.py<br/>the job log and its levels]
@@ -239,12 +244,17 @@ flowchart TD
         operations_api[routers/operations.py<br/>operations log and file trace routes]
         trace[trace.py<br/>search and file trace]
         main[main.py<br/>FastAPI app]
+        catalog[catalog.py<br/>publishes the step catalog to the database]
+        steptypes_api[routers/step_types.py<br/>GET /api/v1/step-types]
         ui[ui/<br/>web pages: HTML, CSS, JavaScript]
     end
 
     runner --> scope
-    runner --> params
-    runner --> registry
+    runner --> preflight
+    preflight --> params
+    preflight --> registry
+    params --> stepcat
+    base --> stepcat
     runner --> telemetry
     runner --> database
     params --> scope
@@ -262,6 +272,12 @@ flowchart TD
     main --> jobs
     main --> variables
     main --> telemetry_api
+    main --> catalog
+    main --> steptypes_api
+    catalog --> registry
+    catalog --> models
+    steptypes_api --> models
+    jobs --> preflight
     main -->|serves| ui
     ui -->|"HTTP, in the browser"| operations_api
     main --> operations_api

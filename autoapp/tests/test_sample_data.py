@@ -6,7 +6,8 @@ run with the real runner.
 """
 from sqlalchemy import text
 
-from app.models import Endpoint, Job, StepDefinition, Variable
+from app.catalog import sync_catalog
+from app.models import Endpoint, Job, StepType, Variable
 from create_dev_db import load_seed
 
 
@@ -55,9 +56,12 @@ def test_sample_endpoint_on_a_remote_site_belongs_to_its_entity(db):
     assert (endpoint.site.Port, endpoint.site.Protocol) == (22, "SFTP")
 
 
-def test_step_catalog_lists_the_parameters_the_file_handler_reads(db):
+def test_sample_step_type_is_the_one_the_catalog_knows(db):
+    """The seed creates the step type its jobs use; syncing the catalog must fill it in, not add a second one."""
     load_seed(db)
 
-    names = {d.ParamName for d in db.query(StepDefinition)}
+    sync_catalog(db)
 
-    assert names == {"Source", "SourceEndpoint", "Dest", "DestEndpoint", "Move", "CreateFolder", "Checksum", "AllowNoFiles", "LogLevel"}
+    [step_type] = db.query(StepType).all()
+    assert (step_type.HandlerClass, step_type.TypeName) == ("COPY_FILES", "Copy Files")
+    assert [d.ParamName for d in step_type.definitions][:2] == ["Source", "Dest"]

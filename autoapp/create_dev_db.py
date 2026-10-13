@@ -18,6 +18,7 @@ from pathlib import Path
 
 from sqlalchemy import inspect
 
+from app.catalog import sync_catalog
 from app.database import DATABASE_URL, SessionLocal, engine
 from app.models import Application, Base, Variable
 
@@ -64,6 +65,7 @@ def main():
     db = SessionLocal()
     try:
         load_seed(db)
+        sync_catalog(db)
         outbox = create_sample_files(db)
     finally:
         db.close()

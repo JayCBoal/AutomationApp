@@ -4,8 +4,9 @@ from typing import Dict, Any, List, Optional
 
 from app.database import get_db
 from app.models import Job, JobStep
-from app.schemas import JobInitRequest, JobInitResponse, JobStepPayloadSchema
+from app.schemas import JobCheckResult, JobInitRequest, JobInitResponse, JobStepPayloadSchema
 from engine.handlers import get_handler
+from engine.preflight import prepare_job
 from engine.scope_engine import ScopeResolutionEngine
 from engine.step_params import resolve_step
 
@@ -75,3 +76,23 @@ def initialize_job(payload: JobInitRequest, db: Session = Depends(get_db)):
         variables=resolved_vars,
         steps=compiled_steps
     )
+
+
+@router.get("/{job_key}/check", response_model=JobCheckResult)
+def check_job(job_key: str, db: Session = Depends(get_db)):
+    """
+    Checks a job without running it: every active step against its step type,
+    every placeholder, every file location. Returns each problem found, exactly
+    as the runner would report it. The same check is made whenever the job runs.
+    """
+    job = db.query(Job).filter(Job.JobKey == job_key).first()
+    if not job:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"No job with JobKey '{job_key}' exists.")
+
+    problems = []
+    if not job.IsActive:
+        problems.append(f"Job '{job_key}' is disabled.")
+    engine = ScopeResolutionEngine(db=db, job_id=job.MasterObject_id, instance_id="CHECK")
+    engine.build_context()
+    problems += prepare_job(db, job, engine)[1]
+    return JobCheckResult(job_key=job_key, valid=not problems, problems=problems)

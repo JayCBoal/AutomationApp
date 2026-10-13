@@ -37,9 +37,10 @@ def test_returns_steps_in_order_with_locations_resolved(db, seed, working_root):
     assert response.working_folder == str(work)
     assert [first.title, second.title] == ["First", "Second"]
     assert first.handler_class == "COPY_FILES"
-    assert first.parameters == {"Source": "/apps/legal/outbox/*.csv", "Dest": str(work / "incoming")}
+    defaults = {"Move": False, "CreateFolder": True, "Checksum": False, "AllowNoFiles": False}
+    assert first.parameters == {**defaults, "Source": "/apps/legal/outbox/*.csv", "Dest": str(work / "incoming")}
     assert first.source_endpoint_id == endpoint.id
-    assert second.parameters == {"Source": str(work / "incoming" / "*.csv"),
+    assert second.parameters == {**defaults, "Source": str(work / "incoming" / "*.csv"),
                                  "Dest": str(work / "archive" / "INST_9")}
     assert second.source_endpoint_id is None
 

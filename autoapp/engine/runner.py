@@ -13,11 +13,10 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from app.database import SessionLocal
-from app.models import Job, JobStep, Variable
+from app.models import Job, Variable
 from engine import job_log
-from engine.handlers import get_handler
+from engine.preflight import describe_problems, prepare_job
 from engine.scope_engine import ScopeResolutionEngine
-from engine.step_params import resolve_step
 from engine.telemetry_client import LocalSpoolTelemetryClient
 
 # A step parameter every step type accepts: the job log level for that step alone
@@ -50,27 +49,16 @@ def run_job(db: Session, job_key: str, instance_id: str, spool_dir: str,
                 os.makedirs(scope_engine.working_folder, exist_ok=True)
             job_log.debug(f"Working folder: {scope_engine.working_folder}")
 
-            steps = (
-                db.query(JobStep)
-                .filter(JobStep.job_id == job_id, JobStep.IsActive.is_(True))
-                .order_by(JobStep.StepOrder)
-                .all()
-            )
-            if not steps:
-                raise ValueError(f"Job '{job_key}' has no active steps.")
+            # Every step is checked and resolved before the first one runs
+            prepared_steps, problems = prepare_job(db, job, scope_engine)
+            if problems:
+                raise ValueError(describe_problems(problems))
 
-            for step in steps:
-                step_type = step.step_type.HandlerClass
-                handler_cls = get_handler(step_type)
-                resolved = resolve_step(step, handler_cls, scope_engine, db)
+            for prepared in prepared_steps:
+                step, handler_cls, resolved = prepared.step, prepared.handler_cls, prepared.resolved
                 raw_params = {p.ParamName: p.ParamValue for p in step.parameters}
                 step_log_level = resolved.params.pop(LOG_LEVEL_PARAM, None)
                 raw_params.pop(LOG_LEVEL_PARAM, None)
-                if step_log_level:
-                    try:
-                        job_log.level_number(step_log_level)
-                    except ValueError as e:
-                        raise ValueError(f"Step {step.StepOrder} ('{step.Title}'): {e}") from e
 
                 handler = handler_cls(
                     step_config={

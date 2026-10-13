@@ -225,7 +225,8 @@ class StepType(Base):
     Description = Column(Text, nullable=True)
     IsActive = Column(Boolean, default=True, server_default=true())
 
-    definitions = relationship("StepDefinition", backref="step_type")
+    definitions = relationship("StepDefinition", backref="step_type", order_by="StepDefinition.DisplayOrder",
+                               cascade="all, delete-orphan", passive_deletes=True)
 
 
 class StepDefinition(Base):
@@ -234,10 +235,17 @@ class StepDefinition(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     StepType_id = Column(Integer, ForeignKey('StepTypes.id', ondelete='CASCADE'), nullable=False)
     ParamName = Column("ParameterName", String(100), nullable=False) # <--- Python attribute is ParamName
+    # STRING, BOOLEAN, INTEGER, CHOICE or LOCATION (see engine/step_catalog.py)
     DataType = Column(String(20), default='STRING', server_default='STRING')
     IsRequired = Column(Boolean, default=True, server_default=true())
     DefaultValue = Column(Text, nullable=True)
     Description = Column(Text, nullable=True)
+    # Position of the parameter in the job editor's form
+    DisplayOrder = Column(Integer, nullable=False, default=0, server_default=text('0'))
+    # For a LOCATION: SOURCE (files are read from it) or DEST (files are written to it)
+    LocationRole = Column(String(10), nullable=True)
+    # For a CHOICE: the allowed values, as a JSON list
+    AllowedValues = Column(Text, nullable=True)
 
 
 class JobStep(Base):

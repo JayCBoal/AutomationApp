@@ -177,6 +177,9 @@ def client(db, db_url):
     reading back what a request changed (a session does not see other sessions'
     changes until its own transaction ends).
     """
+    # The server updates the step catalog as it starts. Anything a fixture has seeded so far is
+    # committed first, or the server's session would wait on the test's unfinished transaction.
+    db.commit()
     engine = create_engine(db_url, connect_args=connect_args(db_url))
     make_session = sessionmaker(bind=engine)
 
@@ -197,6 +200,7 @@ def client(db, db_url):
 @pytest.fixture
 def live_api(db, db_url):
     """A real API server in its own process, on the test's database. Yields its address."""
+    db.commit()         # see the note in the client fixture
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
         port = s.getsockname()[1]

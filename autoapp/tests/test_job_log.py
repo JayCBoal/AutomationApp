@@ -160,8 +160,8 @@ def test_an_unknown_step_log_level_fails_the_job_and_names_the_step(job, run_run
     result = run_runner("DEV-LOAD", "88421")
 
     assert result.returncode == 1
-    assert "Step 2 ('Deliver'): Unknown log level 'CHATTY'" in result.stderr
-    assert "DEBUG, DETAIL, SUMMARY, SILENT" in result.stderr
+    assert ("Step 2 ('Deliver'): 'LogLevel' must be one of DEBUG, DETAIL, SUMMARY, SILENT, not 'CHATTY'."
+            in result.stderr)
 
 
 def test_an_unknown_runner_log_level_is_refused(job, run_runner):

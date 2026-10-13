@@ -4,9 +4,17 @@ from sqlalchemy import (
     BigInteger, Column, Integer, String, Text, Boolean, DateTime, ForeignKey, Enum, UniqueConstraint,
     false, func, text, true
 )
+from sqlalchemy.dialects import mysql
 from sqlalchemy.orm import declarative_base, relationship, validates
 
 Base = declarative_base()
+
+# Column types that need spelling out for MariaDB and MySQL, whose defaults differ from other databases:
+#   - a plain DATETIME there keeps whole seconds only, and the file trace orders operations by time;
+#   - text comparison there ignores case, and 'Report.csv' and 'report.csv' are different files.
+PreciseDateTime = DateTime().with_variant(mysql.DATETIME(fsp=6), "mysql", "mariadb")
+ExactText = Text().with_variant(mysql.TEXT(collation="utf8mb4_bin"), "mysql", "mariadb")
+ExactString255 = String(255).with_variant(mysql.VARCHAR(255, collation="utf8mb4_bin"), "mysql", "mariadb")
 
 # Each default is declared twice: "default" is applied by this code, "server_default" by the
 # database itself, so that rows inserted with plain SQL (a seed script, a DBA) get it too.
@@ -280,8 +288,8 @@ class JobRun(Base):
     Host = Column(String(255), nullable=True)
     Status = Column(String(20), nullable=False, default='RUNNING', server_default='RUNNING')
     ErrorMessage = Column(Text, nullable=True)
-    StartedDateTime = Column(DateTime, nullable=True)
-    EndedDateTime = Column(DateTime, nullable=True)
+    StartedDateTime = Column(PreciseDateTime, nullable=True)
+    EndedDateTime = Column(PreciseDateTime, nullable=True)
 
     job = relationship("Job")
     operations = relationship("Operation", back_populates="run", cascade="all, delete-orphan",
@@ -309,20 +317,20 @@ class Operation(Base):
     OpStatus = Column(String(20), nullable=False)
     # Registered Endpoints the file came from / went to; NULL for a location inside the working folder
     SourceEndpoint_id = Column(Integer, ForeignKey('Endpoints.id', ondelete='SET NULL'), nullable=True)
-    SourcePath = Column(Text, nullable=True)
-    SourceFilename = Column(String(255), nullable=True, index=True)
+    SourcePath = Column(ExactText, nullable=True)
+    SourceFilename = Column(ExactString255, nullable=True, index=True)
     SourceSize = Column(BigInteger, nullable=True)
     DestEndpoint_id = Column(Integer, ForeignKey('Endpoints.id', ondelete='SET NULL'), nullable=True)
-    DestPath = Column(Text, nullable=True)
-    DestFilename = Column(String(255), nullable=True, index=True)
+    DestPath = Column(ExactText, nullable=True)
+    DestFilename = Column(ExactString255, nullable=True, index=True)
     DestSize = Column(BigInteger, nullable=True)
     # SHA-256 of the file, recorded only when the step asks for it (Checksum=True)
     Checksum = Column(String(64), nullable=True)
     # Anything else worth keeping about the operation, as JSON; the whole record for a step with no files
     Details = Column(Text, nullable=True)
     ErrorMessage = Column(Text, nullable=True)
-    StartedDateTime = Column(DateTime, nullable=True)
-    EndedDateTime = Column(DateTime, nullable=True)
+    StartedDateTime = Column(PreciseDateTime, nullable=True)
+    EndedDateTime = Column(PreciseDateTime, nullable=True)
 
     run = relationship("JobRun", back_populates="operations")
     source_endpoint = relationship("Endpoint", foreign_keys=[SourceEndpoint_id])

@@ -84,7 +84,7 @@ def test_a_run_can_arrive_in_pieces(client, db, tmp_path, spool_records):
 
     # the next post overlaps the first, as it would after a response went missing
     client.post(ROUTE, json={"records": [first_file, second_file, end]})
-    db.expire_all()
+    db.commit()
     run = db.query(JobRun).one()
     assert (run.Status, len(run.operations)) == ("SUCCESS", 2)
     assert run.EndedDateTime is not None

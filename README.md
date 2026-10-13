@@ -37,6 +37,13 @@ The demo writes everything it produces to `demo/output/run_<timestamp>/` so you 
 
 To keep the files the tests produce: `python3 -m pytest --basetemp=_test_out`.
 
+By default each test builds its own throwaway SQLite database, so the tests need no database server. To run the same tests against MariaDB, name a database kept for testing. Everything in it is deleted, and the tests refuse to run unless its name contains "test":
+
+```bash
+cd autoapp
+AUTOAPP_TEST_DATABASE_URL="mysql+pymysql://@localhost/autoapp_test?unix_socket=/run/mysqld/mysqld.sock" python3 -m pytest
+```
+
 ## A development database
 
 ```bash
@@ -46,7 +53,7 @@ python3 create_dev_db.py
 
 This creates `autoapp/autoapp.db` (SQLite) with the sample data from `SQL/Seed_Sample_Data.sql`: two applications, three endpoints and two jobs that hand a file from one to the other. It prints the commands to run the jobs and look at the result. It never overwrites an existing database.
 
-For MariaDB, run `SQL/Create_Tables.sql` and then `SQL/Seed_Sample_Data.sql`, and point `DATABASE_URL` at the database. After changing the models, regenerate the table script with `python3 SQL/generate_ddl.py`.
+For MariaDB, run `SQL/Create_Tables.sql` and then `SQL/Seed_Sample_Data.sql`, and point `DATABASE_URL` at the database, for example `mysql+pymysql://user:password@dbhost/autoapp`. After changing the models, regenerate the table script with `python3 SQL/generate_ddl.py`.
 
 ## Running a job
 

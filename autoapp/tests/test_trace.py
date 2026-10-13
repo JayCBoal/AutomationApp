@@ -296,3 +296,42 @@ def test_trace_of_an_unknown_operation_is_404(client):
 
     assert response.status_code == 404
     assert "12345" in response.json()["detail"]
+
+
+def test_filenames_that_differ_only_by_case_are_different_files(seed, endpoints, outbox, run_runner, api):
+    """On Linux 'Report.csv' and 'report.csv' are two files. The database must not treat them as one."""
+    (outbox / "Legal_Batch_A.csv").write_text("upper")
+    (outbox / "Legal_Batch_a.csv").write_text("lower, and longer")
+    job = seed.job("DEV-LOAD")
+    seed.step(job, 1, SourceEndpoint="LEGAL_EXTRACTS", Dest="incoming")
+    seed.step(job, 2, Source="incoming/Legal_Batch_[Aa].csv", DestEndpoint="BILLING_INBOX", Move="True")
+    assert run_runner("DEV-LOAD", "88421").returncode == 0
+
+    [delivered_upper] = [op for op in api.operations(endpoint="BILLING_INBOX")
+                         if op["source"]["filename"] == "Legal_Batch_A.csv"]
+    trace = api.trace(delivered_upper["id"])
+
+    assert [hop["dest"]["filename"] for hop in trace["hops"]] == ["Legal_Batch_A.csv", "Legal_Batch_A.csv"]
+    assert [hop["dest"]["size"] for hop in trace["hops"]] == [5, 5]
+
+
+def test_trace_order_does_not_depend_on_the_order_spool_files_were_loaded(
+        collect_and_deliver, seed, run_runner, client, db, tmp_path):
+    """A spool file can arrive late. The trace must go by when things happened, not when they were loaded."""
+    from app.telemetry_ingest import ingest_records
+    from engine.spool_delivery import read_spool_file
+
+    load = seed.job("DEV-BILLING-LOAD")
+    seed.step(load, 1, SourceEndpoint="BILLING_INBOX", Dest="to_load", Move="True")
+    run_runner("DEV-COLLECT", "88421")
+    run_runner("DEV-BILLING-LOAD", "88430")
+
+    first, second = sorted((tmp_path / "spool").glob("*.jsonl"), key=lambda p: p.stat().st_mtime)
+    ingest_records(db, read_spool_file(second))         # the later run's spool file is loaded first
+    ingest_records(db, read_spool_file(first))
+    db.commit()
+
+    [picked_up] = client.get("/api/v1/operations", params={"job_key": "DEV-BILLING-LOAD", "filename": FILE_1}).json()
+    trace = client.get(f"/api/v1/operations/{picked_up['id']}/trace").json()
+
+    assert [hop["instance_id"] for hop in trace["hops"]] == ["88421", "88421", "88421", "88430"]

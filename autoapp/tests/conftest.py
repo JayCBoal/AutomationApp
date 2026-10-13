@@ -1,8 +1,17 @@
 """
 Shared pytest fixtures.
 
-Every test gets its own throwaway SQLite database inside pytest's per-test
-temp folder (tmp_path), so tests never touch autoapp.db or each other.
+By default every test gets its own throwaway SQLite database inside pytest's
+per-test temp folder (tmp_path), so tests never touch autoapp.db or each other.
+
+To run the same tests against a database server, name a database kept for
+testing in AUTOAPP_TEST_DATABASE_URL, for example:
+
+    AUTOAPP_TEST_DATABASE_URL="mysql+pymysql://@localhost/autoapp_test?unix_socket=/run/mysqld/mysqld.sock" python3 -m pytest
+
+Its tables are built once per run from SQL/Create_Tables.sql, the same script
+an installation would use, and emptied before each test. EVERYTHING IN THAT
+DATABASE IS DELETED, so its name must contain "test".
 """
 import json
 import os
@@ -16,29 +25,66 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
+from sqlalchemy.engine import make_url
 from sqlalchemy.orm import sessionmaker
 
 from app.database import get_db
 from app.main import app
 from app.telemetry_ingest import ingest_records
+from create_dev_db import sql_statements
 from engine.spool_delivery import sweep
 
 AUTOAPP_DIR = Path(__file__).resolve().parents[1]
+CREATE_TABLES_SCRIPT = AUTOAPP_DIR.parent / "SQL" / "Create_Tables.sql"
+SERVER_DATABASE_URL = os.getenv("AUTOAPP_TEST_DATABASE_URL")
 
 from app.models import (
     Application, Base, Endpoint, Entity, Job, JobStep, JobStepParameter, Site, StepType, Variable
 )
 
 
+@pytest.fixture(scope="session")
+def server_database():
+    """Builds the tables in the server test database, once per test run, from the installation script."""
+    database = make_url(SERVER_DATABASE_URL).database or ""
+    if "test" not in database.lower():
+        pytest.exit(f"Refusing to run: AUTOAPP_TEST_DATABASE_URL names database '{database}'. The tests delete "
+                    f"everything in the database they use, so its name must contain 'test'.", returncode=2)
+    engine = create_engine(SERVER_DATABASE_URL)
+    with engine.begin() as connection:
+        for statement in sql_statements(CREATE_TABLES_SCRIPT.read_text()):
+            connection.exec_driver_sql(statement)
+    yield engine
+    engine.dispose()
+
+
 @pytest.fixture
-def db_url(tmp_path):
-    return f"sqlite:///{tmp_path / 'autoapp_test.db'}"
+def db_url(tmp_path, request):
+    if not SERVER_DATABASE_URL:
+        return f"sqlite:///{tmp_path / 'autoapp_test.db'}"
+
+    engine = request.getfixturevalue("server_database")
+    with engine.begin() as connection:
+        connection.exec_driver_sql("SET FOREIGN_KEY_CHECKS = 0")
+        for table in Base.metadata.sorted_tables:
+            connection.exec_driver_sql(f"TRUNCATE TABLE `{table.name}`")
+        connection.exec_driver_sql("SET FOREIGN_KEY_CHECKS = 1")
+    return SERVER_DATABASE_URL
+
+
+def connect_args(db_url) -> dict:
+    # SQLite only: lets the API's worker threads use a connection opened by another thread
+    return {"check_same_thread": False} if db_url.startswith("sqlite") else {}
 
 
 @pytest.fixture
 def db(db_url):
-    engine = create_engine(db_url)
-    Base.metadata.create_all(engine)
+    if db_url.startswith("sqlite"):
+        engine = create_engine(db_url)
+        Base.metadata.create_all(engine)
+    else:
+        # So the test sees what the runner and the API have committed without ending its own transaction first
+        engine = create_engine(db_url, isolation_level="READ COMMITTED")
     session = sessionmaker(bind=engine)()
     yield session
     session.close()
@@ -127,10 +173,11 @@ def client(db, db_url):
     """
     The API, called over HTTP in-process, reading and writing the test's database.
     Requests get their own database sessions, as on a real server, so a test
-    must db.commit() what it seeded before calling, and db.expire_all() before
-    reading back what a request changed.
+    must db.commit() what it seeded before calling, and db.commit() again before
+    reading back what a request changed (a session does not see other sessions'
+    changes until its own transaction ends).
     """
-    engine = create_engine(db_url, connect_args={"check_same_thread": False})
+    engine = create_engine(db_url, connect_args=connect_args(db_url))
     make_session = sessionmaker(bind=engine)
 
     def override_get_db():
@@ -233,6 +280,6 @@ def load_spool(db, tmp_path):
     def _load():
         delivered, failed = sweep(tmp_path / "spool", lambda records: ingest_records(db, records))
         assert not failed, failed
-        db.expire_all()
+        db.commit()
         return delivered
     return _load

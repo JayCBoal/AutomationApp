@@ -33,7 +33,7 @@ def deliver(db, db_url, tmp_path):
             [sys.executable, "-m", "engine.spool_delivery", "--spool-dir", str(tmp_path / "spool"), *args],
             cwd=AUTOAPP_DIR, env=subprocess_env(db_url), capture_output=True, text=True,
         )
-        db.expire_all()
+        db.commit()
         return result
     return _deliver
 
@@ -42,7 +42,7 @@ def test_runner_delivers_its_telemetry_through_the_api(db, job, run_runner, live
     result = run_runner(job.JobKey, "88421", "--api-url", live_api)
 
     assert result.returncode == 0, result.stderr
-    db.expire_all()
+    db.commit()
     run = db.query(JobRun).one()
     assert (run.JobKey, run.SchedulerInstanceID, run.Status) == ("DEV-LOAD", "88421", "SUCCESS")
     assert [(op.StepOrder, op.OpType, op.SourceFilename) for op in run.operations] == [
@@ -82,7 +82,7 @@ def test_job_still_succeeds_when_the_api_is_unreachable(db, job, run_runner, unu
 
     assert result.returncode == 0, result.stderr
     assert names(tmp_path / "app_inbox") == ["Legal_Batch_1.csv", "Legal_Batch_2.csv"]
-    db.expire_all()
+    db.commit()
     assert db.query(JobRun).count() == 0
     [spool_file] = names(tmp_path / "spool")           # waiting for the delivery command
     assert spool_file.endswith(".jsonl")

@@ -26,19 +26,19 @@ Updated 2026-10-12. The order under "Work queue" is a proposal; the items under 
 
 10. **Leftovers from removing the process level.** Confirm that dropping `Jobs.Name` and `Jobs.ExecutionOrder`, and the mockup's Severity field, is acceptable.
 
+11. **Upper and lower case in names.** MariaDB treats `DEV-LOAD` and `dev-load` as the same `JobKey` (and likewise endpoint, application and tag names); SQLite treats them as different. Pick one behaviour for every database. Proposal: names ignore case everywhere, since a JobKey also names a folder.
+
 Decided and removed from this list: telemetry direction (spool first, delivered through the API), the schema's source of truth (the Python models), and what a file step does when nothing matches (fails unless `AllowNoFiles` is set). See [CHANGE_LOG.md](CHANGE_LOG.md).
 
 ## Work queue
 
 Ordered toward a demonstration: a job built in the job editor, run by a scheduler, and traced file by file. The job editor and the file trace are the two things to show.
 
-### Next: first page, and a real database
+### Next: first page
 
-1. **Run on MariaDB.** `SQL/Create_Tables.sql` is generated from the models but has only been read, not run. Install MariaDB, run the table script and the sample data, and run the test suite against it.
+1. **Operations Log page.** The first page of the web interface: a read-only search over `GET /api/v1/operations`, with a Trace link. Depends on decision 9.
 
 2. **Migrations.** Adopt Alembic so that later schema changes are applied to an existing database instead of rebuilding it.
-
-3. **Operations Log page.** The first page of the web interface: a read-only search over `GET /api/v1/operations`, with a Trace link. Depends on decision 9.
 
 ### Then: the job editor
 

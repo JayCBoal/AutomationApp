@@ -47,6 +47,15 @@ Notable structural, schema and design changes to AutoApp, newest first. Line-by-
 - **Added:** values of secret variables are masked in the log.
 - **Rationale:** carries forward the 2024 prototype's logging, where the job log said what each step did and a step could be made quiet.
 
+### MariaDB
+
+- **Verified:** `SQL/Create_Tables.sql` and `SQL/Seed_Sample_Data.sql` run on MariaDB 11.8, and the whole test suite passes against it.
+- **Added:** the tests run against a server database when `AUTOAPP_TEST_DATABASE_URL` is set. The tables are built from `SQL/Create_Tables.sql`.
+- **Changed:** run and operation times are `DATETIME(6)` on MariaDB. With whole seconds, the trace put operations from different runs in the wrong order when their spool files were loaded out of sequence.
+- **Changed:** `Operations` paths and filenames use an exact (case-sensitive) comparison on MariaDB. With its default, the trace treated `Legal_Batch_A.csv` and `Legal_Batch_a.csv` as one file.
+- **Added:** `pymysql`, the MariaDB driver, to the requirements.
+- **Changed:** `create_dev_db.py` sends the sample data script to the database exactly as written.
+
 ### No files matched
 
 - **Changed:** a file step whose source matches no files now fails. Before, it succeeded with a warning.

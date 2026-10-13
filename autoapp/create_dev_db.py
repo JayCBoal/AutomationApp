@@ -16,7 +16,7 @@ import re
 import sys
 from pathlib import Path
 
-from sqlalchemy import inspect, text
+from sqlalchemy import inspect
 
 from app.database import DATABASE_URL, SessionLocal, engine
 from app.models import Application, Base, Variable
@@ -31,8 +31,10 @@ def sql_statements(script: str) -> list:
 
 
 def load_seed(db) -> None:
+    # Sent to the database exactly as written: the script contains ${...} and ':' that are not for us to interpret
+    connection = db.connection()
     for statement in sql_statements(SEED_FILE.read_text()):
-        db.execute(text(statement))
+        connection.exec_driver_sql(statement)
     db.commit()
 
 

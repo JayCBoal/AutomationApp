@@ -122,9 +122,13 @@ The Python models in `autoapp/app/models.py` are the definition of the schema.
 - `SQL/Seed_Sample_Data.sql` is a small working set of sample definitions in plain SQL. A test loads it and runs its jobs.
 - `autoapp/create_dev_db.py` builds a local SQLite database from the models and the sample data.
 
+- Runs on MariaDB (tested on 11.8) as well as SQLite. Two column types are spelled out for MariaDB, where its defaults would give wrong answers:
+  - Run and operation times are stored to the microsecond. A plain `DATETIME` there keeps whole seconds, and the trace orders operations by time.
+  - Paths and filenames in `Operations` are compared exactly. Text comparison there ignores case by default, and `Report.csv` and `report.csv` are different files.
+
 **Planned**
 
-- The generated MariaDB script has not been run against a MariaDB server yet. Development and tests use SQLite.
+- Names (`JobKey`, endpoint names and so on) are compared with the database's default rules, so MariaDB ignores case in them and SQLite does not.
 - Migrations (Alembic), so a schema change can be applied to a database that already holds data. Today the table script drops and recreates everything.
 
 ## 3. Variables and placeholders
@@ -275,8 +279,9 @@ Not started.
 
 ## 12. Testing
 
-- Tests are in `autoapp/tests/` and run with `python3 -m pytest` (145 tests, about 20 seconds).
+- Tests are in `autoapp/tests/` and run with `python3 -m pytest` (147 tests: about 20 seconds on SQLite, about a minute on MariaDB).
 - Each test builds its own temporary SQLite database and temporary folders. No test touches the working directory or a shared database.
+- The same suite runs against MariaDB when `AUTOAPP_TEST_DATABASE_URL` names a test database. Its tables are built once per run from `SQL/Create_Tables.sql`, the script an installation would use, and emptied before each test.
 - Tests run the real code. AutoApp's own components are not mocked. The runner tests launch the runner as a separate process, as a scheduler would.
 - API tests go through real HTTP requests. The delivery tests start a real API server in its own process.
 - The only things replaced in tests are at the edge of the system: the file copy (to imitate a transfer cut short) and the network call (to see what the runner would send).

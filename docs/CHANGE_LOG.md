@@ -56,6 +56,13 @@ Notable structural, schema and design changes to AutoApp, newest first. Line-by-
 - **Added:** `pymysql`, the MariaDB driver, to the requirements.
 - **Changed:** `create_dev_db.py` sends the sample data script to the database exactly as written.
 
+### Names are case-sensitive
+
+- **Decided:** names are case-sensitive on every database, as in RunMyJobs. `DEV-LOAD` and `dev-load` are different job keys.
+- **Changed:** every table uses the `utf8mb4_bin` collation on MariaDB, declared once in the models. Before, MariaDB ignored case in names while SQLite and the variable resolver did not, so the same job definitions behaved differently depending on the database.
+- **Changed:** this replaces the per-column setting added for `Operations` paths and filenames earlier the same day.
+- **Unchanged:** searching the operations log ignores case.
+
 ### No files matched
 
 - **Changed:** a file step whose source matches no files now fails. Before, it succeeded with a warning.

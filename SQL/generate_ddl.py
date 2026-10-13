@@ -49,7 +49,7 @@ def build() -> str:
 
     for table in tables:
         statement = str(CreateTable(table).compile(dialect=dialect)).strip()
-        out += [statement + " ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;", ""]
+        out += [statement + ";", ""]
         for index in sorted(table.indexes, key=lambda i: i.name):
             out += [str(CreateIndex(index).compile(dialect=dialect)).strip() + ";", ""]
 

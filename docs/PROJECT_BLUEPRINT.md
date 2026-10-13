@@ -122,13 +122,16 @@ The Python models in `autoapp/app/models.py` are the definition of the schema.
 - `SQL/Seed_Sample_Data.sql` is a small working set of sample definitions in plain SQL. A test loads it and runs its jobs.
 - `autoapp/create_dev_db.py` builds a local SQLite database from the models and the sample data.
 
-- Runs on MariaDB (tested on 11.8) as well as SQLite. Two column types are spelled out for MariaDB, where its defaults would give wrong answers:
+- Runs on MariaDB (tested on 11.8) as well as SQLite. Two things are spelled out for MariaDB, where its defaults would give wrong answers:
   - Run and operation times are stored to the microsecond. A plain `DATETIME` there keeps whole seconds, and the trace orders operations by time.
-  - Paths and filenames in `Operations` are compared exactly. Text comparison there ignores case by default, and `Report.csv` and `report.csv` are different files.
+  - Every table compares text exactly (collation `utf8mb4_bin`). MariaDB ignores case by default.
+- **Names, paths and filenames are case-sensitive on every database.** `DEV-LOAD` and `dev-load` are two jobs; `Report.csv` and `report.csv` are two files. This applies to job keys, endpoint, application, entity, site and tag names, and variable and parameter names.
+- Searches ignore case: the operations log lower-cases both sides itself.
 
 **Planned**
 
-- Names (`JobKey`, endpoint names and so on) are compared with the database's default rules, so MariaDB ignores case in them and SQLite does not.
+- Two job keys that differ only by case get two working folders. That is fine on Linux; on an agent whose file system ignores case (Windows, macOS) they would share one.
+- Sorting in the web interface: with exact comparison the database sorts capitals before lower-case letters, so pages that list names should sort them without regard to case themselves.
 - Migrations (Alembic), so a schema change can be applied to a database that already holds data. Today the table script drops and recreates everything.
 
 ## 3. Variables and placeholders
@@ -279,7 +282,7 @@ Not started.
 
 ## 12. Testing
 
-- Tests are in `autoapp/tests/` and run with `python3 -m pytest` (147 tests: about 20 seconds on SQLite, about a minute on MariaDB).
+- Tests are in `autoapp/tests/` and run with `python3 -m pytest` (153 tests: about half a minute on SQLite, a little over a minute on MariaDB).
 - Each test builds its own temporary SQLite database and temporary folders. No test touches the working directory or a shared database.
 - The same suite runs against MariaDB when `AUTOAPP_TEST_DATABASE_URL` names a test database. Its tables are built once per run from `SQL/Create_Tables.sql`, the script an installation would use, and emptied before each test.
 - Tests run the real code. AutoApp's own components are not mocked. The runner tests launch the runner as a separate process, as a scheduler would.

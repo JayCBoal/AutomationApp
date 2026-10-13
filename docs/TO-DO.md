@@ -26,9 +26,7 @@ Updated 2026-10-12. The order under "Work queue" is a proposal; the items under 
 
 10. **Leftovers from removing the process level.** Confirm that dropping `Jobs.Name` and `Jobs.ExecutionOrder`, and the mockup's Severity field, is acceptable.
 
-11. **Upper and lower case in names.** MariaDB treats `DEV-LOAD` and `dev-load` as the same `JobKey` (and likewise endpoint, application and tag names); SQLite treats them as different. Pick one behaviour for every database. Proposal: names ignore case everywhere, since a JobKey also names a folder.
-
-Decided and removed from this list: telemetry direction (spool first, delivered through the API), the schema's source of truth (the Python models), and what a file step does when nothing matches (fails unless `AllowNoFiles` is set). See [CHANGE_LOG.md](CHANGE_LOG.md).
+Decided and removed from this list: telemetry direction (spool first, delivered through the API), the schema's source of truth (the Python models), what a file step does when nothing matches (fails unless `AllowNoFiles` is set), and upper and lower case in names (case-sensitive everywhere). See [CHANGE_LOG.md](CHANGE_LOG.md).
 
 ## Work queue
 

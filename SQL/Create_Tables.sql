@@ -43,7 +43,7 @@ CREATE TABLE `MasterObjects` (
 	`ModifiedDateTime` DATETIME, 
 	`ModifiedBy` VARCHAR(100), 
 	PRIMARY KEY (id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+)ENGINE=InnoDB CHARSET=utf8mb4 COLLATE utf8mb4_bin;
 
 CREATE TABLE `StepTypes` (
 	id INTEGER NOT NULL AUTO_INCREMENT, 
@@ -53,7 +53,7 @@ CREATE TABLE `StepTypes` (
 	`IsActive` BOOL DEFAULT true, 
 	PRIMARY KEY (id), 
 	UNIQUE (`Code`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+)ENGINE=InnoDB CHARSET=utf8mb4 COLLATE utf8mb4_bin;
 
 CREATE TABLE `Applications` (
 	`MasterObject_id` INTEGER NOT NULL, 
@@ -65,7 +65,7 @@ CREATE TABLE `Applications` (
 	FOREIGN KEY(`MasterObject_id`) REFERENCES `MasterObjects` (id) ON DELETE CASCADE, 
 	UNIQUE (`Name`), 
 	UNIQUE (`Abbr`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+)ENGINE=InnoDB CHARSET=utf8mb4 COLLATE utf8mb4_bin;
 
 CREATE TABLE `Audits` (
 	id INTEGER NOT NULL AUTO_INCREMENT, 
@@ -76,7 +76,7 @@ CREATE TABLE `Audits` (
 	`CreatedDateTime` DATETIME DEFAULT (now()), 
 	PRIMARY KEY (id), 
 	FOREIGN KEY(`MasterObject_id`) REFERENCES `MasterObjects` (id) ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+)ENGINE=InnoDB CHARSET=utf8mb4 COLLATE utf8mb4_bin;
 
 CREATE TABLE `Credentials` (
 	`MasterObject_id` INTEGER NOT NULL, 
@@ -87,7 +87,7 @@ CREATE TABLE `Credentials` (
 	PRIMARY KEY (`MasterObject_id`), 
 	FOREIGN KEY(`MasterObject_id`) REFERENCES `MasterObjects` (id) ON DELETE CASCADE, 
 	UNIQUE (`Name`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+)ENGINE=InnoDB CHARSET=utf8mb4 COLLATE utf8mb4_bin;
 
 CREATE TABLE `Entities` (
 	`MasterObject_id` INTEGER NOT NULL, 
@@ -98,7 +98,7 @@ CREATE TABLE `Entities` (
 	PRIMARY KEY (`MasterObject_id`), 
 	FOREIGN KEY(`MasterObject_id`) REFERENCES `MasterObjects` (id) ON DELETE CASCADE, 
 	UNIQUE (`Name`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+)ENGINE=InnoDB CHARSET=utf8mb4 COLLATE utf8mb4_bin;
 
 CREATE TABLE `Jobs` (
 	`MasterObject_id` INTEGER NOT NULL, 
@@ -108,7 +108,7 @@ CREATE TABLE `Jobs` (
 	PRIMARY KEY (`MasterObject_id`), 
 	FOREIGN KEY(`MasterObject_id`) REFERENCES `MasterObjects` (id) ON DELETE CASCADE, 
 	UNIQUE (`JobKey`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+)ENGINE=InnoDB CHARSET=utf8mb4 COLLATE utf8mb4_bin;
 
 CREATE TABLE `StepDefinitions` (
 	id INTEGER NOT NULL AUTO_INCREMENT, 
@@ -120,7 +120,7 @@ CREATE TABLE `StepDefinitions` (
 	`Description` TEXT, 
 	PRIMARY KEY (id), 
 	FOREIGN KEY(`StepType_id`) REFERENCES `StepTypes` (id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+)ENGINE=InnoDB CHARSET=utf8mb4 COLLATE utf8mb4_bin;
 
 CREATE TABLE `Tags` (
 	`MasterObject_id` INTEGER NOT NULL, 
@@ -130,7 +130,7 @@ CREATE TABLE `Tags` (
 	PRIMARY KEY (`MasterObject_id`), 
 	FOREIGN KEY(`MasterObject_id`) REFERENCES `MasterObjects` (id) ON DELETE CASCADE, 
 	UNIQUE (`TagName`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+)ENGINE=InnoDB CHARSET=utf8mb4 COLLATE utf8mb4_bin;
 
 CREATE TABLE `Variables` (
 	id INTEGER NOT NULL AUTO_INCREMENT, 
@@ -142,7 +142,7 @@ CREATE TABLE `Variables` (
 	PRIMARY KEY (id), 
 	CONSTRAINT uq_obj_var UNIQUE (`MasterObject_id`, `VarName`), 
 	FOREIGN KEY(`MasterObject_id`) REFERENCES `MasterObjects` (id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+)ENGINE=InnoDB CHARSET=utf8mb4 COLLATE utf8mb4_bin;
 
 CREATE TABLE `JobRuns` (
 	id INTEGER NOT NULL AUTO_INCREMENT, 
@@ -160,7 +160,7 @@ CREATE TABLE `JobRuns` (
 	PRIMARY KEY (id), 
 	UNIQUE (`RunID`), 
 	FOREIGN KEY(`Job_MasterObject_id`) REFERENCES `Jobs` (`MasterObject_id`) ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+)ENGINE=InnoDB CHARSET=utf8mb4 COLLATE utf8mb4_bin;
 
 CREATE INDEX `ix_JobRuns_JobKey` ON `JobRuns` (`JobKey`);
 
@@ -176,7 +176,7 @@ CREATE TABLE `JobSteps` (
 	PRIMARY KEY (id), 
 	FOREIGN KEY(`Job_MasterObject_id`) REFERENCES `Jobs` (`MasterObject_id`) ON DELETE CASCADE, 
 	FOREIGN KEY(`StepType_id`) REFERENCES `StepTypes` (id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+)ENGINE=InnoDB CHARSET=utf8mb4 COLLATE utf8mb4_bin;
 
 CREATE TABLE `Sites` (
 	`MasterObject_id` INTEGER NOT NULL, 
@@ -191,7 +191,7 @@ CREATE TABLE `Sites` (
 	FOREIGN KEY(`MasterObject_id`) REFERENCES `MasterObjects` (id) ON DELETE CASCADE, 
 	FOREIGN KEY(`Entity_MasterObject_id`) REFERENCES `Entities` (`MasterObject_id`) ON DELETE SET NULL, 
 	UNIQUE (`Name`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+)ENGINE=InnoDB CHARSET=utf8mb4 COLLATE utf8mb4_bin;
 
 CREATE TABLE `TagAssignments` (
 	id INTEGER NOT NULL AUTO_INCREMENT, 
@@ -201,7 +201,7 @@ CREATE TABLE `TagAssignments` (
 	CONSTRAINT uq_tag_target UNIQUE (`Tag_MasterObject_id`, `Target_MasterObject_id`), 
 	FOREIGN KEY(`Tag_MasterObject_id`) REFERENCES `Tags` (`MasterObject_id`) ON DELETE CASCADE, 
 	FOREIGN KEY(`Target_MasterObject_id`) REFERENCES `MasterObjects` (id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+)ENGINE=InnoDB CHARSET=utf8mb4 COLLATE utf8mb4_bin;
 
 CREATE TABLE `Endpoints` (
 	id INTEGER NOT NULL AUTO_INCREMENT, 
@@ -217,7 +217,7 @@ CREATE TABLE `Endpoints` (
 	UNIQUE (`Name`), 
 	FOREIGN KEY(`Site_MasterObject_id`) REFERENCES `Sites` (`MasterObject_id`) ON DELETE SET NULL, 
 	FOREIGN KEY(`Application_MasterObject_id`) REFERENCES `Applications` (`MasterObject_id`) ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+)ENGINE=InnoDB CHARSET=utf8mb4 COLLATE utf8mb4_bin;
 
 CREATE TABLE `JobStepParameters` (
 	id INTEGER NOT NULL AUTO_INCREMENT, 
@@ -226,7 +226,7 @@ CREATE TABLE `JobStepParameters` (
 	`ParameterValue` TEXT, 
 	PRIMARY KEY (id), 
 	FOREIGN KEY(`JobStep_id`) REFERENCES `JobSteps` (id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+)ENGINE=InnoDB CHARSET=utf8mb4 COLLATE utf8mb4_bin;
 
 CREATE TABLE `Operations` (
 	id INTEGER NOT NULL AUTO_INCREMENT, 
@@ -237,12 +237,12 @@ CREATE TABLE `Operations` (
 	`OpType` VARCHAR(50) NOT NULL, 
 	`OpStatus` VARCHAR(20) NOT NULL, 
 	`SourceEndpoint_id` INTEGER, 
-	`SourcePath` TEXT COLLATE utf8mb4_bin, 
-	`SourceFilename` VARCHAR(255) COLLATE utf8mb4_bin, 
+	`SourcePath` TEXT, 
+	`SourceFilename` VARCHAR(255), 
 	`SourceSize` BIGINT, 
 	`DestEndpoint_id` INTEGER, 
-	`DestPath` TEXT COLLATE utf8mb4_bin, 
-	`DestFilename` VARCHAR(255) COLLATE utf8mb4_bin, 
+	`DestPath` TEXT, 
+	`DestFilename` VARCHAR(255), 
 	`DestSize` BIGINT, 
 	`Checksum` VARCHAR(64), 
 	`Details` TEXT, 
@@ -255,7 +255,7 @@ CREATE TABLE `Operations` (
 	FOREIGN KEY(`JobStep_id`) REFERENCES `JobSteps` (id) ON DELETE SET NULL, 
 	FOREIGN KEY(`SourceEndpoint_id`) REFERENCES `Endpoints` (id) ON DELETE SET NULL, 
 	FOREIGN KEY(`DestEndpoint_id`) REFERENCES `Endpoints` (id) ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+)ENGINE=InnoDB CHARSET=utf8mb4 COLLATE utf8mb4_bin;
 
 CREATE INDEX `ix_Operations_DestFilename` ON `Operations` (`DestFilename`);
 

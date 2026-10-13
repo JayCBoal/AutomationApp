@@ -9,12 +9,8 @@ from sqlalchemy.orm import declarative_base, relationship, validates
 
 Base = declarative_base()
 
-# Column types that need spelling out for MariaDB and MySQL, whose defaults differ from other databases:
-#   - a plain DATETIME there keeps whole seconds only, and the file trace orders operations by time;
-#   - text comparison there ignores case, and 'Report.csv' and 'report.csv' are different files.
+# A plain DATETIME on MariaDB and MySQL keeps whole seconds only, and the file trace orders operations by time
 PreciseDateTime = DateTime().with_variant(mysql.DATETIME(fsp=6), "mysql", "mariadb")
-ExactText = Text().with_variant(mysql.TEXT(collation="utf8mb4_bin"), "mysql", "mariadb")
-ExactString255 = String(255).with_variant(mysql.VARCHAR(255, collation="utf8mb4_bin"), "mysql", "mariadb")
 
 # Each default is declared twice: "default" is applied by this code, "server_default" by the
 # database itself, so that rows inserted with plain SQL (a seed script, a DBA) get it too.
@@ -317,12 +313,12 @@ class Operation(Base):
     OpStatus = Column(String(20), nullable=False)
     # Registered Endpoints the file came from / went to; NULL for a location inside the working folder
     SourceEndpoint_id = Column(Integer, ForeignKey('Endpoints.id', ondelete='SET NULL'), nullable=True)
-    SourcePath = Column(ExactText, nullable=True)
-    SourceFilename = Column(ExactString255, nullable=True, index=True)
+    SourcePath = Column(Text, nullable=True)
+    SourceFilename = Column(String(255), nullable=True, index=True)
     SourceSize = Column(BigInteger, nullable=True)
     DestEndpoint_id = Column(Integer, ForeignKey('Endpoints.id', ondelete='SET NULL'), nullable=True)
-    DestPath = Column(ExactText, nullable=True)
-    DestFilename = Column(ExactString255, nullable=True, index=True)
+    DestPath = Column(Text, nullable=True)
+    DestFilename = Column(String(255), nullable=True, index=True)
     DestSize = Column(BigInteger, nullable=True)
     # SHA-256 of the file, recorded only when the step asks for it (Checksum=True)
     Checksum = Column(String(64), nullable=True)
@@ -347,3 +343,17 @@ class Audit(Base):
     PerformedBy = Column(String(100), default='system', server_default='system')
     Details = Column(Text, nullable=True)
     CreatedDateTime = Column(DateTime, default=utcnow, server_default=func.now())
+
+
+# ============================================================================
+# Text comparison
+# ============================================================================
+# Names, paths and filenames are case-sensitive: 'DEV-LOAD' and 'dev-load' are two jobs, and
+# 'Report.csv' and 'report.csv' two files. SQLite and PostgreSQL compare text that way already.
+# MariaDB and MySQL ignore case unless a table says otherwise, so every table says otherwise.
+# (Searches that should ignore case, such as the operations log, lower-case both sides themselves.)
+for _table in Base.metadata.tables.values():
+    for _dialect in ("mysql", "mariadb"):
+        _table.dialect_options[_dialect]["engine"] = "InnoDB"
+        _table.dialect_options[_dialect]["charset"] = "utf8mb4"
+        _table.dialect_options[_dialect]["collate"] = "utf8mb4_bin"

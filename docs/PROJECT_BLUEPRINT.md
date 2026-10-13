@@ -103,7 +103,7 @@ An endpoint has no direction. The same folder can be a destination for one job a
 - `Operations`: a register of what steps actually did. It points at its `JobRuns` row.
   - For a file step, one row per file: a source side and a destination side (endpoint if registered, path, filename, size), the operation type, status, error, times, and an optional SHA-256 checksum.
   - For a step that handles no files (SQL, REST call, email, once those step types exist), one row per action, with the file columns empty and what was done in `Details` (JSON). The handler call for this exists; no step type uses it yet.
-  - A step that finds nothing to do writes no row. The job log records that it looked.
+  - A step that finds nothing to do writes no row. By default it fails, so the run's error message records what it looked for.
 
 ### Audits
 
@@ -180,6 +180,7 @@ This is what makes a file trace possible: an operation that reads from an endpoi
   - Each file is recorded separately, whether it succeeded or failed.
   - The size is measured at the source and at the destination; a difference fails the step.
   - `Checksum=True` records the file's SHA-256 and verifies the copy against it.
+  - A step that finds no files fails unless `AllowNoFiles=True`.
 - `engine/handlers/__init__.py`: the registry mapping step type codes to handlers.
 
 **Planned**
@@ -203,7 +204,7 @@ What the runner prints while a job runs, for the scheduler to capture against th
 
 - A step can set its own level with a `LogLevel` parameter, quieter or more detailed than the job's.
 - This applies to every step type. The common wrapper logs the parameters and the closing line; a handler logs each action and returns a one-line account of the step.
-- A step that matches no files logs a warning and succeeds.
+- A file step that matches no files fails, and the error names the pattern it searched for. With `AllowNoFiles=True` it logs a warning and succeeds instead.
 - Errors go to stderr, everything else to stdout.
 - Values of variables marked secret are replaced with `********` wherever they would appear in the log.
 
@@ -274,7 +275,7 @@ Not started.
 
 ## 12. Testing
 
-- Tests are in `autoapp/tests/` and run with `python3 -m pytest` (142 tests, about 20 seconds).
+- Tests are in `autoapp/tests/` and run with `python3 -m pytest` (145 tests, about 20 seconds).
 - Each test builds its own temporary SQLite database and temporary folders. No test touches the working directory or a shared database.
 - Tests run the real code. AutoApp's own components are not mocked. The runner tests launch the runner as a separate process, as a scheduler would.
 - API tests go through real HTTP requests. The delivery tests start a real API server in its own process.

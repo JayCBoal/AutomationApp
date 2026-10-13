@@ -16,19 +16,17 @@ Updated 2026-10-12. The order under "Work queue" is a proposal; the items under 
 
 5. **Destination endpoints.** Should a delivery be checked against the destination endpoint's `FilenamePattern`? Should endpoints carry a rename mask, as the prototype's `Deliveries` table did?
 
-6. **No files matched.** A copy step whose pattern matches nothing succeeds and writes no operation record, since `Operations` is a register of what actually happened. Still open: whether a step should be able to treat "nothing to collect" as a failure, and where a run records that it looked and found nothing.
+6. **Prototype features.** Which of these carry forward: start at step, stop after step, skip steps; per-step success, warning and failure return codes; job history; date masks with a "use date" override?
 
-7. **Prototype features.** Which of these carry forward: start at step, stop after step, skip steps; per-step success, warning and failure return codes; job history; date masks with a "use date" override?
+7. **What "inside the scheduler" means first.** The goal is for AutoApp to be used from within a scheduling product. Decide the first integration target and its shape: for example, job definitions edited in the scheduler's interface through AutoApp's API, results written back to the scheduler's job log, and single sign-on. This raises the priority of the CRUD API relative to a standalone web interface.
 
-8. **What "inside the scheduler" means first.** The goal is for AutoApp to be used from within a scheduling product. Decide the first integration target and its shape: for example, job definitions edited in the scheduler's interface through AutoApp's API, results written back to the scheduler's job log, and single sign-on. This raises the priority of the CRUD API relative to a standalone web interface.
+8. **Repository housekeeping.** `AutomationApp/_gemini_debris/` and the zip files in `PriorArt/CodeRepo/backup/` can be deleted once no longer wanted.
 
-9. **Repository housekeeping.** `AutomationApp/_gemini_debris/` and the zip files in `PriorArt/CodeRepo/backup/` can be deleted once no longer wanted.
+9. **Front end.** Confirm plain static pages (HTML and a small script library, no build step) that call the REST API. See [UI_VISION.md](UI_VISION.md).
 
-10. **Front end.** Confirm plain static pages (HTML and a small script library, no build step) that call the REST API. See [UI_VISION.md](UI_VISION.md).
+10. **Leftovers from removing the process level.** Confirm that dropping `Jobs.Name` and `Jobs.ExecutionOrder`, and the mockup's Severity field, is acceptable.
 
-11. **Leftovers from removing the process level.** Confirm that dropping `Jobs.Name` and `Jobs.ExecutionOrder`, and the mockup's Severity field, is acceptable.
-
-Decided and removed from this list: telemetry direction (spool first, delivered through the API) and the schema's source of truth (the Python models). See [CHANGE_LOG.md](CHANGE_LOG.md).
+Decided and removed from this list: telemetry direction (spool first, delivered through the API), the schema's source of truth (the Python models), and what a file step does when nothing matches (fails unless `AllowNoFiles` is set). See [CHANGE_LOG.md](CHANGE_LOG.md).
 
 ## Work queue
 
@@ -40,7 +38,7 @@ Ordered toward a demonstration: a job built in the job editor, run by a schedule
 
 2. **Migrations.** Adopt Alembic so that later schema changes are applied to an existing database instead of rebuilding it.
 
-3. **Operations Log page.** The first page of the web interface: a read-only search over `GET /api/v1/operations`, with a Trace link. Depends on decision 10.
+3. **Operations Log page.** The first page of the web interface: a read-only search over `GET /api/v1/operations`, with a Trace link. Depends on decision 9.
 
 ### Then: the job editor
 
@@ -65,13 +63,15 @@ Ordered toward a demonstration: a job built in the job editor, run by a schedule
 
 8. **Tags.** Depends on decision 3. Expose tag assignments in the models, add the `TAG` scope to the variable cascade.
 
-9. **Runner controls.** Depends on decision 7.
+9. **Runner controls.** Depends on decision 6.
 
-10. **Scheduler integration.** Depends on decision 8.
+10. **Scheduler integration.** Depends on decision 7.
 
 ### Later
 
 - **Trace across machines.** The trace compares paths as text. Add the site or host to the comparison once steps reach remote sites or agents on more than one machine.
+- **Skip the rest when nothing was collected.** If a job's first step is allowed to find nothing, every later step that reads the same folder needs `AllowNoFiles` too. A step option to end the job successfully at that point would be tidier.
+- **Delete step default.** When the delete step type is built, decide whether finding nothing to delete should succeed by default.
 - **Retention.** A purge rule for `Operations`, which grows by one row per file.
 - **Killed runs.** Pick up spool files left as `.jsonl.tmp` by a run that did not end normally, and mark the run accordingly.
 

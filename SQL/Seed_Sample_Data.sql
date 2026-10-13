@@ -27,6 +27,7 @@ INSERT INTO StepDefinitions (StepType_id, ParameterName, DataType, IsRequired, D
 (1, 'Move',           'BOOLEAN', 0, 'False', 'Remove each file from the source once it has arrived'),
 (1, 'CreateFolder',   'BOOLEAN', 0, 'True',  'Create the destination folder if it does not exist'),
 (1, 'Checksum',       'BOOLEAN', 0, 'False', 'Record each file''s SHA-256 and verify the copy against it'),
+(1, 'AllowNoFiles',   'BOOLEAN', 0, 'False', 'Succeed when no files match. By default a step that finds nothing fails.'),
 (1, 'LogLevel',       'STRING',  0, NULL,    'Job log level for this step alone: DEBUG, DETAIL, SUMMARY or SILENT');
 
 -- ----------------------------------------------------------------------------

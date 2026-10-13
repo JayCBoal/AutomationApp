@@ -27,7 +27,8 @@ class FileOpHandler(BaseHandler):
 
     Parameters: Source, Dest, Move (default False), CreateFolder (default True),
     Checksum (default False: when True, the file's SHA-256 is recorded and the
-    copy is verified against it).
+    copy is verified against it), AllowNoFiles (default False: a step that finds
+    no files to handle fails, unless this is True).
     """
 
     PATH_PARAMS = {"Source": "source", "Dest": "dest"}
@@ -40,6 +41,7 @@ class FileOpHandler(BaseHandler):
         move = _is_true(resolved_params.get("Move", "False"))
         create_folder = _is_true(resolved_params.get("CreateFolder", "True"))
         verify_checksum = _is_true(resolved_params.get("Checksum", "False"))
+        allow_no_files = _is_true(resolved_params.get("AllowNoFiles", "False"))
         op_type = "MOVE" if move else "COPY"
         done = "Moved" if move else "Copied"
 
@@ -62,6 +64,12 @@ class FileOpHandler(BaseHandler):
         matched_files = sorted(f for f in glob.glob(source_pattern) if os.path.isfile(f))
         job_log.debug(f"Files matching '{source_pattern}': {matched_files}")
         if not matched_files:
+            if not allow_no_files:
+                # Finding nothing usually means something upstream is late or broken
+                raise FileNotFoundError(
+                    f"No files matched '{source_pattern}'. "
+                    f"If that is acceptable for this step, set AllowNoFiles to True."
+                )
             job_log.warning(f"No files matched '{source_pattern}'")
             result_data["details"]["summary"].append("No files matched; nothing was done.")
             return result_data

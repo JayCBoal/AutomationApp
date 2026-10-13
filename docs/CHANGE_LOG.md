@@ -47,6 +47,12 @@ Notable structural, schema and design changes to AutoApp, newest first. Line-by-
 - **Added:** values of secret variables are masked in the log.
 - **Rationale:** carries forward the 2024 prototype's logging, where the job log said what each step did and a step could be made quiet.
 
+### No files matched
+
+- **Changed:** a file step whose source matches no files now fails. Before, it succeeded with a warning.
+- **Added:** `AllowNoFiles` step parameter (default `False`). When `True`, the step logs a warning and succeeds.
+- **Rationale:** in batch work, finding nothing usually means something upstream is late or broken. Succeeding quietly hides that until someone downstream misses the file; failing puts it in front of the scheduler. Steps that legitimately find nothing, such as a sweep of an often-empty folder, opt in.
+
 ### Schema source of truth
 
 - **Decided:** the Python models define the schema.

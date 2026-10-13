@@ -86,14 +86,36 @@ def test_missing_destination_fails_when_create_folder_is_off(folders):
     assert not dest.exists()
 
 
-def test_no_matching_files_copies_nothing(folders):
+def test_no_matching_files_fails_the_step(folders, spool_records):
+    """Finding nothing usually means something upstream is late or broken, so it is a failure unless allowed."""
     src, dest, spool = folders
 
-    result = run_handler(spool, {"Source": str(src / "*.xml"), "Dest": str(dest)})
+    with pytest.raises(FileNotFoundError) as error:
+        run_handler(spool, {"Source": str(src / "*.xml"), "Dest": str(dest)})
 
+    assert f"No files matched '{src}/*.xml'" in str(error.value)
+    assert "AllowNoFiles" in str(error.value)           # the message says how to permit it
+    assert spool_records(spool) == []                    # nothing happened, so nothing is recorded
+
+
+def test_no_matching_files_succeeds_when_allowed(folders, spool_records):
+    src, dest, spool = folders
+
+    result = run_handler(spool, {"Source": str(src / "*.xml"), "Dest": str(dest), "AllowNoFiles": "True"})
+
+    assert result["status"] == "SUCCESS"
     assert result["result"]["bytes_transferred"] == 0
     assert result["result"]["details"]["ops"] == []
     assert names(dest) == []
+    assert spool_records(spool) == []
+
+
+def test_allow_no_files_changes_nothing_when_files_are_found(folders):
+    src, dest, spool = folders
+
+    run_handler(spool, {"Source": str(src / "*.csv"), "Dest": str(dest), "AllowNoFiles": "True"})
+
+    assert names(dest) == ["a.csv", "b.csv"]
 
 
 def test_bytes_transferred_is_total_size_of_copied_files(folders):

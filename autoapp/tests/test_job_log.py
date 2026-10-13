@@ -100,9 +100,24 @@ def test_debug_level_adds_troubleshooting_detail(job, run_runner, tmp_path):
     assert "BEGIN Step 1" in debug and "Copied '" in debug        # and everything DETAIL shows
 
 
-def test_a_step_that_matches_nothing_is_a_warning(seed, endpoints, run_runner):
+def test_a_step_that_matches_nothing_fails_and_says_how_to_allow_it(seed, endpoints, run_runner, spool_records, tmp_path):
     job = seed.job("DEV-LOAD")
     seed.step(job, 1, title="Collect", Source="incoming/*.xml", DestEndpoint="BILLING_INBOX")
+
+    result = run_runner("DEV-LOAD", "88421")
+
+    assert result.returncode == 1
+    assert "[ERROR] END Step 1: Collect (COPY_FILES): FAILED" in result.stderr
+    assert "[ERROR] Job 'DEV-LOAD' failed: No files matched '" in result.stderr
+    assert "incoming/*.xml'. If that is acceptable for this step, set AllowNoFiles to True." in result.stderr
+    # the run record carries the reason, so the question "did the job even look?" has an answer
+    end = spool_records(tmp_path / "spool")[-1]
+    assert (end["Status"], "incoming/*.xml" in end["Error"]) == ("FAILED", True)
+
+
+def test_an_allowed_no_match_is_a_warning(seed, endpoints, run_runner):
+    job = seed.job("DEV-LOAD")
+    seed.step(job, 1, title="Collect", Source="incoming/*.xml", DestEndpoint="BILLING_INBOX", AllowNoFiles="True")
 
     detail = run_runner("DEV-LOAD", "88421")
     summary = run_runner("DEV-LOAD", "88422", "--log-level", "SUMMARY")
@@ -117,7 +132,7 @@ def test_a_step_that_matches_nothing_is_a_warning(seed, endpoints, run_runner):
 
 
 def test_a_step_can_be_quieter_than_the_job(job, seed, run_runner):
-    seed.step(job, 3, title="Quiet", Source="incoming/*.csv", Dest="unused", LogLevel="SILENT")
+    seed.step(job, 3, title="Quiet", Source="incoming/*.csv", Dest="unused", LogLevel="SILENT", AllowNoFiles="True")
 
     result = run_runner("DEV-LOAD", "88421")
 

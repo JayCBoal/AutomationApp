@@ -60,4 +60,4 @@ def test_step_catalog_lists_the_parameters_the_file_handler_reads(db):
 
     names = {d.ParamName for d in db.query(StepDefinition)}
 
-    assert names == {"Source", "SourceEndpoint", "Dest", "DestEndpoint", "Move", "CreateFolder", "Checksum", "LogLevel"}
+    assert names == {"Source", "SourceEndpoint", "Dest", "DestEndpoint", "Move", "CreateFolder", "Checksum", "AllowNoFiles", "LogLevel"}

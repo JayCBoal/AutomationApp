@@ -31,6 +31,18 @@ class JobInitResponse(BaseModel):
     steps: List[JobStepPayloadSchema]
 
 
+# --- Endpoint Schemas ---
+class EndpointOut(BaseModel):
+    """A registered place files come from or go to."""
+    name: str
+    application: Optional[str] = None
+    site: Optional[str] = Field(None, description="Set if the endpoint is on a remote server")
+    entity: Optional[str] = Field(None, description="The outside party that owns the site")
+    path: str = Field(..., description="As registered: placeholders unresolved")
+    filename_pattern: str
+    description: Optional[str] = None
+
+
 # --- Step Catalog Schemas ---
 class StepParameterOut(BaseModel):
     name: str
@@ -99,6 +111,31 @@ class JobDetail(BaseModel):
     modified: Optional[datetime] = None
     modified_by: Optional[str] = None
     steps: List[JobStepOut]
+
+
+class JobStepSave(BaseModel):
+    id: Optional[int] = Field(None, description="The step's id when changing an existing step; leave out for a new one")
+    title: Optional[str] = Field(None, max_length=150)
+    active: bool = True
+    step_type: str = Field(..., description="A step type code from /api/v1/step-types")
+    parameters: Dict[str, Optional[str]] = Field(
+        default_factory=dict, description="Blank values are not stored, so the step type's default applies")
+
+
+class JobSave(BaseModel):
+    """A whole job as the editor submits it. The steps run in the order given."""
+    job_key: str = Field(..., max_length=320)
+    description: Optional[str] = None
+    active: bool = True
+    steps: List[JobStepSave] = Field(default_factory=list)
+
+
+class JobSaveResult(BaseModel):
+    """The job as saved, and what the pre-run check makes of it. A job is saved even if the check finds problems."""
+    job: JobDetail
+    valid: bool
+    problems: List[str]
+    changes: List[str] = Field(..., description="What this save changed, as recorded in the audit log")
 
 
 class JobCheckResult(BaseModel):

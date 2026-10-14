@@ -94,9 +94,11 @@ python3 -m uvicorn app.main:app --port 8000
 
 `AUTOAPP_WORKING_ROOT` is the folder that holds the jobs' working folders, the same one the runner is given. The server needs it to check a job's file locations.
 
+While developing, add `--reload` to that command. The server then restarts itself whenever the code changes. Without it, a server started before an update keeps running the old code while serving the new pages, and the pages fail in confusing ways.
+
 Then open `http://localhost:8000/` in a browser:
 
-- **Jobs** finds jobs and shows what each one uses, how its last run went, and whether it would run now: "Ready to run" in green, or a red "Check" link that lists what is wrong. A job's key opens its detail page, with its steps and their parameters.
+- **Jobs** finds jobs and shows what each one uses, how its last run went, and whether it would run now: "Ready to run" in green, or a red "Check" link that lists what is wrong. A job's key opens its detail page, the job editor: **Edit** unlocks it, and **Submit** saves the job with its steps and parameters. **New job** starts a blank one.
 - **Operations Log** searches every file handled and shows any file's trace.
 
 Pages that are not built yet appear greyed out in the navigation bar.

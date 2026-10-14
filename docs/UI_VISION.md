@@ -2,7 +2,7 @@
 
 What the AutoApp web interface should contain and how it should behave. This is the specification the interface is built from.
 
-**Built so far:** the Main Index, the Job Search, the Job Detail page for viewing a job, and the Operations Log, including the trace. See the blueprint for how the pages are put together.
+**Built so far:** the Main Index, the Job Search, the job editor (viewing, editing, creating and deleting a job), and the Operations Log, including the trace. Still to come in the editor: the endpoint picker, the variables panel and the placeholder preview. See the blueprint for how the pages are put together.
 
 It is based on the 2024 mockup deck (linked from the original design document) and adapted to the current data model. Items marked **Proposed** are not in the mockups and need a decision.
 
@@ -12,6 +12,7 @@ It is based on the 2024 mockup deck (linked from the original design document) a
 - Two kinds of page: **search pages** for finding records, and **detail pages** for viewing and editing one record.
 - Records of what happened (operations, audits, job history) are read-only and have no detail page; everything meaningful is shown in the search results.
 - Pages update in place. Expanding a job, reordering a step or unlocking a form does not reload the page.
+- **A box that names something registered elsewhere offers what there is.** Wherever a box takes the name of an endpoint, application, entity, site, job or scheduler, it has a drop-down of the existing names, narrowed by what is typed. This applies to search criteria and to editing alike, and to any such box added later. Free-text boxes, such as paths and filenames, have no list.
 
 ## Navigation
 
@@ -52,7 +53,7 @@ A header with the AutoApp name and the page title, and a navigation bar on every
 | Application Search / Detail | search, detail | Mockup | Name, abbreviation, description, support distribution list |
 | Entity Search / Detail | search, detail | Mockup (same pattern as Application) | An entity's sites are listed on its detail page |
 | Site Search / Detail | search, detail | Mockup (same pattern) | Host, port, protocol, owning entity, credential |
-| Job Search / Detail | search, detail | Mockup's Process pages, changed | Search is **built**. The detail page shows a job; editing is next |
+| Job Search / Detail | search, detail | Mockup's Process pages, changed | **Built**, except the endpoint picker, variables panel and placeholder preview |
 | Endpoint Search / Detail | search, detail | Replaces Source and Delivery pages | See below |
 | Operations Log | search | Mockup, changed | **Built.** The file trace; see below |
 | Job History | search | Mockup | Reads `JobRuns`: one row per run, with status and error |
@@ -120,10 +121,9 @@ The mockup's Operations Search, with source and destination now taken from the e
 
 - **Criteria**, grouped as in the mockup:
   - Date and time range, operation type
-  - Source: endpoint, path, filename
-  - Destination: endpoint, path, filename
-  - Automation: job, instance ID, run number, scheduler
-  - Entity, application, site (matched on either side)
+  - Source: endpoint, application, entity, site, path, filename
+  - Destination: endpoint, application, entity, site, path, filename
+  - Automation: job, instance ID, scheduler
 - **Results:** one row per operation, with a Source block and a Destination block. Each block shows endpoint, application, entity, site, path, filename and size. A side that was inside the working folder says so. Then start and end time, and the job and instance.
 - **Proposed: Trace.** A link on any row shows that file's whole route: every operation that handled it, in order, from the endpoint it entered by to the endpoint it left by. A file copied to two places shows as two branches.
 - The API behind this page and the trace is built: `GET /api/v1/operations` and `GET /api/v1/operations/{id}/trace`.
@@ -163,7 +163,7 @@ The catalog that drives the job editor. For administrators.
 2. **Users and permissions.** "Edit is disabled unless the user has permission" needs sign-in, users and roles. None exist yet.
 3. **Look and feel.** Decided: dark by default with a light option. The light theme keeps the mockups' grey header and black navigation bar.
 4. **Inside a scheduler.** Which of these pages would need to appear within a scheduling product, and in what form.
-5. **Two people editing the same job.** Last save wins, or warn?
+5. **Two people editing the same job.** Decided for now: the last save wins. A warning can be added later.
 
 ## Suggested build order
 

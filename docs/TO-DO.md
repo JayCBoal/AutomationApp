@@ -14,7 +14,7 @@ Updated 2026-10-13. The order under "Work queue" is a proposal; the items under 
 
 4. **Working folder.** Currently `<working root>/<JobKey>`, private to the job and reused by every run of it. Confirm, or make it per run. Also decide whether archive folders live inside it or are registered endpoints.
 
-5. **Destination endpoints.** Should a delivery be checked against the destination endpoint's `FilenamePattern`? Should endpoints carry a rename mask, as the prototype's `Deliveries` table did?
+5. **Destination endpoints and rename masks.** Should a delivery be checked against the destination endpoint's `FilenamePattern`? And rename masks, which the prototype had: proposed as a `RenameMask` parameter on the copy step, with placeholders for the source file's name, name without extension, and extension, alongside the existing date placeholders.
 
 6. **Prototype features.** Which of these carry forward: start at step, stop after step, skip steps; per-step success, warning and failure return codes; job history; date masks with a "use date" override?
 
@@ -32,32 +32,34 @@ Ordered toward a demonstration: a job built in the job editor, run by a schedule
 
 ### Next: the job editor
 
-Specified in [UI_VISION.md](UI_VISION.md). The Job Search page and the first slice, viewing a job, are built. Three slices remain, each usable on its own:
+Specified in [UI_VISION.md](UI_VISION.md). Viewing, editing, creating and deleting a job are built. Two slices remain:
 
-1. **Edit and save.** Unlock with Edit; change parameters; add, remove, reorder and enable or disable steps; Submit saves the whole job after checking it. Needs the first write routes in the API, and writes to `Audits`.
+1. **Register an endpoint in place.** The endpoint drop-down is built. Add "New..." beside it, to register an endpoint without leaving the editor. Needs an endpoint create route.
 
-2. **Endpoint picker.** Each file location offers an endpoint or a working-folder path, with "New..." to register an endpoint in place. Needs endpoint list and create routes.
+2. **Variables and preview.** The job's variables panel, and a preview of what each `${...}` resolves to.
 
-3. **Variables and preview.** The job's variables panel, and a preview of what each `${...}` resolves to.
-
-4. **The rest of the CRUD API.** Create, read, update and delete for applications, entities and sites, and their pages.
+3. **The rest of the CRUD API.** Create, read, update and delete for applications, entities and sites, and their pages.
 
 ### Then: breadth
 
-5. **More step handlers.** Each one also adds a catalog entry, so it appears in the editor.
+4. **More step handlers.** Each one also adds a catalog entry, so it appears in the editor.
    - Delete files
    - SQL execution
    - SFTP transfer (this is what makes endpoints on remote sites usable)
    - REST call
    - Send email
 
-6. **Tags.** Depends on decision 3. Expose tag assignments in the models, add the `TAG` scope to the variable cascade.
+5. **Tags.** Depends on decision 3. Expose tag assignments in the models, add the `TAG` scope to the variable cascade.
 
-7. **Runner controls.** Depends on decision 6.
+6. **Runner controls.** Depends on decision 6.
 
-8. **Scheduler integration.** Depends on decision 7.
+7. **Scheduler integration.** Depends on decision 7.
 
 ### Later
+
+- **A placeholder in a tick-box parameter.** A true-or-false parameter stored as `${...}` is shown as text and can be edited, but the editor offers no way to switch a tick box to a placeholder. Add a "use a variable" switch.
+- **Duplicate a job**, to start a new job from an existing one.
+- **Who made a change.** Audit rows say "web interface" until there are user accounts.
 
 - **Job search speed.** The search checks every job it returns, which is fine for hundreds of jobs. If it becomes slow with thousands, check only the page of results on screen.
 
@@ -71,13 +73,13 @@ Specified in [UI_VISION.md](UI_VISION.md). The Job Search page and the first sli
 - **Retention.** A purge rule for `Operations`, which grows by one row per file.
 - **Killed runs.** Pick up spool files left as `.jsonl.tmp` by a run that did not end normally, and mark the run accordingly.
 
-9. **Runner uses the API.** Depends on decision 2.
+8. **Runner uses the API.** Depends on decision 2.
 
-10. **Security.** Encrypt `Credentials.SecretData`; stop returning `IsSecret` variables; API authentication; vault connectors. Needed before anyone other than the author uses it.
+9. **Security.** Encrypt `Credentials.SecretData`; stop returning `IsSecret` variables; API authentication; vault connectors. Needed before anyone other than the author uses it.
 
-11. **Asynchronous processes.** Port the prototype's async instance tracking and polling.
+10. **Asynchronous processes.** Port the prototype's async instance tracking and polling.
 
-12. **Dependency declaration.** Move dependencies from `requirements.txt` into `pyproject.toml` and make the project installable.
+11. **Dependency declaration.** Move dependencies from `requirements.txt` into `pyproject.toml` and make the project installable.
 
 ## Done
 

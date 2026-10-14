@@ -104,6 +104,18 @@ def test_criteria_narrow_the_results_and_clear_restores_them(page, jobs):
     assert page.locator("select[name=active]").input_value() == ""
 
 
+def test_the_job_and_endpoint_boxes_offer_drop_downs(page, jobs):
+    open_jobs(page)
+    page.wait_for_selector("#lookup-endpoints", state="attached")
+
+    assert page.locator("input[name=job_key]").get_attribute("list") == "lookup-jobs"
+    assert page.locator("input[name=endpoint]").get_attribute("list") == "lookup-endpoints"
+    assert [o.get_attribute("value") for o in page.locator("#lookup-endpoints option").all()] == [
+        "BILLING_INBOX", "LEGAL_EXTRACTS"]
+    assert page.locator("#lookup-jobs option").count() == 4
+    assert page.locator("input[name=description]").get_attribute("list") is None
+
+
 def test_a_search_can_be_bookmarked(page, jobs):
     open_jobs(page)
     page.locator("input[name=description]").fill("legal")
@@ -171,15 +183,28 @@ def test_a_disabled_job_says_disabled_in_grey_with_no_link_whatever_else_is_wron
     assert row_for(rows, "DEV-LEGAL-COLLECT").locator(".disabled-text").is_hidden()
 
 
-def test_job_key_and_view_link_open_the_job(page, jobs):
-    rows = open_jobs(page)
-
-    row_for(rows, "DEV-LEGAL-COLLECT").get_by_role("link", name="View").click()
-    page.wait_for_url("**/ui/job.html?key=DEV-LEGAL-COLLECT")
-
+def test_job_key_opens_the_job_locked_and_edit_opens_it_unlocked(page, jobs):
     rows = open_jobs(page)
     row_for(rows, "dev-billing-pickup").locator("a.job-key").click()
     page.wait_for_url("**/ui/job.html?key=dev-billing-pickup")
+    page.wait_for_selector("#job-key")
+    assert page.locator("#job-key").is_disabled()
+
+    rows = open_jobs(page)
+    row_for(rows, "DEV-LEGAL-COLLECT").get_by_role("link", name="Edit").click()
+    page.wait_for_url("**/ui/job.html?key=DEV-LEGAL-COLLECT&edit")
+    page.wait_for_selector("#cancel-button:visible")
+    assert page.locator("#job-key").is_enabled()
+
+
+def test_new_job_button_opens_a_blank_job_ready_to_fill_in(page, jobs):
+    open_jobs(page)
+
+    page.get_by_role("link", name="New job").click()
+
+    page.wait_for_url("**/ui/job.html?new")
+    page.wait_for_selector("#job-key")
+    assert page.locator("#job-key").input_value() == "" and page.locator("#job-key").is_enabled()
 
 
 def test_check_on_a_job_fixed_since_the_search_says_it_is_now_ready(page, jobs, db):

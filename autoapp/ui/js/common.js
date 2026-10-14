@@ -4,6 +4,7 @@
  *   - the dark / light theme switch
  *   - calling the REST API
  *   - formatting times and sizes, and exporting a table as CSV
+ *   - drop-downs for boxes that refer to something registered elsewhere (data-lookup)
  *   - what every search page does (searchPage, at the end)
  *
  * The pages never read the database. Everything they show comes from the API.
@@ -80,28 +81,53 @@ const AutoApp = (() => {
 
     // ---------- REST API ----------
 
-    /** GET from the API. Empty criteria are left out. Throws an Error with a readable message on failure. */
-    async function get(path, params = {}) {
-        const query = new URLSearchParams();
-        for (const [name, value] of Object.entries(params)) {
-            if (value !== null && value !== undefined && String(value).trim() !== "") query.set(name, String(value).trim());
+    /** Sends a request and returns the answer. Throws an Error with a readable message on failure. */
+    async function request(method, url, body) {
+        const options = { method, headers: { Accept: "application/json" } };
+        if (body !== undefined) {
+            options.headers["Content-Type"] = "application/json";
+            options.body = JSON.stringify(body);
         }
-        const url = API + path + (query.toString() ? "?" + query : "");
         let response;
         try {
-            response = await fetch(url, { headers: { Accept: "application/json" } });
+            response = await fetch(url, options);
         } catch (e) {
             throw new Error("Could not reach the AutoApp API. Is the server running?");
         }
         if (!response.ok) {
             let detail = response.statusText;
             try {
-                const body = await response.json();
-                detail = typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail);
+                const answer = await response.json();
+                if (typeof answer.detail === "string") detail = answer.detail;
+                else if (Array.isArray(answer.detail)) {
+                    // The API's own complaints about the shape of what was sent: one per field
+                    detail = answer.detail.map(d => `${(d.loc || []).slice(1).join(".")}: ${d.msg}`).join("; ");
+                } else detail = JSON.stringify(answer.detail);
             } catch (e) { /* not JSON */ }
-            throw new Error(`The API answered ${response.status}: ${detail}`);
+            if (response.status === 405) {
+                // The pages are read from disk each time, but the server keeps the code it started with
+                detail = "The server does not accept this request. If AutoApp was updated after the server " +
+                         "was started, restart the server.";
+            }
+            const error = new Error(response.status >= 500 ? `The API answered ${response.status}: ${detail}` : detail);
+            error.status = response.status;
+            throw error;
         }
-        return response.json();
+        return response.status === 204 ? null : response.json();
+    }
+
+    /** GET from the API. Empty criteria are left out. */
+    function get(path, params = {}) {
+        const query = new URLSearchParams();
+        for (const [name, value] of Object.entries(params)) {
+            if (value !== null && value !== undefined && String(value).trim() !== "") query.set(name, String(value).trim());
+        }
+        return request("GET", API + path + (query.toString() ? "?" + query : ""));
+    }
+
+    /** POST, PUT or DELETE to the API. */
+    function send(method, path, body) {
+        return request(method, API + path, body);
     }
 
     // ---------- Formatting ----------
@@ -164,6 +190,44 @@ const AutoApp = (() => {
         a.remove();
         setTimeout(() => URL.revokeObjectURL(url), 1000);
     }
+
+    // ---------- Drop-downs for boxes that refer to something registered elsewhere ----------
+
+    /**
+     * A box that takes the name of an endpoint, application, entity, site, job or scheduler says so:
+     *
+     *     <input type="text" data-lookup="endpoints">
+     *
+     * and is given a drop-down of the names there are, narrowed by what is typed into it.
+     * The lists come from one request, GET /api/v1/lookups, made only if the page has such a box.
+     */
+    async function attachLookups() {
+        const boxes = [...document.querySelectorAll("input[data-lookup]")];
+        if (boxes.length === 0) return;
+        let lookups;
+        try {
+            lookups = await get("/lookups");
+        } catch (e) {
+            return;     // the boxes still work; they just have no drop-down
+        }
+        for (const [kind, entries] of Object.entries(lookups)) {
+            const list = document.createElement("datalist");
+            list.id = "lookup-" + kind;
+            for (const entry of entries) {
+                const option = document.createElement("option");
+                option.value = entry.value;
+                if (entry.label) option.label = entry.label;
+                list.appendChild(option);
+            }
+            document.body.appendChild(list);
+        }
+        for (const box of boxes) {
+            box.setAttribute("list", "lookup-" + box.dataset.lookup);
+            box.setAttribute("autocomplete", "off");
+        }
+    }
+
+    document.addEventListener("DOMContentLoaded", attachLookups);
 
     // ---------- Search pages ----------
 
@@ -245,5 +309,5 @@ const AutoApp = (() => {
         return page;
     }
 
-    return { PAGES, get, parseUtc, formatTime, localInputToUtc, timeZoneName, formatSize, toCsv, download, searchPage };
+    return { PAGES, get, send, parseUtc, formatTime, localInputToUtc, timeZoneName, formatSize, toCsv, download, searchPage };
 })();

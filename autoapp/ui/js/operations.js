@@ -9,10 +9,9 @@
 // The search boxes. Their names are also the API's criteria.
 const CRITERIA = [
     "date_from", "date_to", "op_type", "status",
-    "source_endpoint", "source_path", "source_filename",
-    "dest_endpoint", "dest_path", "dest_filename",
-    "job_key", "instance_id",
-    "application", "entity", "site",
+    "source_endpoint", "source_application", "source_entity", "source_site", "source_path", "source_filename",
+    "dest_endpoint", "dest_application", "dest_entity", "dest_site", "dest_path", "dest_filename",
+    "job_key", "instance_id", "scheduler",
 ];
 
 function operationsLog() {

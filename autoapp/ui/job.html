@@ -15,91 +15,145 @@
 
 <main x-data="jobDetail()">
 
-    <!-- Selector: type to narrow the list, choose a job to open it -->
+    <!-- Selector and the page's buttons. The page arrives locked; Edit unlocks it. -->
     <div class="panel selector">
         <label for="job-selector">Job</label>
         <input id="job-selector" type="text" list="job-keys" x-model="chosen" @change="choose()"
-               placeholder="Type to find a job" autocomplete="off">
+               placeholder="Type to find a job" autocomplete="off" :disabled="editing">
         <datalist id="job-keys">
             <template x-for="jobKey in allKeys" :key="jobKey"><option :value="jobKey"></option></template>
         </datalist>
+        <!-- The registered endpoints, offered as a drop-down on every endpoint box below.
+             Typing in the box narrows the list. -->
+        <datalist id="endpoint-names">
+            <template x-for="endpoint in endpoints" :key="endpoint.name">
+                <option :value="endpoint.name" :label="endpointLabel(endpoint)"></option>
+            </template>
+        </datalist>
         <span class="spacer"></span>
-        <button type="button" class="secondary" disabled title="Changing a job is the next thing to be built">Edit</button>
+        <a class="button secondary" href="job.html?new" x-show="!editing">New job</a>
+        <button type="button" class="secondary" id="edit-button" x-show="form && !editing" @click="edit()">Edit</button>
+        <button type="button" class="secondary danger" id="delete-button" x-show="editing && job" :disabled="busy"
+                @click="remove()">Delete job</button>
+        <button type="button" class="secondary" id="cancel-button" x-show="editing" :disabled="busy" @click="cancel()">Cancel</button>
+        <button type="button" class="primary" id="submit-button" x-show="editing" :disabled="busy || !changed"
+                @click="submit()">Submit</button>
     </div>
 
     <p class="message error" id="page-error" x-show="error" x-text="error" role="alert" x-cloak></p>
-    <p class="message" id="choose-prompt" x-show="!key && !error" x-cloak>Choose a job above, or find one on the
+    <p class="message saved" id="save-notice" x-show="notice" x-text="notice" role="status" x-cloak></p>
+    <p class="message" id="choose-prompt" x-show="!form && !error && !key" x-cloak>Choose a job above, or find one on the
         <a href="jobs.html">Job Search</a> page.</p>
 
-    <template x-if="job">
+    <template x-if="form">
         <div>
             <!-- The job itself -->
             <section class="panel" aria-label="Job">
                 <div class="detail-grid">
                     <label for="job-key">Job key <span class="required" title="Required">*</span></label>
-                    <input id="job-key" type="text" :value="job.job_key" disabled>
+                    <div>
+                        <input id="job-key" type="text" x-model="form.job_key" :disabled="!editing" maxlength="320"
+                               placeholder="For example DEV-LEGAL-COLLECT">
+                        <span class="muted small" x-show="editing">The job's name, which the scheduler passes to run it.
+                            Letters, digits, hyphens, underscores and full stops.</span>
+                    </div>
 
                     <label for="job-description">Description</label>
-                    <textarea id="job-description" rows="2" :value="job.description" disabled></textarea>
+                    <textarea id="job-description" rows="2" x-model="form.description" :disabled="!editing"></textarea>
 
                     <label for="job-enabled">Enabled</label>
-                    <div><input id="job-enabled" type="checkbox" :checked="job.active" disabled></div>
+                    <div><input id="job-enabled" type="checkbox" x-model="form.active" :disabled="!editing"></div>
 
-                    <span class="label">Would it run?</span>
-                    <div id="runnability">
-                        <span class="muted" x-show="!job.active">Disabled. The runner refuses a disabled job.</span>
-                        <span class="ready-text" x-show="job.active && check && check.valid">Ready to run</span>
-                        <span class="status FAILED" x-show="problems.length > 0"
-                              x-text="problems.length + (problems.length === 1 ? ' problem' : ' problems') + ' found by the pre-run check'"></span>
-                    </div>
+                    <template x-if="job">
+                        <span class="label">Would it run?</span>
+                    </template>
+                    <template x-if="job">
+                        <div id="runnability">
+                            <span class="muted" x-show="!job.active">Disabled. The runner refuses a disabled job.</span>
+                            <span class="ready-text" x-show="job.active && check && check.valid">Ready to run</span>
+                            <span class="status FAILED" x-show="problems.length > 0"
+                                  x-text="problems.length + (problems.length === 1 ? ' problem' : ' problems') + ' found by the pre-run check'"></span>
+                            <span class="muted small" x-show="changed">(as last saved)</span>
+                        </div>
+                    </template>
 
-                    <span class="label">Run it with</span>
-                    <code id="command-line" x-text="commandLine"></code>
+                    <template x-if="job">
+                        <span class="label">Run it with</span>
+                    </template>
+                    <template x-if="job">
+                        <code id="command-line" x-text="commandLine"></code>
+                    </template>
 
-                    <span class="label">History</span>
-                    <div class="muted small">
-                        Created <span x-text="time(job.created)"></span> by <span x-text="job.created_by"></span><span
-                            x-show="job.modified">; last changed <span x-text="time(job.modified)"></span>
-                            by <span x-text="job.modified_by"></span></span>.
-                        <a :href="operationsLink">See its operations</a>
-                    </div>
+                    <template x-if="job">
+                        <span class="label">History</span>
+                    </template>
+                    <template x-if="job">
+                        <div class="muted small">
+                            Created <span x-text="time(job.created)"></span> by <span x-text="job.created_by"></span><span
+                                x-show="job.modified">; last changed <span x-text="time(job.modified)"></span>
+                                by <span x-text="job.modified_by"></span></span>.
+                            <a :href="operationsLink">See its operations</a>
+                        </div>
+                    </template>
                 </div>
 
-                <ul class="problems" id="job-problems" x-show="problems.length > 0">
+                <ul class="problems" id="job-problems" x-show="job && problems.length > 0">
                     <template x-for="problem in problems"><li x-text="problem"></li></template>
                 </ul>
             </section>
 
-            <!-- Its steps -->
+            <!-- Its steps, in the order they run -->
             <section class="panel" aria-label="Steps">
                 <div class="steps-head">
                     <h2 class="section">Steps</h2>
                     <span class="spacer"></span>
-                    <button type="button" class="link" @click="expandAll(true)" x-show="job.steps.length">Expand all</button>
-                    <button type="button" class="link" @click="expandAll(false)" x-show="job.steps.length">Collapse all</button>
+                    <button type="button" class="link" @click="expandAll(true)" x-show="form.steps.length">Expand all</button>
+                    <button type="button" class="link" @click="expandAll(false)" x-show="form.steps.length">Collapse all</button>
                 </div>
-                <p class="message" x-show="job.steps.length === 0">This job has no steps.</p>
+                <p class="message" id="no-steps" x-show="form.steps.length === 0">This job has no steps.</p>
 
-                <template x-for="step in job.steps" :key="step.id">
-                    <div class="step" :class="{ disabled: !step.active, open: open[step.id] }">
+                <template x-for="(step, index) in form.steps" :key="step.uid">
+                    <div class="step" :class="{ disabled: !step.active, open: step.open }">
                         <div class="step-head">
-                            <button type="button" class="expander" @click="toggle(step)" :aria-expanded="open[step.id] ? 'true' : 'false'"
-                                    :title="open[step.id] ? 'Hide parameters' : 'Show parameters'"
-                                    x-text="open[step.id] ? '▾' : '▸'"></button>
-                            <span class="step-order" x-text="step.order"></span>
-                            <span class="step-title" x-text="step.title"></span>
-                            <span class="tag" x-text="step.step_type_name"></span>
-                            <span class="step-summary muted small" x-show="!open[step.id]" x-text="summary(step)"></span>
+                            <button type="button" class="expander" @click="toggle(step)" :aria-expanded="step.open ? 'true' : 'false'"
+                                    :title="step.open ? 'Hide parameters' : 'Show parameters'"
+                                    x-text="step.open ? '▾' : '▸'"></button>
+                            <span class="step-order" x-text="index + 1"></span>
+
+                            <span class="step-title" x-show="!editing" x-text="step.title"></span>
+                            <input type="text" class="step-title-input" x-show="editing" x-model="step.title"
+                                   placeholder="What this step does" maxlength="150" aria-label="Step title">
+
+                            <span class="tag" x-show="!editing" x-text="step.step_type_name"></span>
+                            <select class="step-type" x-show="editing" x-model="step.step_type" @change="retype(step)" aria-label="Step type">
+                                <template x-for="type in Object.values(catalog)" :key="type.code">
+                                    <option :value="type.code" :selected="type.code === step.step_type" x-text="type.name"></option>
+                                </template>
+                                <!-- A step whose type this server does not have keeps it, shown by its code -->
+                                <template x-if="!catalog[step.step_type]">
+                                    <option :value="step.step_type" selected x-text="step.step_type"></option>
+                                </template>
+                            </select>
+
+                            <span class="step-summary muted small" x-show="!step.open" x-text="summary(step)"></span>
                             <span class="spacer"></span>
-                            <label class="inline"><input type="checkbox" :checked="step.active" disabled> Enabled</label>
+
+                            <span class="step-tools" x-show="editing">
+                                <button type="button" class="tool move-up" title="Move this step earlier" :disabled="index === 0"
+                                        @click="move(index, -1)">▲</button>
+                                <button type="button" class="tool move-down" title="Move this step later"
+                                        :disabled="index === form.steps.length - 1" @click="move(index, 1)">▼</button>
+                                <button type="button" class="link remove-step" @click="removeStep(index)">Remove</button>
+                            </span>
+                            <label class="inline"><input type="checkbox" class="step-enabled" x-model="step.active" :disabled="!editing"> Enabled</label>
                         </div>
 
-                        <div class="step-body" x-show="open[step.id]">
+                        <div class="step-body" x-show="step.open">
                             <p class="message error" x-show="!catalog[step.step_type]">
                                 This server has no step type called <span x-text="step.step_type"></span>, so its form cannot be drawn.
                             </p>
                             <div class="detail-grid">
-                                <template x-for="field in fields(step)" :key="field.name">
+                                <template x-for="field in step.fields" :key="field.name">
                                     <div class="field-row" :data-parameter="field.name">
                                         <span class="label" :title="field.description">
                                             <span x-text="field.name"></span>
@@ -110,37 +164,51 @@
                                         <template x-if="field.data_type === 'LOCATION'">
                                             <div class="location-choice">
                                                 <label class="inline">
-                                                    <input type="radio" :checked="field.mode === 'endpoint'" disabled>
+                                                    <input type="radio" value="endpoint" x-model="field.mode"
+                                                           :name="'where-' + step.uid + '-' + field.name" :disabled="!editing">
                                                     Endpoint
-                                                    <input type="text" class="endpoint-value" :value="field.endpoint" disabled>
+                                                    <input type="text" class="endpoint-value" x-model="field.endpoint"
+                                                           list="endpoint-names" autocomplete="off"
+                                                           :disabled="!editing || field.mode !== 'endpoint'"
+                                                           placeholder="Choose or type a registered endpoint">
                                                 </label>
+                                                <span class="error-text small not-registered"
+                                                      x-show="field.mode === 'endpoint' && field.endpoint.trim() && !isRegistered(field.endpoint)">
+                                                    No endpoint is registered under this name.</span>
                                                 <label class="inline">
-                                                    <input type="radio" :checked="field.mode === 'path'" disabled>
+                                                    <input type="radio" value="path" x-model="field.mode"
+                                                           :name="'where-' + step.uid + '-' + field.name" :disabled="!editing">
                                                     Working folder path
-                                                    <input type="text" class="path-value" :value="field.path" disabled>
+                                                    <input type="text" class="path-value" x-model="field.path"
+                                                           :disabled="!editing || field.mode !== 'path'"
+                                                           placeholder="For example incoming/*.csv">
                                                 </label>
                                             </div>
                                         </template>
 
                                         <template x-if="field.data_type === 'BOOLEAN' && !field.asText">
-                                            <div><input type="checkbox" :checked="field.ticked" disabled>
-                                                <span class="muted small" x-show="field.isDefault">default</span></div>
+                                            <div>
+                                                <input type="checkbox" x-model="field.ticked" @change="field.set = true" :disabled="!editing">
+                                                <span class="muted small" x-show="!field.set">default</span>
+                                                <button type="button" class="link small reset-field" x-show="editing && field.set"
+                                                        title="Stop storing a value for this step, so the step type's own setting applies"
+                                                        @click="useDefault(field)">reset</button>
+                                            </div>
                                         </template>
 
                                         <template x-if="field.data_type === 'CHOICE'">
                                             <div>
-                                                <select disabled>
-                                                    <option value="" :selected="!field.value">(not set)</option>
+                                                <select x-model="field.text" :disabled="!editing">
+                                                    <option value="" :selected="!field.text">(not set)</option>
                                                     <template x-for="choice in field.allowed_values" :key="choice">
-                                                        <option :value="choice" :selected="choice === field.value" x-text="choice"></option>
+                                                        <option :value="choice" :selected="choice === field.text" x-text="choice"></option>
                                                     </template>
                                                 </select>
                                             </div>
                                         </template>
 
                                         <template x-if="['STRING', 'INTEGER'].includes(field.data_type) || field.asText">
-                                            <div><input type="text" :value="field.value" disabled>
-                                                <span class="muted small" x-show="field.isDefault && field.value !== ''">default</span></div>
+                                            <div><input type="text" x-model="field.text" :disabled="!editing" :placeholder="field.default || ''"></div>
                                         </template>
 
                                         <span class="muted small field-help" x-text="field.description"></span>
@@ -148,18 +216,24 @@
                                 </template>
                             </div>
 
-                            <div class="unknown-parameters" x-show="unknown(step).length > 0">
+                            <div class="unknown-parameters" x-show="step.unknown.length > 0">
                                 <p class="message error">Not parameters of this step type. The job will not run until they are removed:</p>
-                                <template x-for="[name, value] in unknown(step)" :key="name">
+                                <template x-for="(extra, extraIndex) in step.unknown" :key="extra.name">
                                     <div class="field-row">
-                                        <span class="label status FAILED" x-text="name"></span>
-                                        <div><input type="text" :value="value" disabled></div>
+                                        <span class="label status FAILED" x-text="extra.name"></span>
+                                        <div><input type="text" :value="extra.value" disabled></div>
+                                        <button type="button" class="link remove-unknown" x-show="editing"
+                                                @click="step.unknown.splice(extraIndex, 1)">Remove</button>
                                     </div>
                                 </template>
                             </div>
                         </div>
                     </div>
                 </template>
+
+                <div class="actions" x-show="editing">
+                    <button type="button" class="secondary" id="add-step" @click="addStep()">Add step</button>
+                </div>
             </section>
         </div>
     </template>

@@ -4,9 +4,11 @@ from sqlalchemy.orm import Session
 from typing import Dict, Any, List, Optional
 
 from app.database import get_db
+from app.job_store import JobStoreError, delete_job, describe_job, save_job
 from app.models import Job, JobRun, JobStep, JobStepParameter
 from app.schemas import (
-    JobCheckResult, JobDetail, JobInitRequest, JobInitResponse, JobStepOut, JobStepPayloadSchema, JobSummary, LastRun
+    JobCheckResult, JobDetail, JobInitRequest, JobInitResponse, JobSave, JobSaveResult, JobStepPayloadSchema,
+    JobSummary, LastRun
 )
 from engine.step_catalog import ENDPOINT_SUFFIX
 from engine.handlers import get_handler
@@ -17,6 +19,9 @@ from engine.step_params import resolve_step
 router = APIRouter(prefix="/api/v1/jobs", tags=["Jobs"])
 
 MAX_RESULTS = 500
+
+# Recorded as who made a change. There are no user accounts yet.
+EDITOR_NAME = "web interface"
 
 
 def job_problems(db: Session, job: Job) -> List[str]:
@@ -190,28 +195,46 @@ def get_job(job_key: str, db: Session = Depends(get_db)):
     job = db.query(Job).filter(Job.JobKey == job_key).first()
     if not job:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"No job with JobKey '{job_key}' exists.")
+    return describe_job(job)
 
-    return JobDetail(
-        job_key=job.JobKey,
-        description=job.Description,
-        active=bool(job.IsActive),
-        created=job.CreatedDateTime,
-        created_by=job.CreatedBy,
-        modified=job.ModifiedDateTime,
-        modified_by=job.ModifiedBy,
-        steps=[
-            JobStepOut(
-                id=step.id,
-                order=step.StepOrder,
-                title=step.Title,
-                active=bool(step.IsActive),
-                step_type=step.step_type.HandlerClass,
-                step_type_name=step.step_type.TypeName,
-                parameters={p.ParamName: p.ParamValue for p in step.parameters},
-            )
-            for step in sorted(job.steps, key=lambda s: (s.StepOrder, s.id))
-        ],
-    )
+
+def _save(db: Session, payload: JobSave, existing_key: Optional[str]) -> JobSaveResult:
+    try:
+        job, changes = save_job(db, payload, existing_key, who=EDITOR_NAME)
+    except JobStoreError as e:
+        db.rollback()
+        raise HTTPException(status_code=e.status, detail=str(e))
+    problems = job_problems(db, job)
+    return JobSaveResult(job=describe_job(job), valid=not problems, problems=problems, changes=changes)
+
+
+@router.post("", response_model=JobSaveResult, status_code=status.HTTP_201_CREATED)
+def create_job(payload: JobSave, db: Session = Depends(get_db)):
+    """
+    Creates a job with its steps. The job is saved even if the pre-run check finds
+    problems with it; they are returned, and the job will not run until they are fixed.
+    """
+    return _save(db, payload, existing_key=None)
+
+
+@router.put("/{job_key}", response_model=JobSaveResult)
+def update_job(job_key: str, payload: JobSave, db: Session = Depends(get_db)):
+    """
+    Saves a whole job: its own fields and all its steps, in the order they should run.
+    A step sent with its id is changed in place; one without an id is new; one left
+    out is deleted. To rename the job, send a different job_key in the body.
+    """
+    return _save(db, payload, existing_key=job_key)
+
+
+@router.delete("/{job_key}", status_code=status.HTTP_204_NO_CONTENT)
+def remove_job(job_key: str, db: Session = Depends(get_db)):
+    """Deletes a job that has never run. One with run history is refused (409): disable it instead."""
+    try:
+        delete_job(db, job_key, who=EDITOR_NAME)
+    except JobStoreError as e:
+        db.rollback()
+        raise HTTPException(status_code=e.status, detail=str(e))
 
 
 @router.get("/{job_key}/check", response_model=JobCheckResult)

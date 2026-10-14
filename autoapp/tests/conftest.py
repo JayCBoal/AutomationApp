@@ -326,6 +326,23 @@ def page(browser, live_api):
     assert problems == [], f"the page reported errors: {problems}"
 
 
+@pytest.fixture
+def page_expecting_refusals(browser, live_api):
+    """
+    As the page fixture, for a test in which the server is meant to refuse something
+    (not found, key already taken, ...). The browser logs each refusal as an error,
+    which the page fixture would count as a fault in the page.
+    """
+    context = browser.new_context(base_url=live_api, viewport={"width": 1400, "height": 900},
+                                  timezone_id="America/New_York", accept_downloads=True)
+    page = context.new_page()
+    problems = []
+    page.on("pageerror", lambda error: problems.append(str(error)))      # a script error is still a fault
+    yield page
+    context.close()
+    assert problems == [], f"the page reported errors: {problems}"
+
+
 def wait_for_search(page):
     """Waits until a search page has finished searching, and returns its result rows."""
     page.wait_for_function("document.querySelector('#result-summary').textContent.trim() !== '' "

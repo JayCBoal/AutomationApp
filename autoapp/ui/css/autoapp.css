@@ -279,3 +279,17 @@ label.inline { display: flex; align-items: center; gap: 8px; color: var(--text);
 .location-choice { display: grid; gap: 6px; }
 .location-choice label.inline input[type=text] { flex: 1; min-width: 0; }
 .unknown-parameters { margin-top: 10px; }
+
+/* ---------- Editing ---------- */
+
+a.button { display: inline-block; text-decoration: none; border-radius: 4px; padding: 6px 16px; border: 1px solid var(--accent); }
+a.button.secondary { color: var(--accent); }
+button.danger, button.secondary.danger { color: var(--failure); border-color: var(--failure); }
+.message.saved { color: var(--success); }
+.step-title-input { flex: 0 1 320px; font-weight: 600; }
+select.step-type { width: auto; }
+.step-tools { display: flex; align-items: center; gap: 6px; }
+button.tool { background: transparent; color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 1px 7px; cursor: pointer; font: inherit; }
+button.tool:disabled { opacity: 0.3; cursor: default; }
+button.link.small { font-size: 12px; }
+input:disabled:placeholder-shown { color: var(--muted); }

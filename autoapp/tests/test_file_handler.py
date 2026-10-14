@@ -68,6 +68,19 @@ def test_single_file_can_be_copied_to_a_new_filename(folders):
     assert (dest / "renamed.csv").read_text() == "id,val\n1,alpha"
 
 
+def test_several_files_are_not_copied_onto_one_filename(folders, spool_records):
+    """Each would overwrite the last, leaving one file and a record claiming two were delivered."""
+    src, dest, spool = folders
+    dest.mkdir()
+
+    with pytest.raises(ValueError) as error:
+        run_handler(spool, {"Source": str(src / "*.csv"), "Dest": str(dest / "combined.csv")})
+
+    assert "'Dest' names a single file ('combined.csv'), but 2 files matched" in str(error.value)
+    assert names(dest) == [] and names(src) == ["a.csv", "b.csv", "notes.txt"]      # nothing was touched
+    assert spool_records(spool) == []
+
+
 def test_destination_folder_is_created_by_default(folders):
     src, dest, spool = folders
     nested = dest / "2026" / "10"

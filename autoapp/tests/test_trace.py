@@ -145,9 +145,29 @@ def test_log_can_be_searched_by_application_entity_and_site(seed, endpoints, run
     assert len(api.operations(entity="acme")) == 1
     assert len(api.operations(site="acme_sftp")) == 1
     assert len(api.operations(entity="nobody")) == 0
+    # and each side on its own
+    assert len(api.operations(source_application="legal")) == 2
+    assert len(api.operations(dest_application="legal")) == 0
+    assert len(api.operations(dest_application="PAYMENTS_APP")) == 1
+    assert len(api.operations(dest_entity="acme_bank")) == 1 and len(api.operations(source_entity="acme")) == 0
+    assert len(api.operations(dest_site="sftp")) == 1 and len(api.operations(source_site="sftp")) == 0
+    assert len(api.operations(source_application="legal", dest_site="acme")) == 0       # criteria combine
     [sent] = api.operations(site="ACME")
     assert (sent["dest"]["endpoint"], sent["dest"]["application"], sent["dest"]["entity"], sent["dest"]["site"]) == (
         "ACME_PAYMENTS", "PAYMENTS_APP", "ACME_BANK", "ACME_SFTP")
+
+
+def test_log_can_be_searched_by_scheduler(collect_and_deliver, run_runner, api):
+    run_runner("DEV-COLLECT", "88421", "--scheduler", "CTM_PROD")
+    run_runner("DEV-COLLECT", "0001", "--scheduler", "RMJ_FINANCE")
+    run_runner("DEV-COLLECT", "88422")                                    # the runner was not told a scheduler
+
+    assert len(api.operations()) == 18
+    assert len(api.operations(scheduler="ctm")) == 6                      # part of the name, any case
+    assert len(api.operations(scheduler="RMJ_FINANCE")) == 6
+    assert len(api.operations(scheduler="_")) == 12
+    assert len(api.operations(scheduler="autosys")) == 0
+    assert {op["scheduler"] for op in api.operations(scheduler="rmj")} == {"RMJ_FINANCE"}
 
 
 def test_log_can_be_searched_by_time(collect_and_deliver, run_runner, api):

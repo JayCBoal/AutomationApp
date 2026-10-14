@@ -78,6 +78,13 @@ class FileOpHandler(BaseHandler):
             result_data["details"]["summary"].append("No files matched; nothing was done.")
             return result_data
 
+        # A Dest that names one file can take one file. Several would each overwrite the last.
+        if dest_dir != Path(dest_path) and len(matched_files) > 1:
+            raise ValueError(
+                f"'Dest' names a single file ('{os.path.basename(dest_path)}'), but {len(matched_files)} files "
+                f"matched '{source_pattern}'. Give a folder as 'Dest' to keep each file's own name."
+            )
+
         total_bytes = 0
 
         for src_file in matched_files:

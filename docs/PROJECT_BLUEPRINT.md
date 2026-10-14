@@ -128,7 +128,9 @@ An endpoint has no direction. The same folder can be a destination for one job a
 
 `Audits` is for changes to definitions: who changed which job, endpoint or variable, and when. It is not used for job runs.
 
-**Planned:** nothing writes to `Audits` yet. It will be written by the CRUD API.
+**Built:** creating, changing and deleting a job each write an audit row saying in words what changed (`app/job_store.py`). There are no user accounts yet, so every change is recorded as made by "web interface".
+
+**Planned:** audit rows for endpoints, variables and the other definitions, as their editing is built, and an Audit Log page.
 
 ### Source of truth
 
@@ -141,7 +143,7 @@ The Python models in `autoapp/app/models.py` are the definition of the schema.
 - `SQL/Seed_Sample_Data.sql` is a small working set of sample definitions in plain SQL. A test loads it and runs its jobs.
 - `autoapp/create_dev_db.py` builds a local SQLite database from the models and the sample data.
 
-- Runs on MariaDB (tested on 11.8) as well as SQLite. Two things are spelled out for MariaDB, where its defaults would give wrong answers:
+- Runs on MariaDB (tested on 11.8) as well as SQLite. On SQLite, AutoApp switches on foreign-key enforcement, which SQLite leaves off by default, so that deleting a step removes its parameters there as it does on MariaDB. Two things are spelled out for MariaDB, where its defaults would give wrong answers:
   - Run and operation times are stored to the microsecond. A plain `DATETIME` there keeps whole seconds, and the trace orders operations by time.
   - Every table compares text exactly (collation `utf8mb4_bin`). MariaDB ignores case by default.
 - **Names, paths and filenames are case-sensitive on every database.** `DEV-LOAD` and `dev-load` are two jobs; `Report.csv` and `report.csv` are two files. This applies to job keys, endpoint, application, entity, site and tag names, and variable and parameter names.
@@ -207,6 +209,9 @@ This is what makes a file trace possible: an operation that reads from an endpoi
   - The size is measured at the source and at the destination; a difference fails the step.
   - `Checksum=True` records the file's SHA-256 and verifies the copy against it.
   - A step that finds no files fails unless `AllowNoFiles=True`.
+  - `Dest` may name a new filename only when one file is taken. Several files aimed at one filename fail the step before anything is copied.
+
+**Planned:** rename masks, so that several files can each be given a new name on the way (the 2024 prototype had these).
 - `engine/handlers/__init__.py`: the list of handlers. Adding one there adds its step type to the catalog.
 
 **Planned**
@@ -249,7 +254,7 @@ What the runner prints while a job runs, for the scheduler to capture against th
   - After one failed post the runner stops trying for that run and leaves the file in the spool.
   - `python3 -m engine.spool_delivery --spool-dir D [--api-url U]` sends whatever was left behind. Without an API address it loads the database directly, which suits a development machine.
 - **Loading** (`app/telemetry_ingest.py`, route `POST /api/v1/telemetry/records`). Records are validated and stored in `JobRuns` and `Operations`. Loading is safe to repeat: a run is identified by its `RunID` and an operation by its position in the run, and anything already stored is skipped. A batch containing a bad record is refused whole.
-- **Operations log** (`GET /api/v1/operations`). Search by source or destination endpoint, path and filename; by application, entity or site on either side; and by job key, instance ID, operation type, status and time range. Newest first, at most 500 rows.
+- **Operations log** (`GET /api/v1/operations`). Search each side by endpoint, application, entity, site, path and filename; and by job key, instance ID, scheduler, operation type, status and time range. Newest first, at most 500 rows.
 - **File trace** (`app/trace.py`, route `GET /api/v1/operations/{id}/trace`). Starting from any operation, returns the whole route of that file. Operations are linked by location: one that read a file from a path follows the one that last wrote that file to that path. This:
   - crosses steps and jobs;
   - follows a file through a rename;
@@ -279,6 +284,9 @@ FastAPI application in `autoapp/app/`. The interactive description of every rout
 | `GET /api/v1/step-types`, `/step-types/{code}` | Built; tested over HTTP |
 | `GET /api/v1/jobs` | The job search, including whether each job would run. Built; tested over HTTP |
 | `GET /api/v1/jobs/{job_key}` | One job with its steps and parameters. Built; tested over HTTP |
+| `POST /api/v1/jobs`, `PUT` and `DELETE /api/v1/jobs/{job_key}` | Create, save and delete a job. Built; tested over HTTP |
+| `GET /api/v1/endpoints` | The registered endpoints. Built; tested over HTTP |
+| `GET /api/v1/lookups` | The names offered in drop-downs. Built; tested over HTTP |
 | `GET /api/v1/jobs/{job_key}/check` | Built; tested over HTTP |
 | `GET /ui/...` and `/` | The web interface's files; `/` redirects to it |
 
@@ -304,10 +312,10 @@ Nothing in this section is built in the rewrite. The 2024 prototype tracked exte
 
 - The web interface is static pages: HTML, one stylesheet and plain JavaScript, with no build step. The API server serves them at `/ui/`, and they read everything through the REST API, never the database.
 - One small library, Alpine.js, fills the pages from data. A copy is kept in `ui/vendor/`, so the pages need no internet connection.
-- `common.js` holds what every page shares: the header and navigation bar, the theme switch, calling the API, formatting, CSV export, and the behaviour common to every search page (criteria, the results summary, keeping a search in the page address).
+- `common.js` holds what every page shares: the header and navigation bar, the theme switch, calling the API, formatting, CSV export, the behaviour common to every search page (criteria, the results summary, keeping a search in the page address), and drop-downs: a box marked `data-lookup="endpoints"` is given a list of the registered endpoints, and likewise for applications, entities, sites, jobs and schedulers.
 - Dark theme by default, with a light theme one click away. The choice is remembered in the browser.
 - **Operations Log** page:
-  - Search criteria grouped as in the 2024 mockup: when and what, source, destination, automation, and application, entity or site on either side.
+  - Search criteria grouped as in the 2024 mockup: when and what; source and destination, each with endpoint, application, entity, site, path and filename; and automation, with job, instance ID and scheduler.
   - One row per operation, with a source block and a destination block.
   - A **Trace** link opens the file's whole route, with branches indented.
   - **Export as CSV** exports the rows on screen with every field.
@@ -319,11 +327,16 @@ Nothing in this section is built in the rewrite. The 2024 prototype tracked exte
   - Every job found is put through the pre-run check. A job that would run says **Ready to run** in green. One that would not has a bold red **Check** link, which checks the job again and lists every problem. A disabled job says **Disabled** in grey. Nothing is run.
   - The job key, and a **View** link, open the job's detail page.
   - **Operations** opens the Operations Log for that job.
-- **Job Detail** page, read-only so far:
+- **Job Detail** page, which is the job editor:
   - A selector to find and open a job; the job's key, description, enabled flag and history; the command a scheduler would run it with; and whether it would run, with any problems listed.
   - Its steps in order, collapsed to one line each (`LEGAL_EXTRACTS -> incoming`), expandable one at a time or all at once.
   - Each step's form is drawn from the step catalog, not written into the page: a tick box for true or false, a list for a choice, and for a file location the choice between an endpoint and a working-folder path. A parameter the step leaves out shows its default, marked as such.
-  - A parameter that the step type does not have is pointed out.
+  - A parameter that the step type does not have is pointed out, and can be removed.
+  - The page arrives locked. **Edit** unlocks it; **Submit** is enabled once something has changed and saves the whole job in one request; **Cancel** puts everything back.
+  - Steps can be added, removed, reordered with arrows, retitled and enabled or disabled. A true-or-false parameter can be put back to its default, so the step stops storing a value of its own.
+  - After a save the page says what changed and re-runs the pre-run check. A job is saved even if the check finds problems, which are then listed.
+  - **New job** starts a blank job. Renaming a job asks for confirmation first, because the scheduler and the working folder use its key. **Delete job** works for a job that has never run; one with run history must be disabled instead.
+  - A file location's endpoint box offers the registered endpoints as a drop-down, narrowed by what is typed, each with its application and path. A name that is not registered is pointed out as it is typed. Registering a new endpoint in place is the next slice.
 - **Main Index** page, linking to every page. Pages not built yet are shown greyed out.
 
 **Planned**
@@ -333,7 +346,7 @@ Nothing in this section is built in the rewrite. The 2024 prototype tracked exte
 
 ## 12. Testing
 
-- Tests are in `autoapp/tests/` and run with `python3 -m pytest` (275 tests: about two minutes on SQLite, three on MariaDB).
+- Tests are in `autoapp/tests/` and run with `python3 -m pytest` (347 tests: about three minutes on SQLite, four on MariaDB).
 - Each test builds its own temporary SQLite database and temporary folders. No test touches the working directory or a shared database.
 - The same suite runs against MariaDB when `AUTOAPP_TEST_DATABASE_URL` names a test database. Its tables are built once per run from `SQL/Create_Tables.sql`, the script an installation would use, and emptied before each test.
 - Tests run the real code. AutoApp's own components are not mocked. The runner tests launch the runner as a separate process, as a scheduler would.

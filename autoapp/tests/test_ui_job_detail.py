@@ -1,6 +1,7 @@
 """
-The Job Detail page, in a real browser, against a real server. This slice of the
-page shows a job; it does not change one. The browser fixtures are in conftest.py.
+The Job Detail page as it arrives: showing a job, locked. Changing a job is in
+test_ui_job_edit.py. Both run in a real browser against a real server; the
+browser fixtures are in conftest.py.
 """
 import pytest
 
@@ -19,14 +20,6 @@ def jobs(db, seed, endpoints):
     other = seed.job("DEV-OTHER")
     seed.step(other, 1, title="Only step", SourceEndpoint="LEGAL_EXTRACTS", Dest="in")
     db.commit()
-
-
-@pytest.fixture
-def page_expecting_a_404(browser, live_api):
-    """As the page fixture, but a 'not found' from the server is expected, not an error in the page."""
-    context = browser.new_context(base_url=live_api, viewport={"width": 1400, "height": 900})
-    yield context.new_page()
-    context.close()
 
 
 def open_job(page, key="DEV-LEGAL-COLLECT"):
@@ -64,15 +57,16 @@ def test_page_shows_the_job_and_how_a_scheduler_would_run_it(page, jobs):
     assert "current" in page.locator("nav.app-nav").get_by_role("link", name="Jobs").get_attribute("class")
 
 
-def test_nothing_on_the_page_can_be_changed_yet(page, jobs):
+def test_the_page_arrives_locked(page, jobs):
     steps = open_job(page)
     expand_all(page, steps)
 
-    assert page.get_by_role("button", name="Edit").is_disabled()
     assert page.locator("#job-key").is_disabled() and page.locator("#job-description").is_disabled()
-    boxes = steps.locator("input, select")
+    boxes = steps.locator("input:visible, select:visible")
     assert boxes.count() > 20
     assert all(box.is_disabled() for box in boxes.all())
+    assert page.locator("#edit-button").is_enabled()
+    assert not page.locator("#submit-button").is_visible()
 
 
 def test_steps_are_listed_in_order_and_start_collapsed(page, jobs):
@@ -267,8 +261,8 @@ def test_with_no_job_chosen_the_page_asks_for_one(page, jobs):
     assert page.locator("#job-key").count() == 0
 
 
-def test_an_unknown_job_says_so(page_expecting_a_404, jobs):
-    page = page_expecting_a_404
+def test_an_unknown_job_says_so(page_expecting_refusals, jobs):
+    page = page_expecting_refusals
     page.goto("/ui/job.html?key=NO_SUCH_JOB")
     page.wait_for_selector("#page-error:visible")
 

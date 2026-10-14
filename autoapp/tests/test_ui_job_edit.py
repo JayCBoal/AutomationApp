@@ -1,0 +1,525 @@
+"""
+Changing a job on the Job Detail page: unlock, edit, add, remove and reorder
+steps, save, rename, create and delete. In a real browser, against a real
+server; the browser fixtures are in conftest.py.
+"""
+import json
+
+import pytest
+
+from app.models import Audit, Job
+
+
+@pytest.fixture
+def job(db, seed, endpoints):
+    job = seed.job("DEV-LOAD")
+    job.Description = "Collects and delivers"
+    seed.step(job, 1, title="Collect", SourceEndpoint="LEGAL_EXTRACTS", Dest="incoming")
+    seed.step(job, 2, title="Archive", Source="incoming/*.csv", Dest="archive")
+    seed.step(job, 3, title="Deliver", Source="incoming/*.csv", DestEndpoint="BILLING_INBOX", Move="True")
+    db.commit()
+
+
+def open_job(page, key="DEV-LOAD", extra=""):
+    page.goto(f"/ui/job.html?key={key}{extra}")
+    page.wait_for_selector("#job-key")
+    page.wait_for_load_state("networkidle")
+    return page.locator(".step")
+
+
+def edit(page):
+    page.locator("#edit-button").click()
+    page.locator("#cancel-button").wait_for(state="visible")
+
+
+def submit(page):
+    """Presses Submit and waits until the server has answered and the page has shown the result."""
+    with page.expect_response(lambda r: "/api/v1/jobs" in r.url and r.request.method in ("POST", "PUT")):
+        page.locator("#submit-button").click()
+    page.wait_for_function("() => Alpine.$data(document.querySelector('main')).busy === false")
+
+
+def expand(step):
+    step.locator(".expander").click()
+    step.locator(".step-body").wait_for(state="visible")
+
+
+def field(step, name):
+    return step.locator(f'.field-row[data-parameter="{name}"]')
+
+
+def stored(page, key="DEV-LOAD"):
+    """The job as the API now has it."""
+    response = page.request.get(f"/api/v1/jobs/{key}")
+    assert response.ok, response.text()
+    return response.json()
+
+
+def titles(job):
+    return [step["title"] for step in job["steps"]]
+
+
+# --- Locking, unlocking and Submit --------------------------------------------------------------
+
+def test_edit_unlocks_and_submit_waits_for_a_change(page, job):
+    open_job(page)
+    assert page.locator("#job-description").is_disabled()
+
+    edit(page)
+
+    assert page.locator("#job-description").is_enabled() and page.locator("#job-key").is_enabled()
+    assert page.locator("#submit-button").is_disabled()           # nothing has changed yet
+    assert page.locator("#job-selector").is_disabled()            # no wandering off mid-edit
+    assert not page.locator("#edit-button").is_visible()
+
+    page.locator("#job-description").fill("Collects and delivers, daily")
+    assert page.locator("#submit-button").is_enabled()
+
+    page.locator("#job-description").fill("Collects and delivers")           # typed back to what it was
+    assert page.locator("#submit-button").is_disabled()
+
+
+def test_a_change_is_saved_and_the_page_locks_again(page, db, job):
+    steps = open_job(page)
+    edit(page)
+    page.locator("#job-description").fill("Collects, archives and delivers")
+    expand(steps.nth(1))
+    field(steps.nth(1), "Checksum").locator("input[type=checkbox]").check()
+
+    submit(page)
+
+    notice = page.locator("#save-notice").inner_text()
+    assert notice == "Saved. Changed the description. Changed step 2 ('Archive'): parameters."
+    assert page.locator("#job-description").is_disabled() and page.locator("#edit-button").is_visible()
+    saved = stored(page)
+    assert saved["description"] == "Collects, archives and delivers"
+    assert saved["steps"][1]["parameters"] == {"Source": "incoming/*.csv", "Dest": "archive", "Checksum": "True"}
+    assert saved["steps"][0]["parameters"] == {"SourceEndpoint": "LEGAL_EXTRACTS", "Dest": "incoming"}    # untouched
+    # and it is in the audit log
+    db.commit()
+    audit = db.query(Audit).one()
+    assert (audit.Action, audit.PerformedBy) == ("JOB_UPDATED", "web interface")
+    assert json.loads(audit.Details)["changes"] == ["Changed the description.", "Changed step 2 ('Archive'): parameters."]
+
+
+def test_what_was_saved_is_what_a_fresh_load_shows(page, job):
+    steps = open_job(page)
+    edit(page)
+    steps.nth(0).locator(".step-title-input").fill("Collect extracts")
+    submit(page)
+
+    steps = open_job(page)
+
+    assert steps.nth(0).locator(".step-title").inner_text() == "Collect extracts"
+
+
+def test_cancel_puts_everything_back(page, job):
+    steps = open_job(page)
+    edit(page)
+    page.locator("#job-description").fill("Something else")
+    steps.nth(0).locator(".step-title-input").fill("Renamed")
+    page.once("dialog", lambda dialog: dialog.accept())           # "Discard the changes you have made?"
+
+    page.locator("#cancel-button").click()
+
+    page.locator("#edit-button").wait_for(state="visible")
+    assert page.locator("#job-description").input_value() == "Collects and delivers"
+    assert steps.nth(0).locator(".step-title").inner_text() == "Collect"
+    assert stored(page)["description"] == "Collects and delivers"
+
+
+def test_declining_to_discard_keeps_the_changes_on_screen(page, job):
+    open_job(page)
+    edit(page)
+    page.locator("#job-description").fill("Something else")
+    page.once("dialog", lambda dialog: dialog.dismiss())
+
+    page.locator("#cancel-button").click()
+
+    assert page.locator("#job-description").input_value() == "Something else"
+    assert page.locator("#submit-button").is_enabled()
+
+
+def test_cancel_without_changes_asks_nothing(page, job):
+    open_job(page)
+    edit(page)
+    questions = []
+    page.on("dialog", lambda dialog: (questions.append(dialog.message), dialog.accept()))
+
+    page.locator("#cancel-button").click()
+
+    page.locator("#edit-button").wait_for(state="visible")
+    assert questions == []
+
+
+# --- Parameters ---------------------------------------------------------------------------------
+
+def test_a_location_is_switched_from_a_path_to_an_endpoint(page, job):
+    steps = open_job(page)
+    edit(page)
+    expand(steps.nth(1))
+    dest = field(steps.nth(1), "Dest")
+    assert dest.locator(".endpoint-value").is_disabled() and dest.locator(".path-value").is_enabled()
+
+    dest.locator('input[type=radio][value="endpoint"]').check()
+    assert dest.locator(".endpoint-value").is_enabled() and dest.locator(".path-value").is_disabled()
+    dest.locator(".endpoint-value").fill("BILLING_INBOX")
+    submit(page)
+
+    assert stored(page)["steps"][1]["parameters"] == {"Source": "incoming/*.csv", "DestEndpoint": "BILLING_INBOX"}
+
+
+def test_an_endpoint_box_offers_the_registered_endpoints(page, job):
+    """
+    The drop-down is the browser's own: it lists these options under the box and narrows them as you type.
+    A test cannot see the browser's list on screen, so this checks what the list is given.
+    """
+    steps = open_job(page)
+    edit(page)
+    expand(steps.nth(0))
+
+    box = field(steps.nth(0), "Source").locator(".endpoint-value")
+    offered = page.locator("#endpoint-names option")
+
+    assert box.get_attribute("list") == "endpoint-names"
+    assert field(steps.nth(0), "Dest").locator(".endpoint-value").get_attribute("list") == "endpoint-names"
+    assert [option.get_attribute("value") for option in offered.all()] == ["BILLING_INBOX", "LEGAL_EXTRACTS"]
+    label = offered.nth(1).get_attribute("label")           # whose it is and where it points
+    assert label.startswith("LEGAL_APP") and label.endswith("app_outbox/Legal_Batch_*.csv")
+    assert field(steps.nth(0), "Source").locator(".path-value").get_attribute("list") is None    # not on path boxes
+
+
+def test_a_name_that_is_not_a_registered_endpoint_is_pointed_out_as_it_is_typed(page, job):
+    steps = open_job(page)
+    edit(page)
+    expand(steps.nth(0))
+    source = field(steps.nth(0), "Source")
+    warning = source.locator(".not-registered")
+    assert not warning.is_visible()                         # LEGAL_EXTRACTS is registered
+
+    source.locator(".endpoint-value").fill("LEGAL_EXTRACT")
+    warning.wait_for(state="visible")
+    assert warning.inner_text() == "No endpoint is registered under this name."
+
+    source.locator(".endpoint-value").fill("BILLING_INBOX")
+    warning.wait_for(state="hidden")
+
+    source.locator(".endpoint-value").fill("")              # an empty box is merely unfinished
+    assert not warning.is_visible()
+
+
+def test_a_tick_box_put_back_to_default_is_no_longer_stored(page, job):
+    steps = open_job(page)
+    edit(page)
+    expand(steps.nth(2))
+    move = field(steps.nth(2), "Move")
+    assert move.locator("input[type=checkbox]").is_checked() and not move.get_by_text("default").is_visible()
+
+    move.locator(".reset-field").click()
+
+    move.get_by_text("default").wait_for(state="visible")
+    assert not move.locator("input[type=checkbox]").is_checked()
+    submit(page)
+    assert stored(page)["steps"][2]["parameters"] == {"Source": "incoming/*.csv", "DestEndpoint": "BILLING_INBOX"}
+
+
+def test_unticking_a_box_that_defaults_to_ticked_stores_false(page, job):
+    steps = open_job(page)
+    edit(page)
+    expand(steps.nth(0))
+
+    field(steps.nth(0), "CreateFolder").locator("input[type=checkbox]").uncheck()
+    submit(page)
+
+    assert stored(page)["steps"][0]["parameters"]["CreateFolder"] == "False"
+
+
+def test_a_choice_is_set_from_its_list(page, job):
+    steps = open_job(page)
+    edit(page)
+    expand(steps.nth(0))
+
+    field(steps.nth(0), "LogLevel").locator("select").select_option("SILENT")
+    submit(page)
+
+    assert stored(page)["steps"][0]["parameters"]["LogLevel"] == "SILENT"
+
+
+def test_a_parameter_the_step_type_does_not_have_can_be_removed(page, db, seed, endpoints):
+    job = seed.job("DEV-TYPO")
+    seed.step(job, 1, title="Collect", SourceEndpoint="LEGAL_EXTRACTS", Dest="incoming", Mvoe="True")
+    db.commit()
+    steps = open_job(page, "DEV-TYPO")
+    assert "1 problem found" in page.locator("#runnability").inner_text()
+    edit(page)
+    expand(steps.nth(0))
+
+    steps.nth(0).locator(".remove-unknown").click()
+    submit(page)
+
+    assert stored(page, "DEV-TYPO")["steps"][0]["parameters"] == {"SourceEndpoint": "LEGAL_EXTRACTS", "Dest": "incoming"}
+    assert page.locator("#runnability").inner_text() == "Ready to run"
+
+
+# --- Steps --------------------------------------------------------------------------------------
+
+def test_a_step_is_added_at_the_end_open_and_ready_to_fill_in(page, job):
+    steps = open_job(page)
+    edit(page)
+
+    page.locator("#add-step").click()
+
+    new = steps.nth(3)
+    new.locator(".step-body").wait_for(state="visible")
+    new.locator(".step-title-input").fill("Keep a copy")
+    field(new, "Source").locator('input[type=radio][value="path"]').check()
+    field(new, "Source").locator(".path-value").fill("archive/*.csv")
+    field(new, "Dest").locator('input[type=radio][value="path"]').check()
+    field(new, "Dest").locator(".path-value").fill("kept")
+    field(new, "AllowNoFiles").locator("input[type=checkbox]").check()
+    submit(page)
+
+    assert page.locator("#save-notice").inner_text() == "Saved. Added step 4 ('Keep a copy')."
+    saved = stored(page)
+    assert titles(saved) == ["Collect", "Archive", "Deliver", "Keep a copy"]
+    assert saved["steps"][3]["parameters"] == {"Source": "archive/*.csv", "Dest": "kept", "AllowNoFiles": "True"}
+    assert saved["steps"][3]["step_type"] == "COPY_FILES"
+
+
+def test_the_step_type_list_shows_each_types_name(page, job):
+    steps = open_job(page)
+    edit(page)
+
+    chooser = steps.nth(0).locator("select.step-type")
+
+    assert [option.inner_text() for option in chooser.locator("option").all()] == ["Copy Files"]
+    assert chooser.evaluate("e => e.options[e.selectedIndex].text") == "Copy Files"
+    assert chooser.input_value() == "COPY_FILES"
+
+
+def test_a_step_is_removed_after_confirming(page, job):
+    steps = open_job(page)
+    edit(page)
+    questions = []
+    page.once("dialog", lambda dialog: (questions.append(dialog.message), dialog.accept()))
+
+    steps.nth(1).locator(".remove-step").click()
+
+    assert questions == ["Remove step 2 ('Archive')?"]
+    assert steps.count() == 2
+    submit(page)
+    assert page.locator("#save-notice").inner_text() == "Saved. Removed step 'Archive'."
+    assert titles(stored(page)) == ["Collect", "Deliver"]
+
+
+def test_declining_to_remove_a_step_keeps_it(page, job):
+    steps = open_job(page)
+    edit(page)
+    page.once("dialog", lambda dialog: dialog.dismiss())
+
+    steps.nth(1).locator(".remove-step").click()
+
+    assert steps.count() == 3
+    assert page.locator("#submit-button").is_disabled()
+
+
+def test_steps_are_reordered_with_the_arrows(page, job):
+    steps = open_job(page)
+    edit(page)
+    assert steps.nth(0).locator(".move-up").is_disabled() and steps.nth(2).locator(".move-down").is_disabled()
+
+    steps.nth(2).locator(".move-up").click()            # Deliver above Archive
+    steps.nth(0).locator(".move-down").click()          # Collect below Deliver
+
+    assert [s.locator(".step-title-input").input_value() for s in steps.all()] == ["Deliver", "Collect", "Archive"]
+    assert [s.locator(".step-order").inner_text() for s in steps.all()] == ["1", "2", "3"]
+    submit(page)
+    assert page.locator("#save-notice").inner_text() == "Saved. Reordered the steps."
+    saved = stored(page)
+    assert [(s["order"], s["title"]) for s in saved["steps"]] == [(1, "Deliver"), (2, "Collect"), (3, "Archive")]
+
+
+def test_a_step_is_disabled_with_its_tick_box(page, job):
+    steps = open_job(page)
+    edit(page)
+
+    steps.nth(1).locator(".step-enabled").uncheck()
+    submit(page)
+
+    assert page.locator("#save-notice").inner_text() == "Saved. Changed step 2 ('Archive'): disabled."
+    assert [s["active"] for s in stored(page)["steps"]] == [True, False, True]
+    assert "disabled" in steps.nth(1).get_attribute("class")
+
+
+def test_the_whole_job_is_disabled_with_its_tick_box(page, job):
+    open_job(page)
+    edit(page)
+
+    page.locator("#job-enabled").uncheck()
+    submit(page)
+
+    assert stored(page)["active"] is False
+    assert "Disabled. The runner refuses a disabled job." in page.locator("#runnability").inner_text()
+
+
+# --- What saving reports ------------------------------------------------------------------------
+
+def test_a_job_saved_with_a_mistake_in_it_is_saved_and_the_problem_is_shown(page, job):
+    steps = open_job(page)
+    assert page.locator("#runnability").inner_text() == "Ready to run"
+    edit(page)
+    expand(steps.nth(0))
+    field(steps.nth(0), "Source").locator(".endpoint-value").fill("NO_SUCH_ENDPOINT")
+
+    submit(page)
+
+    assert page.locator("#save-notice").inner_text().startswith("Saved.")
+    assert page.locator("#runnability").inner_text() == "1 problem found by the pre-run check"
+    assert "NO_SUCH_ENDPOINT" in page.locator("#job-problems li").inner_text()
+    assert stored(page)["steps"][0]["parameters"]["SourceEndpoint"] == "NO_SUCH_ENDPOINT"
+
+
+def test_a_job_built_in_the_editor_runs(page, db, endpoints, run_runner, tmp_path):
+    """The whole point: define a job on the page, and the runner runs it."""
+    db.commit()
+    page.goto("/ui/job.html?new")
+    page.wait_for_selector("#job-key")
+    steps = page.locator(".step")
+    assert page.locator("#submit-button").is_disabled() and page.locator("#no-steps").is_visible()
+
+    page.locator("#job-key").fill("DEV-BUILT-BY-HAND")
+    page.locator("#job-description").fill("Made in the job editor")
+    page.locator("#add-step").click()
+    collect = steps.nth(0)
+    collect.locator(".step-title-input").fill("Collect")
+    field(collect, "Source").locator('input[type=radio][value="endpoint"]').check()
+    field(collect, "Source").locator(".endpoint-value").fill("LEGAL_EXTRACTS")
+    field(collect, "Dest").locator('input[type=radio][value="path"]').check()
+    field(collect, "Dest").locator(".path-value").fill("incoming")
+    page.locator("#add-step").click()
+    deliver = steps.nth(1)
+    deliver.locator(".step-title-input").fill("Deliver")
+    field(deliver, "Source").locator('input[type=radio][value="path"]').check()
+    field(deliver, "Source").locator(".path-value").fill("incoming/*.csv")
+    field(deliver, "Dest").locator('input[type=radio][value="endpoint"]').check()
+    field(deliver, "Dest").locator(".endpoint-value").fill("BILLING_INBOX")
+    field(deliver, "Move").locator("input[type=checkbox]").check()
+    submit(page)
+
+    assert page.locator("#save-notice").inner_text() == "Saved. Created job 'DEV-BUILT-BY-HAND'."
+    assert page.url.endswith("job.html?key=DEV-BUILT-BY-HAND")
+    assert page.locator("#runnability").inner_text() == "Ready to run"
+    assert "--job-key DEV-BUILT-BY-HAND" in page.locator("#command-line").inner_text()
+
+    result = run_runner("DEV-BUILT-BY-HAND")
+
+    assert result.returncode == 0, result.stderr
+    assert sorted(p.name for p in (tmp_path / "app_inbox").iterdir()) == ["Legal_Batch_1.csv", "Legal_Batch_2.csv"]
+    assert list((tmp_path / "work" / "DEV-BUILT-BY-HAND" / "incoming").iterdir()) == []      # moved on
+
+
+def test_a_new_job_with_an_unusable_key_is_refused_and_stays_open_for_correction(page_expecting_refusals, db, job):
+    page = page_expecting_refusals
+    page.goto("/ui/job.html?new")
+    page.wait_for_selector("#job-key")
+
+    page.locator("#job-key").fill("has a space")
+    submit(page)
+
+    assert "Invalid JobKey 'has a space'" in page.locator("#page-error").inner_text()
+    assert page.locator("#job-key").is_enabled() and page.locator("#submit-button").is_enabled()
+
+    page.locator("#job-key").fill("DEV-LOAD")                       # already taken
+    submit(page)
+    assert page.locator("#page-error").inner_text() == "A job with JobKey 'DEV-LOAD' already exists."
+
+    page.locator("#job-key").fill("DEV-NEW")
+    submit(page)
+    assert page.locator("#save-notice").inner_text() == "Saved. Created job 'DEV-NEW'."
+    assert not page.locator("#page-error").is_visible()
+
+
+def test_cancelling_a_new_job_goes_back_to_the_job_search(page, job):
+    page.goto("/ui/job.html?new")
+    page.wait_for_selector("#job-key")
+
+    page.locator("#cancel-button").click()
+
+    page.wait_for_url("**/ui/jobs.html")
+
+
+# --- Renaming -----------------------------------------------------------------------------------
+
+def test_renaming_warns_first_and_then_moves_the_job_to_its_new_key(page, db, job):
+    open_job(page)
+    edit(page)
+    page.locator("#job-key").fill("DEV-LOAD-DAILY")
+    questions = []
+    page.once("dialog", lambda dialog: (questions.append(dialog.message), dialog.accept()))
+
+    submit(page)
+
+    assert "Rename this job from 'DEV-LOAD' to 'DEV-LOAD-DAILY'?" in questions[0]
+    assert "scheduler" in questions[0] and "working folder" in questions[0]
+    assert page.locator("#save-notice").inner_text() == "Saved. Renamed from 'DEV-LOAD' to 'DEV-LOAD-DAILY'."
+    assert page.url.endswith("job.html?key=DEV-LOAD-DAILY")
+    assert "--job-key DEV-LOAD-DAILY" in page.locator("#command-line").inner_text()
+    assert titles(stored(page, "DEV-LOAD-DAILY")) == ["Collect", "Archive", "Deliver"]
+    assert db.query(Job).filter(Job.JobKey == "DEV-LOAD").count() == 0
+
+
+def test_declining_the_rename_warning_saves_nothing(page, job):
+    open_job(page)
+    edit(page)
+    page.locator("#job-key").fill("DEV-LOAD-DAILY")
+    page.once("dialog", lambda dialog: dialog.dismiss())
+
+    page.locator("#submit-button").click()
+    page.wait_for_timeout(300)
+
+    assert stored(page)["job_key"] == "DEV-LOAD"
+    assert page.locator("#job-key").input_value() == "DEV-LOAD-DAILY"          # still on screen, still unsaved
+
+
+# --- Deleting -----------------------------------------------------------------------------------
+
+def test_a_job_that_has_never_run_is_deleted_after_confirming(page, db, job):
+    open_job(page)
+    edit(page)
+    questions = []
+    page.once("dialog", lambda dialog: (questions.append(dialog.message), dialog.accept()))
+
+    page.locator("#delete-button").click()
+
+    page.wait_for_url("**/ui/jobs.html")
+    assert questions == ["Delete job 'DEV-LOAD' and all its steps? This cannot be undone."]
+    db.commit()
+    assert db.query(Job).count() == 0
+
+
+def test_a_job_that_has_run_cannot_be_deleted_and_says_to_disable_it(
+        page_expecting_refusals, db, job, run_runner, load_spool):
+    page = page_expecting_refusals
+    run_runner("DEV-LOAD")
+    load_spool()
+    open_job(page)
+    edit(page)
+    page.once("dialog", lambda dialog: dialog.accept())
+
+    page.locator("#delete-button").click()
+
+    page.locator("#page-error").wait_for(state="visible")
+    assert "has run 1 time, so it cannot be deleted. Disable it instead" in page.locator("#page-error").inner_text()
+    assert stored(page)["job_key"] == "DEV-LOAD"
+
+
+def test_declining_to_delete_keeps_the_job(page, job):
+    open_job(page)
+    edit(page)
+    page.once("dialog", lambda dialog: dialog.dismiss())
+
+    page.locator("#delete-button").click()
+    page.wait_for_timeout(300)
+
+    assert stored(page)["job_key"] == "DEV-LOAD"
+    assert "job.html" in page.url

@@ -12,6 +12,25 @@ Notable structural, schema and design changes to AutoApp, newest first. Line-by-
 - **Added:** the Job Detail page. It shows a job and its steps, with each step's form drawn from the step catalog. Nothing on it can be changed yet.
 - **Changed:** on the Job Search page the job key links to the Job Detail page, there is a View link, and a disabled job shows "Disabled" in grey with no Check link.
 
+### Job editor, second slice: editing and saving
+
+- **Added:** `POST /api/v1/jobs`, `PUT /api/v1/jobs/{job_key}` and `DELETE /api/v1/jobs/{job_key}`. A job is saved whole, with its steps in the order they run.
+- **Added:** the Job Detail page can be unlocked with Edit and saved with Submit. Steps can be added, removed, reordered, retitled and enabled or disabled; parameters are edited through the forms drawn from the step catalog.
+- **Added:** New job, renaming with a warning, and Delete job.
+- **Added:** every create, change and delete of a job writes a row to `Audits` saying what changed.
+- **Decided:** a job is saved even if the pre-run check finds problems with it. The problems are shown after the save, and the job will not run until they are fixed. Refusing the save would stop someone saving half-finished work.
+- **Decided:** a step keeps its identity when it is edited or moved, so the operations it has recorded stay linked to it. Removing a step keeps its operations, without the link.
+- **Changed:** SQLite now enforces foreign keys. Before, deleting a step on SQLite left its parameters behind, where MariaDB removed them.
+
+### Endpoint drop-down, and Operations Log criteria
+
+- **Added:** `GET /api/v1/endpoints`. In the job editor, each endpoint box offers the registered endpoints as a drop-down, narrowed by what is typed.
+- **Decided:** every box that names something registered elsewhere (an endpoint, application, entity, site, job or scheduler) offers a drop-down of what there is. Added to the search boxes on the Operations Log and Job Search, through one mechanism in `common.js` and one route, `GET /api/v1/lookups`.
+- **Changed:** on the Operations Log, Application, Entity and Site are searched on the source and the destination separately, in those boxes, not "on either side".
+- **Added:** Scheduler as a search criterion on the Operations Log, shown on each row and each hop of a trace.
+- **Fixed:** a copy step whose `Dest` named a single file, but whose source matched several, copied each file over the last and recorded them all as delivered. It now fails before copying anything.
+- **Added:** when the server refuses a request it does not know, the page says the server may need restarting.
+
 ### An out-of-date database explains itself
 
 - **Added:** when the server starts, and whenever a database error occurs, the database's tables are compared with what this version expects. Anything missing is named in the server log and in the error the page shows.

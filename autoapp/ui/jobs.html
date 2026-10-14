@@ -20,7 +20,7 @@
         <div class="criteria">
             <fieldset>
                 <legend>Job</legend>
-                <label>Job key <input type="text" x-model="criteria.job_key" name="job_key"></label>
+                <label>Job key <input type="text" x-model="criteria.job_key" name="job_key" data-lookup="jobs"></label>
                 <label>Description <input type="text" x-model="criteria.description" name="description"></label>
                 <label>Status
                     <select x-model="criteria.active" name="active">
@@ -33,13 +33,14 @@
             <fieldset>
                 <legend>Uses</legend>
                 <label title="An endpoint that one of the job's steps reads from or writes to">Endpoint
-                    <input type="text" x-model="criteria.endpoint" name="endpoint"></label>
+                    <input type="text" x-model="criteria.endpoint" name="endpoint" data-lookup="endpoints"></label>
             </fieldset>
         </div>
         <div class="actions">
             <button type="submit" class="primary" :disabled="loading">Search</button>
             <button type="button" class="secondary" @click="clear()" :disabled="loading">Clear</button>
             <span class="spacer"></span>
+            <a class="button secondary" href="job.html?new">New job</a>
             <button type="button" class="secondary" @click="exportCsv()" :disabled="rows.length === 0">Export as CSV</button>
         </div>
     </form>
@@ -106,7 +107,7 @@
                                           title="The pre-run check found no problems">Ready to run</span>
                                     <button type="button" class="link check-link" x-show="job.active && !job.ready"
                                             :title="checkHint(job)" @click="check(job)">Check</button>
-                                    <a :href="detailLink(job)">View</a>
+                                    <a :href="detailLink(job) + '&edit'">Edit</a>
                                     <a :href="operationsLink(job)">Operations</a>
                                 </div>
                             </td>

@@ -39,27 +39,29 @@
             </fieldset>
             <fieldset>
                 <legend>Source</legend>
-                <label>Endpoint <input type="text" x-model="criteria.source_endpoint" name="source_endpoint"></label>
+                <label>Endpoint <input type="text" x-model="criteria.source_endpoint" name="source_endpoint" data-lookup="endpoints"></label>
+                <label>Application <input type="text" x-model="criteria.source_application" name="source_application" data-lookup="applications"></label>
+                <label>Entity <input type="text" x-model="criteria.source_entity" name="source_entity" data-lookup="entities"></label>
+                <label>Site <input type="text" x-model="criteria.source_site" name="source_site" data-lookup="sites"></label>
                 <label>Path <input type="text" x-model="criteria.source_path" name="source_path"></label>
                 <label>Filename <input type="text" x-model="criteria.source_filename" name="source_filename"></label>
             </fieldset>
             <fieldset>
                 <legend>Destination</legend>
-                <label>Endpoint <input type="text" x-model="criteria.dest_endpoint" name="dest_endpoint"></label>
+                <label>Endpoint <input type="text" x-model="criteria.dest_endpoint" name="dest_endpoint" data-lookup="endpoints"></label>
+                <label>Application <input type="text" x-model="criteria.dest_application" name="dest_application" data-lookup="applications"></label>
+                <label>Entity <input type="text" x-model="criteria.dest_entity" name="dest_entity" data-lookup="entities"></label>
+                <label>Site <input type="text" x-model="criteria.dest_site" name="dest_site" data-lookup="sites"></label>
                 <label>Path <input type="text" x-model="criteria.dest_path" name="dest_path"></label>
                 <label>Filename <input type="text" x-model="criteria.dest_filename" name="dest_filename"></label>
             </fieldset>
             <fieldset>
                 <legend>Automation</legend>
-                <label>Job <input type="text" x-model="criteria.job_key" name="job_key"></label>
+                <label>Job <input type="text" x-model="criteria.job_key" name="job_key" data-lookup="jobs"></label>
                 <label title="The scheduler's instance ID, exactly as it issued it">Instance ID
                     <input type="text" x-model="criteria.instance_id" name="instance_id"></label>
-            </fieldset>
-            <fieldset>
-                <legend>On either side</legend>
-                <label>Application <input type="text" x-model="criteria.application" name="application"></label>
-                <label>Entity <input type="text" x-model="criteria.entity" name="entity"></label>
-                <label>Site <input type="text" x-model="criteria.site" name="site"></label>
+                <label title="The scheduler that started the run, where the runner was told its name">Scheduler
+                    <input type="text" x-model="criteria.scheduler" name="scheduler" data-lookup="schedulers"></label>
             </fieldset>
         </div>
         <div class="actions">
@@ -119,8 +121,8 @@
                                     <span x-show="row.step_order !== null" x-text="'step ' + row.step_order + ' ·'"></span>
                                     instance <span x-text="row.instance_id"></span>
                                     <span x-show="row.run_number > 1" x-text="'· run ' + row.run_number"></span>
-                                    <span x-show="row.scheduler" x-text="'· ' + row.scheduler"></span>
                                 </div>
+                                <div class="muted small scheduler" x-show="row.scheduler" x-text="'scheduler ' + row.scheduler"></div>
                                 <div class="small" x-show="details(row)" x-text="details(row)"></div>
                                 <div class="error-text small" x-show="row.error" x-text="row.error"></div>
                             </td>
@@ -162,6 +164,7 @@
                                 <span class="muted small">
                                     step <span x-text="hop.step_order"></span> · instance <span x-text="hop.instance_id"></span>
                                     <span x-show="hop.run_number > 1" x-text="'· run ' + hop.run_number"></span>
+                                    <span x-show="hop.scheduler" x-text="'· scheduler ' + hop.scheduler"></span>
                                 </span>
                                 <span class="muted small" x-show="hop.followsNumber !== null"
                                       x-text="'follows ' + hop.followsNumber"></span>

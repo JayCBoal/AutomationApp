@@ -188,6 +188,77 @@ def test_criteria_narrow_the_results_and_clear_restores_them(page, collect_and_d
     assert page.locator("input[name=dest_endpoint]").input_value() == ""
 
 
+def test_application_entity_and_site_are_searched_on_each_side_separately(page, collect_and_deliver, run_runner, load_spool):
+    """Two files: collected from LEGAL_APP's endpoint, archived, delivered to BILLING_APP's endpoint."""
+    run_runner("DEV-COLLECT", "88421")
+    load_spool()
+    open_log(page)
+    boxes = lambda group: [box.get_attribute("name") for box in
+                           page.locator("fieldset", has=page.locator("legend", has_text=group)).locator("input").all()]
+    assert boxes("Source") == ["source_endpoint", "source_application", "source_entity", "source_site",
+                               "source_path", "source_filename"]
+    assert boxes("Destination") == ["dest_endpoint", "dest_application", "dest_entity", "dest_site",
+                                    "dest_path", "dest_filename"]
+
+    page.locator("input[name=source_application]").fill("legal")
+    assert search(page).count() == 2                                  # the two collects
+    page.locator("input[name=source_application]").fill("billing")
+    assert search(page).count() == 0                                  # billing is only ever a destination here
+    page.locator("input[name=source_application]").fill("")
+    page.locator("input[name=dest_application]").fill("billing")
+    assert search(page).count() == 2                                  # the two deliveries
+    assert "dest_application=billing" in page.url
+
+
+def test_boxes_that_name_something_registered_offer_a_drop_down_of_what_there_is(
+        page, collect_and_deliver, run_runner, load_spool):
+    """
+    The drop-down is the browser's own: it lists these options under the box and narrows them as you type.
+    A test cannot see the browser's list on screen, so this checks which list each box is given.
+    """
+    run_runner("DEV-COLLECT", "88421", "--scheduler", "CTM_PROD")
+    load_spool()
+    open_log(page)
+    page.wait_for_selector("#lookup-endpoints", state="attached")
+
+    def offered(box_name):
+        box = page.locator(f"input[name={box_name}]")
+        return [o.get_attribute("value") for o in page.locator(f"datalist#{box.get_attribute('list')} option").all()]
+
+    assert offered("source_endpoint") == offered("dest_endpoint") == ["BILLING_INBOX", "LEGAL_EXTRACTS"]
+    assert offered("source_application") == offered("dest_application") == ["BILLING_APP", "LEGAL_APP"]
+    assert offered("job_key") == ["DEV-COLLECT"]
+    assert offered("scheduler") == ["CTM_PROD"]
+    assert page.locator("input[name=source_entity]").get_attribute("list") == "lookup-entities"
+    assert page.locator("input[name=dest_site]").get_attribute("list") == "lookup-sites"
+    # free-text boxes have no list
+    assert page.locator("input[name=source_path]").get_attribute("list") is None
+    assert page.locator("input[name=dest_filename]").get_attribute("list") is None
+    label = page.locator("datalist#lookup-endpoints option").nth(1).get_attribute("label")
+    assert label.startswith("LEGAL_APP") and label.endswith("Legal_Batch_*.csv")
+
+
+def test_scheduler_is_shown_and_can_be_searched(page, collect_and_deliver, run_runner, load_spool):
+    run_runner("DEV-COLLECT", "88421", "--scheduler", "CTM_PROD")
+    run_runner("DEV-COLLECT", "88422")                               # no scheduler name given
+    load_spool()
+    rows = open_log(page)
+    assert rows.count() == 12
+    assert rows.locator(".scheduler:visible").count() == 6           # shown where there is one, and only there
+    assert rows.locator(".scheduler:visible").first.inner_text() == "scheduler CTM_PROD"
+
+    page.locator("input[name=scheduler]").fill("ctm")
+    rows = search(page)
+
+    assert rows.count() == 6
+    assert all("instance 88421" in row.inner_text() for row in rows.all())
+    assert "scheduler=ctm" in page.url
+    # and it is on each hop of a trace
+    rows.first.get_by_role("button", name="Trace").click()
+    page.wait_for_selector("dialog.trace .hop")
+    assert "scheduler CTM_PROD" in page.locator("dialog.trace .hop").first.inner_text()
+
+
 def test_pressing_enter_in_a_box_runs_the_search(page, collect_and_deliver, run_runner, load_spool):
     run_runner("DEV-COLLECT", "88421")
     load_spool()

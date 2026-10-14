@@ -199,13 +199,244 @@ def test_a_name_that_is_not_a_registered_endpoint_is_pointed_out_as_it_is_typed(
 
     source.locator(".endpoint-value").fill("LEGAL_EXTRACT")
     warning.wait_for(state="visible")
-    assert warning.inner_text() == "No endpoint is registered under this name."
+    assert warning.inner_text() == "No endpoint is registered under this name. Register it"
 
     source.locator(".endpoint-value").fill("BILLING_INBOX")
     warning.wait_for(state="hidden")
 
     source.locator(".endpoint-value").fill("")              # an empty box is merely unfinished
     assert not warning.is_visible()
+
+
+# --- Registering an endpoint without leaving the page ------------------------------------------
+
+def test_a_new_endpoint_is_registered_from_the_step_and_put_in_its_box(page, db, job, tmp_path, run_runner):
+    steps = open_job(page)
+    edit(page)
+    expand(steps.nth(1))                                    # Archive: its Dest is a working-folder path
+    dest = field(steps.nth(1), "Dest")
+
+    dest.locator(".new-endpoint").click()
+
+    window = page.locator("dialog.endpoint")
+    window.wait_for(state="visible")
+    assert page.locator("#endpoint-filename_pattern").input_value() == "*"            # every file, unless told otherwise
+    page.locator("#endpoint-name").fill("LEGAL_ARCHIVE")
+    page.locator("#endpoint-application").fill("LEGAL_APP")
+    page.locator("#endpoint-path").fill(str(tmp_path / "legal_archive"))
+    page.locator("#endpoint-description").fill("Where extracts are kept")
+    create(page, "endpoint")
+
+    assert not window.is_visible()
+    assert dest.locator(".endpoint-value").input_value() == "LEGAL_ARCHIVE"
+    assert dest.locator('input[type=radio][value="endpoint"]').is_checked()   # switched over from the path
+    assert not dest.locator(".not-registered").is_visible()
+    assert "LEGAL_ARCHIVE" in [o.get_attribute("value") for o in page.locator("#endpoint-names option").all()]
+    # the endpoint exists already, before the job is saved
+    registered = {e["name"]: e for e in page.request.get("/api/v1/endpoints").json()}
+    assert registered["LEGAL_ARCHIVE"]["application"] == "LEGAL_APP"
+    assert registered["LEGAL_ARCHIVE"]["description"] == "Where extracts are kept"
+    assert "DestEndpoint" not in stored(page)["steps"][1]["parameters"]
+
+    submit(page)
+
+    assert stored(page)["steps"][1]["parameters"] == {"Source": "incoming/*.csv", "DestEndpoint": "LEGAL_ARCHIVE"}
+    assert page.locator("#runnability").inner_text() == "Ready to run"
+    assert run_runner("DEV-LOAD").returncode == 0
+    assert sorted(p.name for p in (tmp_path / "legal_archive").iterdir()) == ["Legal_Batch_1.csv", "Legal_Batch_2.csv"]
+
+
+def test_a_name_typed_into_the_box_is_carried_into_the_new_endpoint_form(page, job):
+    steps = open_job(page)
+    edit(page)
+    expand(steps.nth(0))
+    source = field(steps.nth(0), "Source")
+    source.locator(".endpoint-value").fill("LEGAL_EXTRACTS_V2")
+    source.locator(".not-registered").wait_for(state="visible")
+
+    source.locator(".register-it").click()
+
+    page.locator("dialog.endpoint").wait_for(state="visible")
+    assert page.locator("#endpoint-name").input_value() == "LEGAL_EXTRACTS_V2"
+
+
+def test_a_registered_name_in_the_box_is_not_offered_as_the_new_name(page, job):
+    steps = open_job(page)
+    edit(page)
+    expand(steps.nth(0))
+
+    field(steps.nth(0), "Source").locator(".new-endpoint").click()         # the box holds LEGAL_EXTRACTS
+
+    page.locator("dialog.endpoint").wait_for(state="visible")
+    assert page.locator("#endpoint-name").input_value() == ""
+
+
+def test_a_refused_endpoint_says_why_and_stays_open_for_correction(page_expecting_refusals, db, job):
+    page = page_expecting_refusals
+    steps = open_job(page)
+    edit(page)
+    expand(steps.nth(1))
+    dest = field(steps.nth(1), "Dest")
+    dest.locator(".new-endpoint").click()
+    window = page.locator("dialog.endpoint")
+    window.wait_for(state="visible")
+
+    page.locator("#endpoint-name").fill("BILLING_INBOX")                   # already registered
+    page.locator("#endpoint-path").fill("/somewhere")
+    create(page, "endpoint")
+
+    assert window.is_visible()
+    assert page.locator("#endpoint-error").inner_text() == "An endpoint named 'BILLING_INBOX' is already registered."
+    assert dest.locator(".endpoint-value").input_value() == ""             # the step is untouched
+
+    page.locator("#endpoint-name").fill("BILLING_ARCHIVE")
+    page.locator("#endpoint-application").fill("NO_SUCH_APP")
+    create(page, "endpoint")
+    assert page.locator("#endpoint-error").inner_text() == "There is no application named 'NO_SUCH_APP'."
+
+    page.locator("#endpoint-application").fill("BILLING_APP")
+    create(page, "endpoint")
+    assert not window.is_visible()
+    assert dest.locator(".endpoint-value").input_value() == "BILLING_ARCHIVE"
+
+
+def test_cancelling_the_new_endpoint_form_registers_nothing_and_leaves_the_step_alone(page, job):
+    steps = open_job(page)
+    edit(page)
+    expand(steps.nth(1))
+    dest = field(steps.nth(1), "Dest")
+    dest.locator(".new-endpoint").click()
+    window = page.locator("dialog.endpoint")
+    window.wait_for(state="visible")
+    page.locator("#endpoint-name").fill("NEVER_CREATED")
+    page.locator("#endpoint-path").fill("/somewhere")
+
+    window.get_by_role("button", name="Cancel").click()
+
+    assert not window.is_visible()
+    assert dest.locator(".path-value").input_value() == "archive" and dest.locator(".endpoint-value").input_value() == ""
+    assert [e["name"] for e in page.request.get("/api/v1/endpoints").json()] == ["BILLING_INBOX", "LEGAL_EXTRACTS"]
+    assert page.locator("#submit-button").is_disabled()                    # nothing about the job has changed
+
+
+def open_new_endpoint(page, steps, step=1, parameter="Dest"):
+    edit(page)
+    expand(steps.nth(step))
+    box = field(steps.nth(step), parameter)
+    box.locator(".new-endpoint").click()
+    page.locator("dialog.endpoint").wait_for(state="visible")
+    return box
+
+
+def create(page, kind):
+    """Presses Create in a New ... window and waits for the server's answer."""
+    with page.expect_response(lambda r: r.request.method == "POST" and "/api/v1/" in r.url):
+        page.locator(f"#create-{kind}").click()
+    page.wait_for_timeout(150)
+
+
+def test_the_new_endpoint_form_offers_the_applications_and_sites_there_are(page, job):
+    steps = open_job(page)
+    open_new_endpoint(page, steps)
+
+    assert page.locator("#endpoint-application").get_attribute("list") == "lookup-applications"
+    assert page.locator("#endpoint-site").get_attribute("list") == "lookup-sites"
+    assert [o.get_attribute("value") for o in page.locator("#lookup-applications option").all()] == [
+        "BILLING_APP", "LEGAL_APP"]
+
+
+def test_a_site_and_its_entity_are_registered_from_inside_the_new_endpoint_form(page, db, job):
+    """Three windows deep: the endpoint needs a site that does not exist, and the site an entity that does not."""
+    steps = open_job(page)
+    dest = open_new_endpoint(page, steps)
+    page.locator("#endpoint-name").fill("ACME_PAYMENTS")
+    page.locator("#endpoint-path").fill("/inbound/payments")
+
+    page.locator("dialog.endpoint .create-new[data-creates=site]").click()
+    page.locator("dialog.site").wait_for(state="visible")
+    assert (page.locator("#site-port").input_value(), page.locator("#site-protocol").input_value()) == ("22", "SFTP")
+    page.locator("#site-name").fill("ACME_SFTP")
+    page.locator("#site-host").fill("sftp.acmebank.example")
+
+    page.locator("dialog.site .create-new[data-creates=entity]").click()
+    page.locator("dialog.entity").wait_for(state="visible")
+    page.locator("#entity-name").fill("ACME_BANK")
+    page.locator("#entity-abbr").fill("ACME")
+    create(page, "entity")
+
+    # back in the site window, with the new entity filled in
+    assert not page.locator("dialog.entity").is_visible() and page.locator("dialog.site").is_visible()
+    assert page.locator("#site-entity").input_value() == "ACME_BANK"
+    create(page, "site")
+
+    # back in the endpoint window, with the new site filled in and what was typed before still there
+    assert not page.locator("dialog.site").is_visible() and page.locator("dialog.endpoint").is_visible()
+    assert page.locator("#endpoint-site").input_value() == "ACME_SFTP"
+    assert page.locator("#endpoint-name").input_value() == "ACME_PAYMENTS"
+    create(page, "endpoint")
+
+    assert not page.locator("dialog.endpoint").is_visible()
+    assert dest.locator(".endpoint-value").input_value() == "ACME_PAYMENTS"
+    registered = {e["name"]: e for e in page.request.get("/api/v1/endpoints").json()}
+    assert (registered["ACME_PAYMENTS"]["site"], registered["ACME_PAYMENTS"]["entity"]) == ("ACME_SFTP", "ACME_BANK")
+    # and each is now offered wherever its kind is asked for
+    offered = lambda kind: [o.get_attribute("value") for o in page.locator(f"#lookup-{kind} option").all()]
+    assert "ACME_SFTP" in offered("sites") and "ACME_BANK" in offered("entities")
+
+
+def test_an_application_is_registered_from_inside_the_new_endpoint_form(page, db, job):
+    steps = open_job(page)
+    open_new_endpoint(page, steps)
+    page.locator("#endpoint-application").fill("PAYMENTS_APP")          # typed first, then found not to exist
+
+    page.locator("dialog.endpoint .create-new[data-creates=application]").click()
+
+    page.locator("dialog.application").wait_for(state="visible")
+    assert page.locator("#application-name").input_value() == "PAYMENTS_APP"      # carried into the new window
+    page.locator("#application-abbr").fill("PAY")
+    create(page, "application")
+    assert page.locator("#endpoint-application").input_value() == "PAYMENTS_APP"
+    assert "PAYMENTS_APP" in [o.get_attribute("value") for o in page.locator("#lookup-applications option").all()]
+
+
+def test_cancelling_an_inner_window_returns_to_the_outer_one_unchanged(page, job):
+    steps = open_job(page)
+    open_new_endpoint(page, steps)
+    page.locator("#endpoint-name").fill("KEPT")
+    page.locator("dialog.endpoint .create-new[data-creates=site]").click()
+    page.locator("dialog.site").wait_for(state="visible")
+    page.locator("#site-name").fill("NEVER_CREATED")
+
+    page.locator("dialog.site").get_by_role("button", name="Cancel").click()
+
+    page.locator("dialog.site").wait_for(state="detached")
+    assert page.locator("dialog.endpoint").is_visible()
+    assert (page.locator("#endpoint-name").input_value(), page.locator("#endpoint-site").input_value()) == ("KEPT", "")
+
+
+def test_a_refused_inner_window_says_why(page_expecting_refusals, db, job):
+    page = page_expecting_refusals
+    steps = open_job(page)
+    open_new_endpoint(page, steps)
+    page.locator("dialog.endpoint .create-new[data-creates=application]").click()
+    page.locator("dialog.application").wait_for(state="visible")
+
+    page.locator("#application-name").fill("LEGAL_APP")                 # already registered
+    page.locator("#application-abbr").fill("LGL")
+    create(page, "application")
+
+    assert page.locator("dialog.application").is_visible()
+    assert page.locator("#application-error").inner_text() == "An application named 'LEGAL_APP' is already registered."
+
+
+def test_new_endpoint_links_are_only_there_while_editing(page, job):
+    steps = open_job(page)
+    expand(steps.nth(0))
+    assert not field(steps.nth(0), "Source").locator(".new-endpoint").is_visible()
+
+    edit(page)
+
+    assert field(steps.nth(0), "Source").locator(".new-endpoint").is_visible()
 
 
 def test_a_tick_box_put_back_to_default_is_no_longer_stored(page, job):

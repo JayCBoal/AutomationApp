@@ -130,7 +130,9 @@ An endpoint has no direction. The same folder can be a destination for one job a
 
 **Built:** creating, changing and deleting a job each write an audit row saying in words what changed (`app/job_store.py`). There are no user accounts yet, so every change is recorded as made by "web interface".
 
-**Planned:** audit rows for endpoints, variables and the other definitions, as their editing is built, and an Audit Log page.
+Registering an endpoint, application, entity or site writes one too.
+
+**Planned:** audit rows for variables and the other definitions, as their editing is built, and an Audit Log page.
 
 ### Source of truth
 
@@ -311,8 +313,9 @@ FastAPI application in `autoapp/app/`. The interactive description of every rout
 | `GET /api/v1/jobs` | The job search, including whether each job would run. Built; tested over HTTP |
 | `GET /api/v1/jobs/{job_key}` | One job with its steps and parameters. Built; tested over HTTP |
 | `POST /api/v1/jobs`, `PUT` and `DELETE /api/v1/jobs/{job_key}` | Create, save and delete a job. Built; tested over HTTP |
-| `GET /api/v1/endpoints` | The registered endpoints. Built; tested over HTTP |
+| `GET /api/v1/endpoints`, `POST /api/v1/endpoints` | List the registered endpoints; register a new one. Built; tested over HTTP |
 | `GET /api/v1/lookups` | The names offered in drop-downs. Built; tested over HTTP |
+| `POST /api/v1/applications`, `/entities`, `/sites` | Register an application, entity or site. Built; tested over HTTP |
 | `GET /api/v1/jobs/{job_key}/check` | Built; tested over HTTP |
 | `GET /ui/...` and `/` | The web interface's files; `/` redirects to it |
 
@@ -362,7 +365,9 @@ Nothing in this section is built in the rewrite. The 2024 prototype tracked exte
   - Steps can be added, removed, reordered with arrows, retitled and enabled or disabled. A true-or-false parameter can be put back to its default, so the step stops storing a value of its own.
   - After a save the page says what changed and re-runs the pre-run check. A job is saved even if the check finds problems, which are then listed.
   - **New job** starts a blank job. Renaming a job asks for confirmation first, because the scheduler and the working folder use its key. **Delete job** works for a job that has never run; one with run history must be disabled instead.
-  - A file location's endpoint box offers the registered endpoints as a drop-down, narrowed by what is typed, each with its application and path. A name that is not registered is pointed out as it is typed. Registering a new endpoint in place is the next slice.
+  - A file location's endpoint box offers the registered endpoints as a drop-down, narrowed by what is typed, each with its application and path. A name that is not registered is pointed out as it is typed.
+  - **New...** beside an endpoint box opens a window to register an endpoint without leaving the page: name, application, site, path, filename pattern and description. The endpoint is created at once, independently of saving the job, and is put into the box it was opened from.
+  - That window's Application and Site boxes have a **New...** of their own, and the New site window has one for its Entity. All four windows are one mechanism in `common.js` (`createInPlace`), driven by a short description of each form, so a later page gets them by asking.
 - **Main Index** page, linking to every page. Pages not built yet are shown greyed out.
 
 **Planned**
@@ -372,7 +377,7 @@ Nothing in this section is built in the rewrite. The 2024 prototype tracked exte
 
 ## 12. Testing
 
-- Tests are in `autoapp/tests/` and run with `python3 -m pytest` (398 tests: about three minutes on SQLite, five on MariaDB).
+- Tests are in `autoapp/tests/` and run with `python3 -m pytest` (440 tests: about three and a half minutes on SQLite, five and a half on MariaDB).
 - Each test builds its own temporary SQLite database and temporary folders. No test touches the working directory or a shared database.
 - The same suite runs against MariaDB when `AUTOAPP_TEST_DATABASE_URL` names a test database. Its tables are built once per run from `SQL/Create_Tables.sql`, the script an installation would use, and emptied before each test.
 - Tests run the real code. AutoApp's own components are not mocked. The runner tests launch the runner as a separate process, as a scheduler would.

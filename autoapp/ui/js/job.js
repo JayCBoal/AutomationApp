@@ -19,6 +19,7 @@
  *     POST   /api/v1/jobs                    create a job
  *     PUT    /api/v1/jobs/{job_key}          save a job
  *     DELETE /api/v1/jobs/{job_key}          delete a job that has never run
+ *     POST   /api/v1/endpoints               register an endpoint, from the "New..." link
  */
 function jobDetail() {
     const address = new URLSearchParams(location.search);
@@ -156,6 +157,19 @@ function jobDetail() {
 
         isRegistered(name) {
             return this.endpoints.some(endpoint => endpoint.name === name.trim());
+        },
+
+        /**
+         * Registers a new endpoint without leaving the page, starting from whatever was typed in the box,
+         * and puts it in that box. It is registered at once; it does not wait for Submit.
+         */
+        async newEndpoint(field) {
+            const typed = field.endpoint.trim();
+            const created = await AutoApp.createInPlace("endpoint", { name: typed && !this.isRegistered(typed) ? typed : "" });
+            if (!created) return;
+            this.endpoints = [...this.endpoints, created].sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
+            field.mode = "endpoint";
+            field.endpoint = created.name;
         },
 
         isDefault(field) { return TRUE_WORDS.includes(String(field.default).trim().toLowerCase()); },

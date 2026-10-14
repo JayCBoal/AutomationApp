@@ -43,6 +43,15 @@ class EndpointOut(BaseModel):
     description: Optional[str] = None
 
 
+class EndpointCreate(BaseModel):
+    name: str = Field(..., max_length=100, description="Letters, digits, hyphens, underscores and full stops")
+    application: Optional[str] = Field(None, description="Name of the application whose files these are")
+    site: Optional[str] = Field(None, description="Name of the site, if the endpoint is on a remote server")
+    path: str = Field(..., max_length=256, description="The folder. May contain placeholders such as ${APP.Root}")
+    filename_pattern: str = Field("*", max_length=128, description="Which files a step collects from here")
+    description: Optional[str] = Field(None, max_length=256)
+
+
 # --- Step Catalog Schemas ---
 class StepParameterOut(BaseModel):
     name: str

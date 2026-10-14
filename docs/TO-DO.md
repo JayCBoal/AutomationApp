@@ -32,30 +32,30 @@ Ordered toward a demonstration: a job built in the job editor, run by a schedule
 
 ### Next: the job editor
 
-Specified in [UI_VISION.md](UI_VISION.md). Viewing, editing, creating and deleting a job are built. Two slices remain:
+Specified in [UI_VISION.md](UI_VISION.md). Viewing, editing, creating and deleting a job are built, with endpoints chosen from a drop-down or registered in place. One slice remains:
 
-1. **Register an endpoint in place.** The endpoint drop-down is built. Add "New..." beside it, to register an endpoint without leaving the editor. Needs an endpoint create route.
+1. **Variables and preview.** The job's variables panel, and a preview of what each `${...}` resolves to.
 
-2. **Variables and preview.** The job's variables panel, and a preview of what each `${...}` resolves to.
-
-3. **The rest of the CRUD API.** Create, read, update and delete for applications, entities and sites, and their pages.
+2. **The rest of the CRUD API.** Create, read, update and delete for applications, entities and sites, and their pages.
 
 ### Then: breadth
 
-4. **More step handlers.** Each one also adds a catalog entry, so it appears in the editor.
+3. **More step handlers.** Each one also adds a catalog entry, so it appears in the editor.
    - Delete files
    - SQL execution
    - SFTP transfer (this is what makes endpoints on remote sites usable)
    - REST call
    - Send email
 
-5. **Tags.** Depends on decision 3. Expose tag assignments in the models, add the `TAG` scope to the variable cascade.
+4. **Tags.** Depends on decision 3. Expose tag assignments in the models, add the `TAG` scope to the variable cascade.
 
-6. **Runner controls.** Depends on decision 6.
+5. **Runner controls.** Depends on decision 6.
 
-7. **Scheduler integration.** Depends on decision 7.
+6. **Scheduler integration.** Depends on decision 7.
 
 ### Later
+
+- **Changing and removing endpoints, applications, entities and sites.** Each can be registered from a "New..." window but not yet changed or removed. That comes with their own pages.
 
 - **A placeholder in a tick-box parameter.** A true-or-false parameter stored as `${...}` is shown as text and can be edited, but the editor offers no way to switch a tick box to a placeholder. Add a "use a variable" switch.
 - **Duplicate a job**, to start a new job from an existing one.
@@ -73,13 +73,13 @@ Specified in [UI_VISION.md](UI_VISION.md). Viewing, editing, creating and deleti
 - **Retention.** A purge rule for `Operations`, which grows by one row per file.
 - **Killed runs.** Pick up spool files left as `.jsonl.tmp` by a run that did not end normally, and mark the run accordingly.
 
-8. **Runner uses the API.** Depends on decision 2.
+7. **Runner uses the API.** Depends on decision 2.
 
-9. **Security.** Encrypt `Credentials.SecretData`; stop returning `IsSecret` variables; API authentication; vault connectors. Needed before anyone other than the author uses it.
+8. **Security.** Encrypt `Credentials.SecretData`; stop returning `IsSecret` variables; API authentication; vault connectors. Needed before anyone other than the author uses it.
 
-10. **Asynchronous processes.** Port the prototype's async instance tracking and polling.
+9. **Asynchronous processes.** Port the prototype's async instance tracking and polling.
 
-11. **Dependency declaration.** Move dependencies from `requirements.txt` into `pyproject.toml` and make the project installable.
+10. **Dependency declaration.** Move dependencies from `requirements.txt` into `pyproject.toml` and make the project installable.
 
 ## Done
 

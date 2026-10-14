@@ -171,10 +171,15 @@
                                                            list="endpoint-names" autocomplete="off"
                                                            :disabled="!editing || field.mode !== 'endpoint'"
                                                            placeholder="Choose or type a registered endpoint">
+                                                    <button type="button" class="link new-endpoint" x-show="editing"
+                                                            title="Register a new endpoint without leaving this page"
+                                                            @click="newEndpoint(field)">New...</button>
                                                 </label>
                                                 <span class="error-text small not-registered"
                                                       x-show="field.mode === 'endpoint' && field.endpoint.trim() && !isRegistered(field.endpoint)">
-                                                    No endpoint is registered under this name.</span>
+                                                    No endpoint is registered under this name.
+                                                    <button type="button" class="link small register-it" x-show="editing"
+                                                            @click="newEndpoint(field)">Register it</button></span>
                                                 <label class="inline">
                                                     <input type="radio" value="path" x-model="field.mode"
                                                            :name="'where-' + step.uid + '-' + field.name" :disabled="!editing">

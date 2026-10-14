@@ -5,6 +5,7 @@
  *   - calling the REST API
  *   - formatting times and sizes, and exporting a table as CSV
  *   - drop-downs for boxes that refer to something registered elsewhere (data-lookup)
+ *   - registering something new at the moment it is first needed (createInPlace)
  *   - what every search page does (searchPage, at the end)
  *
  * The pages never read the database. Everything they show comes from the API.
@@ -199,35 +200,203 @@ const AutoApp = (() => {
      *     <input type="text" data-lookup="endpoints">
      *
      * and is given a drop-down of the names there are, narrowed by what is typed into it.
-     * The lists come from one request, GET /api/v1/lookups, made only if the page has such a box.
+     * The lists come from one request, GET /api/v1/lookups, made the first time a page needs them.
      */
+    let lookupsReady = null;
+
+    function addLookupOption(kind, value, label) {
+        const list = document.getElementById("lookup-" + kind);
+        if (!list) return;
+        const option = document.createElement("option");
+        option.value = value;
+        if (label) option.label = label;
+        list.appendChild(option);
+    }
+
+    /** Fetches the lists, once, and puts them on the page ready for boxes to use. */
+    function ensureLookups() {
+        if (!lookupsReady) {
+            lookupsReady = get("/lookups").then(lookups => {
+                for (const [kind, entries] of Object.entries(lookups)) {
+                    const list = document.createElement("datalist");
+                    list.id = "lookup-" + kind;
+                    document.body.appendChild(list);
+                    for (const entry of entries) addLookupOption(kind, entry.value, entry.label);
+                }
+            }).catch(() => { /* the boxes still work; they just have no drop-down */ });
+        }
+        return lookupsReady;
+    }
+
+    function useLookup(box, kind) {
+        box.setAttribute("list", "lookup-" + kind);
+        box.setAttribute("autocomplete", "off");
+    }
+
     async function attachLookups() {
         const boxes = [...document.querySelectorAll("input[data-lookup]")];
         if (boxes.length === 0) return;
-        let lookups;
-        try {
-            lookups = await get("/lookups");
-        } catch (e) {
-            return;     // the boxes still work; they just have no drop-down
-        }
-        for (const [kind, entries] of Object.entries(lookups)) {
-            const list = document.createElement("datalist");
-            list.id = "lookup-" + kind;
-            for (const entry of entries) {
-                const option = document.createElement("option");
-                option.value = entry.value;
-                if (entry.label) option.label = entry.label;
-                list.appendChild(option);
-            }
-            document.body.appendChild(list);
-        }
-        for (const box of boxes) {
-            box.setAttribute("list", "lookup-" + box.dataset.lookup);
-            box.setAttribute("autocomplete", "off");
-        }
+        await ensureLookups();
+        for (const box of boxes) useLookup(box, box.dataset.lookup);
     }
 
     document.addEventListener("DOMContentLoaded", attachLookups);
+
+    // ---------- Creating something at the moment it is first needed ----------
+
+    /**
+     * What can be registered from a "New..." link, and the form each needs.
+     * A field with "lookup" names something registered elsewhere, and gets that drop-down.
+     * A field with "create" can itself be registered on the spot, with a "New..." link of its own.
+     */
+    const CREATABLE = {
+        endpoint: {
+            title: "New endpoint", route: "/endpoints", lookup: "endpoints",
+            note: "An endpoint is a registered place files come from or go to.",
+            fields: [
+                { name: "name", label: "Name", required: true, max: 100, placeholder: "For example LEGAL_APP_EXTRACTS",
+                  help: "What job steps call it. Letters, digits, hyphens, underscores and full stops." },
+                { name: "application", label: "Application", lookup: "applications", create: "application",
+                  help: "The system whose files these are." },
+                { name: "site", label: "Site", lookup: "sites", create: "site",
+                  help: "Only if the folder is on a remote server. The copy step cannot reach a site yet." },
+                { name: "path", label: "Path", required: true, max: 256, placeholder: "For example ${APP.Root}/outbox",
+                  help: "The folder. ${APP.Root} stands for the application's Root variable." },
+                { name: "filename_pattern", label: "Filename pattern", required: true, max: 128, value: "*",
+                  help: "Which files a step collects from here. * is every file; *.csv is every CSV file." },
+                { name: "description", label: "Description", max: 256 },
+            ],
+        },
+        application: {
+            title: "New application", route: "/applications", lookup: "applications",
+            note: "An application is a system that produces or consumes files.",
+            fields: [
+                { name: "name", label: "Name", required: true, max: 100, placeholder: "For example LEGAL_APP",
+                  help: "Letters, digits, hyphens, underscores and full stops." },
+                { name: "abbr", label: "Abbreviation", required: true, max: 10, placeholder: "For example LGL",
+                  help: "A short form, unique among applications." },
+                { name: "description", label: "Description" },
+            ],
+        },
+        site: {
+            title: "New site", route: "/sites", lookup: "sites",
+            note: "A site is a server, usually an outside party's, that files are sent to or fetched from.",
+            fields: [
+                { name: "name", label: "Name", required: true, max: 64, placeholder: "For example ACME_BANK_SFTP",
+                  help: "Letters, digits, hyphens, underscores and full stops." },
+                { name: "entity", label: "Entity", lookup: "entities", create: "entity",
+                  help: "The outside party whose server this is." },
+                { name: "host", label: "Host", required: true, max: 128, placeholder: "For example sftp.acmebank.example" },
+                { name: "port", label: "Port", required: true, value: "22", type: "number" },
+                { name: "protocol", label: "Protocol", required: true, max: 16, value: "SFTP" },
+                { name: "description", label: "Description", max: 256 },
+            ],
+        },
+        entity: {
+            title: "New entity", route: "/entities", lookup: "entities",
+            note: "An entity is an outside party: a vendor, client or partner.",
+            fields: [
+                { name: "name", label: "Name", required: true, max: 64, placeholder: "For example ACME_BANK",
+                  help: "Letters, digits, hyphens, underscores and full stops." },
+                { name: "abbr", label: "Abbreviation", required: true, max: 10, placeholder: "For example ACME" },
+                { name: "description", label: "Description", max: 256 },
+            ],
+        },
+    };
+
+    function element(tag, properties = {}, children = []) {
+        const node = Object.assign(document.createElement(tag), properties);
+        for (const child of children) node.append(child);
+        return node;
+    }
+
+    /**
+     * Opens a window to register a new endpoint, application, site or entity, and resolves
+     * with what was created, or with null if the window was cancelled.
+     *
+     *     const created = await AutoApp.createInPlace("endpoint", { name: "LEGAL_ARCHIVE" });
+     *
+     * It is registered when Create is pressed, whatever happens on the page afterwards,
+     * and is added to the drop-downs at once. Windows can open from one another: a new
+     * endpoint's site can be created from the endpoint window, and that site's entity from the site window.
+     */
+    async function createInPlace(kind, prefill = {}) {
+        const spec = CREATABLE[kind];
+        await ensureLookups();
+
+        return new Promise(resolve => {
+            const boxes = {};
+            const error = element("p", { className: "message error", id: kind + "-error", hidden: true });
+            error.setAttribute("role", "alert");
+            const grid = element("div", { className: "detail-grid" });
+
+            for (const field of spec.fields) {
+                const id = `${kind}-${field.name}`;
+                const label = element("label", { htmlFor: id, textContent: field.label + " " });
+                if (field.required) label.append(element("span", { className: "required", title: "Required", textContent: "*" }));
+
+                const box = element("input", { id, type: field.type || "text", value: prefill[field.name] ?? field.value ?? "" });
+                if (field.required) box.required = true;
+                if (field.max) box.maxLength = field.max;
+                if (field.placeholder) box.placeholder = field.placeholder;
+                if (field.lookup) useLookup(box, field.lookup);
+                boxes[field.name] = box;
+
+                const row = element("div", { className: "create-row" }, [box]);
+                if (field.create) {
+                    const link = element("button", { type: "button", className: "link create-new", textContent: "New...",
+                                                     title: "Register one now, without leaving this window" });
+                    link.dataset.creates = field.create;
+                    link.addEventListener("click", async () => {
+                        const made = await createInPlace(field.create, { name: box.value.trim() });
+                        if (made) box.value = made.name;
+                    });
+                    row.append(link);
+                }
+                const cell = element("div", {}, [row]);
+                if (field.help) cell.append(element("span", { className: "muted small", textContent: field.help }));
+                grid.append(label, cell);
+            }
+
+            const cancel = element("button", { type: "button", className: "secondary", textContent: "Cancel" });
+            const create = element("button", { type: "submit", className: "primary", id: "create-" + kind, textContent: "Create" });
+            const form = element("form", {}, [
+                element("div", { className: "popup-head" }, [element("h2", { textContent: spec.title }), cancel, create]),
+                element("div", { className: "popup-body" }, [
+                    element("p", { className: "message", textContent: spec.note + " It is created at once, whatever you do next." }),
+                    error, grid,
+                ]),
+            ]);
+            const dialog = element("dialog", { className: "popup create " + kind }, [form]);
+            dialog.setAttribute("aria-label", spec.title);
+
+            let created = null;
+            cancel.addEventListener("click", () => dialog.close());
+            dialog.addEventListener("close", () => { dialog.remove(); resolve(created); });
+            form.addEventListener("submit", async event => {
+                event.preventDefault();
+                error.hidden = true;
+                const body = {};
+                for (const field of spec.fields) {
+                    const value = boxes[field.name].value.trim();
+                    if (value !== "") body[field.name] = field.type === "number" ? Number(value) : value;
+                }
+                create.disabled = true;
+                try {
+                    created = await send("POST", spec.route, body);
+                    addLookupOption(spec.lookup, created.name, created.description || "");
+                    dialog.close();
+                } catch (e) {
+                    error.textContent = e.message;
+                    error.hidden = false;
+                }
+                create.disabled = false;
+            });
+
+            document.body.append(dialog);
+            dialog.showModal();
+        });
+    }
 
     // ---------- Search pages ----------
 
@@ -309,5 +478,5 @@ const AutoApp = (() => {
         return page;
     }
 
-    return { PAGES, get, send, parseUtc, formatTime, localInputToUtc, timeZoneName, formatSize, toCsv, download, searchPage };
+    return { PAGES, get, send, createInPlace, parseUtc, formatTime, localInputToUtc, timeZoneName, formatSize, toCsv, download, searchPage };
 })();

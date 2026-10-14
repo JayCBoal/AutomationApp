@@ -293,3 +293,9 @@ button.tool { background: transparent; color: var(--text); border: 1px solid var
 button.tool:disabled { opacity: 0.3; cursor: default; }
 button.link.small { font-size: 12px; }
 input:disabled:placeholder-shown { color: var(--muted); }
+dialog.popup.create { width: min(720px, 94vw); }
+dialog.popup .detail-grid > div { display: grid; gap: 3px; }
+.create-row { display: flex; align-items: center; gap: 10px; }
+.create-row input { flex: 1; }
+button.new-endpoint, button.create-new { white-space: nowrap; }
+.message[hidden] { display: none; }

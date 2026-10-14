@@ -12,6 +12,16 @@ Notable structural, schema and design changes to AutoApp, newest first. Line-by-
 - **Added:** the Job Detail page. It shows a job and its steps, with each step's form drawn from the step catalog. Nothing on it can be changed yet.
 - **Changed:** on the Job Search page the job key links to the Job Detail page, there is a View link, and a disabled job shows "Disabled" in grey with no Check link.
 
+### Job editor, third slice: registering an endpoint in place
+
+- **Added:** `POST /api/v1/endpoints`, which registers an endpoint and writes an audit row.
+- **Added:** a "New..." link beside each endpoint box in the job editor, opening a form to register an endpoint without leaving the page. The new endpoint is put into the box it was opened from.
+- **Decided:** the endpoint is created when its form is submitted, not when the job is saved. An endpoint is a definition in its own right, shared by any job that names it.
+- **Decided:** an endpoint's name follows the same rule as a job key: letters, digits, hyphens, underscores and full stops.
+- **Added:** `POST /api/v1/applications`, `/entities` and `/sites`, each writing an audit row.
+- **Added:** "New..." on the Application and Site boxes of the New endpoint window, and on the Entity box of the New site window. One mechanism in `common.js` draws all four windows, and they open from one another.
+- **Decided:** as a rule for the whole interface, a box for choosing something to use can register a new one on the spot.
+
 ### Rename masks and date masks
 
 - **Added:** `RenameMask` on the copy step, with `${FILE:NAME}`, `${FILE:STEM}` and `${FILE:EXT}`. It is a parameter of its own, not the filename part of `Dest` as in the prototype, so it works when the destination is an endpoint.

@@ -19,6 +19,7 @@ from typing import Any, Dict, Optional
 from sqlalchemy.orm import Session
 
 from app.models import Endpoint, JobStep
+from engine.rename_mask import check_mask
 from engine.scope_engine import ScopeResolutionEngine
 from engine.step_catalog import check_parameters, normalize_parameters
 
@@ -102,8 +103,13 @@ def resolve_step(step: JobStep, handler_cls: Any, scope_engine: ScopeResolutionE
                     scope_engine.interpolate(raw_path), param_name, scope_engine.working_folder
                 )
 
+        per_file = {p.name for p in declared or () if p.file_placeholders}
         for name, value in raw.items():
-            resolved.params[name] = scope_engine.interpolate(value)
+            if name in per_file:
+                check_mask(value or "")
+                resolved.params[name] = scope_engine.interpolate(value, leave=("FILE",))
+            else:
+                resolved.params[name] = scope_engine.interpolate(value)
 
         if declared is not None:
             resolved.params = normalize_parameters(declared, resolved.params)

@@ -183,10 +183,10 @@ def test_sync_writes_each_step_type_and_its_parameters_in_order(db):
     assert (step_type.HandlerClass, step_type.TypeName, step_type.Description) == (
         "COPY_FILES", "Copy Files", FileOpHandler.DESCRIPTION)
     assert [(d.DisplayOrder, d.ParamName) for d in step_type.definitions] == [
-        (1, "Source"), (2, "Dest"), (3, "Move"), (4, "CreateFolder"), (5, "Checksum"), (6, "AllowNoFiles"),
-        (7, "LogLevel"),
+        (1, "Source"), (2, "Dest"), (3, "RenameMask"), (4, "Move"), (5, "CreateFolder"), (6, "Checksum"),
+        (7, "AllowNoFiles"), (8, "LogLevel"),
     ]
-    assert counts == {"step_types": 1, "parameters": 7}
+    assert counts == {"step_types": 1, "parameters": 8}
 
     by_name = {d.ParamName: d for d in step_type.definitions}
     assert (by_name["Source"].DataType, by_name["Source"].LocationRole, by_name["Source"].IsRequired) == (
@@ -257,7 +257,7 @@ def test_the_server_publishes_the_catalog_when_it_starts(client):
     assert (copy_files["code"], copy_files["name"], copy_files["active"], copy_files["has_handler"]) == (
         "COPY_FILES", "Copy Files", True, True)
     assert [p["name"] for p in copy_files["parameters"]] == [
-        "Source", "Dest", "Move", "CreateFolder", "Checksum", "AllowNoFiles", "LogLevel"]
+        "Source", "Dest", "RenameMask", "Move", "CreateFolder", "Checksum", "AllowNoFiles", "LogLevel"]
 
 
 def test_catalog_describes_each_parameter_for_a_form(client):

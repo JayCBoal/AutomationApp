@@ -185,6 +185,8 @@ flowchart TD
     subgraph engine [autoapp/engine]
         runner[runner.py<br/>runs a job's steps in order]
         scope[scope_engine.py<br/>resolves placeholders]
+        datemask[date_mask.py<br/>date masks]
+        renamemask[rename_mask.py<br/>rename masks]
         params[step_params.py<br/>working-folder rule and Endpoint lookup]
         stepcat[step_catalog.py<br/>parameter declarations, checking, conversion]
         preflight[preflight.py<br/>checks a whole job before it runs]
@@ -221,6 +223,9 @@ flowchart TD
     runner --> telemetry
     runner --> database
     params --> scope
+    scope --> datemask
+    params --> renamemask
+    file --> renamemask
     registry --> file
     file --> base
     base --> telemetry

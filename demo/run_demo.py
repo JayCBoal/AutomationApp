@@ -93,7 +93,7 @@ def seed(db_url, run_dir):
 
     steps = [
         ("Collect extracts", {"SourceEndpoint": "LEGAL_APP_EXTRACTS", "Dest": "incoming"}),
-        ("Archive", {"Source": "incoming/*.csv", "Dest": "archive/${SYS:YYYYMMDD}"}),
+        ("Archive", {"Source": "incoming/*.csv", "Dest": "archive/${DATE:yyyyMMdd}"}),
         ("Deliver to billing", {"Source": "incoming/*.csv", "DestEndpoint": "BILLING_APP_INBOX", "Move": "True"}),
     ]
     for order, (title, params) in enumerate(steps, start=1):

@@ -5,7 +5,8 @@ import shutil
 from pathlib import Path
 from engine import job_log
 from engine.handlers.base_handler import BaseHandler
-from engine.step_catalog import BOOLEAN, DEST, LOCATION, SOURCE, Param
+from engine.rename_mask import new_names
+from engine.step_catalog import BOOLEAN, DEST, LOCATION, SOURCE, STRING, Param
 from engine.telemetry_client import utc_now_iso
 
 
@@ -32,6 +33,10 @@ class FileOpHandler(BaseHandler):
               description="The files to take. A pattern such as *.csv matches several."),
         Param("Dest", LOCATION, location_role=DEST, required=True,
               description="The folder to put them in, or a new filename when one file is taken"),
+        Param("RenameMask", STRING, file_placeholders=True,
+              description="A new name for each file, such as ${FILE:STEM}_${DATE:yyyyMMdd}${FILE:EXT}. "
+                          "${FILE:NAME} is the file's own name, ${FILE:STEM} its name without the extension, "
+                          "${FILE:EXT} its extension."),
         Param("Move", BOOLEAN, default="False",
               description="Remove each file from the source once it has arrived"),
         Param("CreateFolder", BOOLEAN, default="True",
@@ -46,6 +51,7 @@ class FileOpHandler(BaseHandler):
         source_pattern, dest_path = params["Source"], params["Dest"]
         move, create_folder = params["Move"], params["CreateFolder"]
         verify_checksum, allow_no_files = params["Checksum"], params["AllowNoFiles"]
+        rename_mask = params.get("RenameMask")
         op_type = "MOVE" if move else "COPY"
         done = "Moved" if move else "Copied"
 
@@ -59,8 +65,9 @@ class FileOpHandler(BaseHandler):
             }
         }
 
-        # Ensure destination folder exists if CreateFolder=True
-        dest_dir = Path(dest_path).parent if Path(dest_path).suffix else Path(dest_path)
+        # Ensure destination folder exists if CreateFolder=True.
+        # With a rename mask, Dest is always the folder; the mask supplies each filename.
+        dest_dir = Path(dest_path).parent if Path(dest_path).suffix and not rename_mask else Path(dest_path)
         if create_folder and not dest_dir.exists():
             dest_dir.mkdir(parents=True, exist_ok=True)
 
@@ -85,10 +92,14 @@ class FileOpHandler(BaseHandler):
                 f"matched '{source_pattern}'. Give a folder as 'Dest' to keep each file's own name."
             )
 
+        # Work out every new name before copying anything, so a mask that cannot work stops the step first
+        names = [os.path.basename(f) for f in matched_files]
+        renamed = new_names(rename_mask, names) if rename_mask else {name: name for name in names}
+
         total_bytes = 0
 
         for src_file in matched_files:
-            filename = os.path.basename(src_file)
+            filename = renamed[os.path.basename(src_file)]
             target = os.path.join(dest_path, filename) if dest_dir == Path(dest_path) else dest_path
 
             started_at = utc_now_iso()

@@ -1,5 +1,6 @@
 import os
 import re
+from engine.date_mask import format_date
 from contextlib import contextmanager
 from datetime import datetime
 from typing import Any, Dict, List, Optional
@@ -18,6 +19,8 @@ class ScopeResolutionEngine:
         r"\$\{(SYS|APP|ENTITY|JOB)\.([^}]+)\}"
     )
     IMPLICIT_VAR_PATTERN = re.compile(r"\$\{([a-zA-Z0-9_:]+)\}")
+    # ${DATE:yyyyMMdd}: the moment the run started, in the format the mask gives (see engine/date_mask.py)
+    DATE_PATTERN = re.compile(r"\$\{DATE:([^}]*)\}")
     ANY_PLACEHOLDER_PATTERN = re.compile(r"\$\{[^}]+\}")
 
     # A variable's value may itself contain placeholders; stop after this many passes
@@ -85,6 +88,7 @@ class ScopeResolutionEngine:
     def build_context(self) -> Dict[str, Any]:
         """Populates scope caches and eager-merges the execution context dictionary."""
         now = datetime.now()
+        self.started = now      # every date placeholder in the run shows this one moment
 
         # 1. System Scope (${SYS:...})
         self.scoped_vars["SYS"] = {
@@ -196,23 +200,26 @@ class ScopeResolutionEngine:
 
         return None
 
-    def interpolate(self, text: str, endpoint: Optional[Any] = None) -> str:
+    def interpolate(self, text: str, endpoint: Optional[Any] = None, leave: tuple = ()) -> str:
         """
         Interpolates placeholders matching ${...} syntax, including placeholders
         inside variable values. Raises ValueError if any placeholder cannot be resolved.
 
         When an Endpoint is given, ${APP.x} and ${ENTITY.x} (and the implicit cascade)
         resolve against that Endpoint's Application and its Site's Entity.
+
+        leave names placeholder kinds to be left as written, for something later to fill
+        in: leave=("FILE",) keeps ${FILE:NAME} for the step handler, which knows the file.
         """
         if not isinstance(text, str) or "${" not in text:
             return text
 
         if endpoint is not None:
             with self._endpoint_scope(endpoint):
-                return self._interpolate(text)
-        return self._interpolate(text)
+                return self._interpolate(text, leave)
+        return self._interpolate(text, leave)
 
-    def _interpolate(self, text: str) -> str:
+    def _interpolate(self, text: str, leave: tuple = ()) -> str:
         original = text
         for _ in range(self.MAX_NESTING_DEPTH):
             resolved = self._interpolate_once(text)
@@ -225,7 +232,10 @@ class ScopeResolutionEngine:
                 f"(circular variable reference?)"
             )
 
-        unresolved = sorted(set(self.ANY_PLACEHOLDER_PATTERN.findall(text)))
+        unresolved = sorted(
+            placeholder for placeholder in set(self.ANY_PLACEHOLDER_PATTERN.findall(text))
+            if not any(placeholder.startswith("${" + kind + ":") for kind in leave)
+        )
         if unresolved:
             raise ValueError(f"Unresolved placeholder(s) in '{original}': {', '.join(unresolved)}")
 
@@ -233,6 +243,9 @@ class ScopeResolutionEngine:
 
     def _interpolate_once(self, text: str) -> str:
         """Single substitution pass; unknown placeholders are left in place."""
+        # 0. Dates: ${DATE:yyyyMMdd}. A mask that is not understood raises ValueError.
+        text = self.DATE_PATTERN.sub(lambda match: format_date(match.group(1), self.started), text)
+
         # 1. Resolve Explicit Targeted Syntax: ${SCOPE:TargetName.VarName}
         def replace_explicit_target(match):
             scope_type, target_name, var_name = (

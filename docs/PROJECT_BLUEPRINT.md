@@ -167,7 +167,9 @@ Step parameters, endpoint paths and variable values may contain `${...}` placeho
 | `${JOB.Name}` | The variable on the job, specifically |
 | `${APP.Name}`, `${ENTITY.Name}` | Inside an endpoint only: the variable on that endpoint's Application, or its Site's Entity |
 | `${APP:LEGAL_APP.Name}`, `${ENTITY:JAYCO.Name}` | The variable on a named Application or Entity, from anywhere |
-| `${SYS:YYYYMMDD}`, `${SYS:INSTANCE_ID}`, `${SYS:TIMESTAMP}`, `${SYS:WORKING_FOLDER}` | Values supplied by the runner |
+| `${DATE:yyyyMMdd}`, `${DATE:yyyy-MM-dd_HHmmss}`, ... | The moment the run started, in the format the mask gives. See "Date masks" below |
+| `${SYS:INSTANCE_ID}`, `${SYS:TIMESTAMP}`, `${SYS:WORKING_FOLDER}` | Values supplied by the runner. `${SYS:YYYYMMDD}` also still works; `${DATE:yyyyMMdd}` is the form to use |
+| `${FILE:NAME}`, `${FILE:STEM}`, `${FILE:EXT}` | Parts of a file's own name. Only in a rename mask; see section 5 |
 
 - Cascade order, lowest priority first: `SYS`, `ENTITY`, `APP`, `TAG`, `JOB`. A higher level overrides a lower one of the same name.
 - A variable's value may contain placeholders; they are resolved too, up to 10 levels deep. A circular reference is an error.
@@ -177,6 +179,30 @@ Step parameters, endpoint paths and variable values may contain `${...}` placeho
 
 - `TAG` scope: variables inherited from tags attached to a job, including tag hierarchies. This is also how related jobs will share variables. The models do not yet expose tag assignments to the engine.
 - `STEP` scope: variables set on an individual step.
+
+### Date masks
+
+**Built** (`engine/date_mask.py`)
+
+- `${DATE:mask}` gives the moment the run started, in the format the mask describes. Every date placeholder in a run shows the same moment.
+- The mask letters are the ones .NET uses, as the 2024 prototype did, because their case tells months from minutes:
+
+  | Letters | Meaning | Example |
+  | :--- | :--- | :--- |
+  | `yyyy`, `yy` | Year | 2026, 26 |
+  | `MMMM`, `MMM`, `MM`, `M` | Month (capital M) | October, Oct, 10, 10 |
+  | `dddd`, `ddd`, `dd`, `d` | Day | Tuesday, Tue, 06, 6 |
+  | `HH`, `H` | Hour, 24-hour clock | 14, 14 |
+  | `hh`, `h`, `tt` | Hour, 12-hour clock, and AM or PM | 02, 2, PM |
+  | `mm`, `m` | Minute (small m) | 05, 5 |
+  | `ss`, `s`, `fff` | Second, and milliseconds | 09, 9, 042 |
+
+- Punctuation, digits and spaces are copied as they are. Text in single quotes is copied as it is: `yyyyMMdd'T'HHmm`.
+- Any other letter is an error. A mask in the wrong case, such as `YYYYMMDD`, is refused before the job starts, not turned into the wrong text.
+
+**Planned**
+
+- A business date: running a job "as of" a date the scheduler supplies (Control-M's order date, for example) instead of today. The prototype called this `UseDate`.
 
 ## 4. File locations
 
@@ -210,8 +236,8 @@ This is what makes a file trace possible: an operation that reads from an endpoi
   - `Checksum=True` records the file's SHA-256 and verifies the copy against it.
   - A step that finds no files fails unless `AllowNoFiles=True`.
   - `Dest` may name a new filename only when one file is taken. Several files aimed at one filename fail the step before anything is copied.
-
-**Planned:** rename masks, so that several files can each be given a new name on the way (the 2024 prototype had these).
+  - `RenameMask` gives each file a new name on the way: `${FILE:STEM}_${DATE:yyyyMMdd}${FILE:EXT}` turns `Legal_Batch_1.csv` into `Legal_Batch_1_20261013.csv`. `${FILE:NAME}` is the file's own name, `${FILE:STEM}` its name without the extension, `${FILE:EXT}` its extension with the full stop. It works whether the destination is a folder or an endpoint. A mask that would give two files the same name fails the step before anything is copied, and a mistake in a mask is found before the job starts.
+  - A step parameter can be declared as holding per-file placeholders. Those are left for the handler to fill in for each file; anywhere else, `${FILE:...}` is an unresolved placeholder.
 - `engine/handlers/__init__.py`: the list of handlers. Adding one there adds its step type to the catalog.
 
 **Planned**
@@ -346,7 +372,7 @@ Nothing in this section is built in the rewrite. The 2024 prototype tracked exte
 
 ## 12. Testing
 
-- Tests are in `autoapp/tests/` and run with `python3 -m pytest` (347 tests: about three minutes on SQLite, four on MariaDB).
+- Tests are in `autoapp/tests/` and run with `python3 -m pytest` (398 tests: about three minutes on SQLite, five on MariaDB).
 - Each test builds its own temporary SQLite database and temporary folders. No test touches the working directory or a shared database.
 - The same suite runs against MariaDB when `AUTOAPP_TEST_DATABASE_URL` names a test database. Its tables are built once per run from `SQL/Create_Tables.sql`, the script an installation would use, and emptied before each test.
 - Tests run the real code. AutoApp's own components are not mocked. The runner tests launch the runner as a separate process, as a scheduler would.

@@ -31,6 +31,7 @@ class Param:
     default: Optional[str] = None           # written as it would be typed into the job editor
     location_role: Optional[str] = None     # SOURCE or DEST, for a LOCATION
     choices: Tuple[str, ...] = ()           # the allowed values, for a CHOICE
+    file_placeholders: bool = False         # may hold ${FILE:...}, which the handler fills in for each file
 
     @property
     def endpoint_name(self) -> Optional[str]:

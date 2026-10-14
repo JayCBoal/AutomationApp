@@ -234,6 +234,34 @@ def test_unticking_a_box_that_defaults_to_ticked_stores_false(page, job):
     assert stored(page)["steps"][0]["parameters"]["CreateFolder"] == "False"
 
 
+def test_a_rename_mask_is_typed_into_the_step_and_saved_as_written(page, job):
+    """A new parameter on the step type appears in the editor without any change to the page."""
+    steps = open_job(page)
+    edit(page)
+    expand(steps.nth(2))
+    mask = field(steps.nth(2), "RenameMask")
+    assert "${FILE:STEM}" in mask.locator(".field-help").inner_text()           # the field explains its placeholders
+
+    mask.locator("input[type=text]").fill("${FILE:STEM}_${DATE:yyyyMMdd}${FILE:EXT}")
+    submit(page)
+
+    assert stored(page)["steps"][2]["parameters"]["RenameMask"] == "${FILE:STEM}_${DATE:yyyyMMdd}${FILE:EXT}"
+    assert page.locator("#runnability").inner_text() == "Ready to run"
+
+
+def test_a_mistake_in_a_rename_mask_shows_as_a_problem_after_saving(page, job):
+    steps = open_job(page)
+    edit(page)
+    expand(steps.nth(2))
+
+    field(steps.nth(2), "RenameMask").locator("input[type=text]").fill("${FILE:STEM}_${DATE:YYYYMMDD}")
+    submit(page)
+
+    assert page.locator("#runnability").inner_text() == "1 problem found by the pre-run check"
+    problem = page.locator("#job-problems li").inner_text()
+    assert problem.startswith("Step 3 ('Deliver'): 'Y' in the date mask 'YYYYMMDD' is not understood")
+
+
 def test_a_choice_is_set_from_its_list(page, job):
     steps = open_job(page)
     edit(page)

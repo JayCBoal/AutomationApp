@@ -12,6 +12,13 @@ Notable structural, schema and design changes to AutoApp, newest first. Line-by-
 - **Added:** the Job Detail page. It shows a job and its steps, with each step's form drawn from the step catalog. Nothing on it can be changed yet.
 - **Changed:** on the Job Search page the job key links to the Job Detail page, there is a View link, and a disabled job shows "Disabled" in grey with no Check link.
 
+### Rename masks and date masks
+
+- **Added:** `RenameMask` on the copy step, with `${FILE:NAME}`, `${FILE:STEM}` and `${FILE:EXT}`. It is a parameter of its own, not the filename part of `Dest` as in the prototype, so it works when the destination is an endpoint.
+- **Added:** `${DATE:mask}`, with .NET-style mask letters as in the prototype: `${DATE:yyyyMMdd_HHmmss}`.
+- **Changed:** the samples use `${DATE:yyyyMMdd}`. `${SYS:YYYYMMDD}` still works, but it was never a mask, only a fixed name, and there was no way to ask for any other format.
+- **Rationale:** capital `MM` for months and small `mm` for minutes is the only way one mask can hold both. A mask in the wrong case is refused, because guessing would put the wrong date in a filename.
+
 ### Job editor, second slice: editing and saving
 
 - **Added:** `POST /api/v1/jobs`, `PUT /api/v1/jobs/{job_key}` and `DELETE /api/v1/jobs/{job_key}`. A job is saved whole, with its steps in the order they run.

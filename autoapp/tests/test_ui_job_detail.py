@@ -112,9 +112,9 @@ def test_a_steps_form_has_one_field_per_catalog_parameter_in_catalog_order(page,
 
     rows = steps.nth(0).locator(".field-row[data-parameter]")
     assert [row.get_attribute("data-parameter") for row in rows.all()] == [
-        "Source", "Dest", "Move", "CreateFolder", "Checksum", "AllowNoFiles", "LogLevel"]
+        "Source", "Dest", "RenameMask", "Move", "CreateFolder", "Checksum", "AllowNoFiles", "LogLevel"]
     # required parameters are marked, and each field explains itself
-    assert [row.locator(".required").is_visible() for row in rows.all()] == [True, True, False, False, False, False, False]
+    assert [row.locator(".required").is_visible() for row in rows.all()] == [True, True] + [False] * 6
     assert field(steps.nth(0), "Move").locator(".field-help").inner_text() == (
         "Remove each file from the source once it has arrived")
 

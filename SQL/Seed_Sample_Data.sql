@@ -79,7 +79,7 @@ INSERT INTO JobStepParameters (JobStep_id, ParameterName, ParameterValue) VALUES
 (1, 'SourceEndpoint', 'LEGAL_APP_EXTRACTS'),
 (1, 'Dest',           'incoming'),
 (2, 'Source',         'incoming/*.csv'),
-(2, 'Dest',           'archive/${SYS:YYYYMMDD}'),
+(2, 'Dest',           'archive/${DATE:yyyyMMdd}'),
 (3, 'Source',         'incoming/*.csv'),
 (3, 'DestEndpoint',   'BILLING_APP_INBOX'),
 (3, 'Move',           'True'),

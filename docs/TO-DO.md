@@ -14,9 +14,9 @@ Updated 2026-10-13. The order under "Work queue" is a proposal; the items under 
 
 4. **Working folder.** Currently `<working root>/<JobKey>`, private to the job and reused by every run of it. Confirm, or make it per run. Also decide whether archive folders live inside it or are registered endpoints.
 
-5. **Destination endpoints and rename masks.** Should a delivery be checked against the destination endpoint's `FilenamePattern`? And rename masks, which the prototype had: proposed as a `RenameMask` parameter on the copy step, with placeholders for the source file's name, name without extension, and extension, alongside the existing date placeholders.
+5. **Destination endpoints.** Should a delivery be checked against the destination endpoint's `FilenamePattern`, including after a rename mask has been applied?
 
-6. **Prototype features.** Which of these carry forward: start at step, stop after step, skip steps; per-step success, warning and failure return codes; job history; date masks with a "use date" override?
+6. **Prototype features.** Which of these carry forward: start at step, stop after step, skip steps; per-step success, warning and failure return codes; and a "use date" (business date) for date masks, which today always show the moment the run started?
 
 7. **What "inside the scheduler" means first.** The goal is for AutoApp to be used from within a scheduling product. Decide the first integration target and its shape: for example, job definitions edited in the scheduler's interface through AutoApp's API, results written back to the scheduler's job log, and single sign-on. This raises the priority of the CRUD API relative to a standalone web interface.
 

@@ -182,6 +182,13 @@ Step parameters, endpoint paths and variable values may contain `${...}` placeho
 - `TAG` scope: variables inherited from tags attached to a job, including tag hierarchies. This is also how related jobs will share variables. The models do not yet expose tag assignments to the engine.
 - `STEP` scope: variables set on an individual step.
 
+### How a preview is made
+
+**Built**
+
+- `POST /api/v1/jobs/preview` takes a job exactly as the editor would save it. The server makes the changes inside a database transaction, works out what each step's parameters resolve to with the same code the runner uses, and then rolls the transaction back. The preview therefore cannot disagree with what a real run would do, and nothing is saved by asking.
+- Each parameter is resolved on its own, so a mistake in one field does not hide the others.
+
 ### Date masks
 
 **Built** (`engine/date_mask.py`)
@@ -312,7 +319,8 @@ FastAPI application in `autoapp/app/`. The interactive description of every rout
 | `GET /api/v1/step-types`, `/step-types/{code}` | Built; tested over HTTP |
 | `GET /api/v1/jobs` | The job search, including whether each job would run. Built; tested over HTTP |
 | `GET /api/v1/jobs/{job_key}` | One job with its steps and parameters. Built; tested over HTTP |
-| `POST /api/v1/jobs`, `PUT` and `DELETE /api/v1/jobs/{job_key}` | Create, save and delete a job. Built; tested over HTTP |
+| `POST /api/v1/jobs`, `PUT` and `DELETE /api/v1/jobs/{job_key}` | Create, save and delete a job, including its variables. Built; tested over HTTP |
+| `POST /api/v1/jobs/preview` | What an unsaved job would resolve to, and whether it would run. Saves nothing. Built; tested over HTTP |
 | `GET /api/v1/endpoints`, `POST /api/v1/endpoints` | List the registered endpoints; register a new one. Built; tested over HTTP |
 | `GET /api/v1/lookups` | The names offered in drop-downs. Built; tested over HTTP |
 | `POST /api/v1/applications`, `/entities`, `/sites` | Register an application, entity or site. Built; tested over HTTP |
@@ -367,6 +375,9 @@ Nothing in this section is built in the rewrite. The 2024 prototype tracked exte
   - **New job** starts a blank job. Renaming a job asks for confirmation first, because the scheduler and the working folder use its key. **Delete job** works for a job that has never run; one with run history must be disabled instead.
   - A file location's endpoint box offers the registered endpoints as a drop-down, narrowed by what is typed, each with its application and path. A name that is not registered is pointed out as it is typed.
   - **New...** beside an endpoint box opens a window to register an endpoint without leaving the page: name, application, site, path, filename pattern and description. The endpoint is created at once, independently of saving the job, and is put into the box it was opened from.
+  - **Variables panel:** the job's own variables, each with a name, value, secret flag and description. They are saved with the job. A secret's value is never sent to the page: its box is blank, and leaving it blank keeps the value it has.
+  - **Live preview:** as the form is edited, each file location shows where it really is, and any value with a placeholder shows what it resolves to, or why it cannot be. "Would it run?" follows the form too, before anything is saved. Secret values are masked.
+  - A placeholder naming a variable the job does not have offers **Add variable ...**, which adds it to the panel ready for its value.
   - That window's Application and Site boxes have a **New...** of their own, and the New site window has one for its Entity. All four windows are one mechanism in `common.js` (`createInPlace`), driven by a short description of each form, so a later page gets them by asking.
 - **Main Index** page, linking to every page. Pages not built yet are shown greyed out.
 
@@ -377,7 +388,7 @@ Nothing in this section is built in the rewrite. The 2024 prototype tracked exte
 
 ## 12. Testing
 
-- Tests are in `autoapp/tests/` and run with `python3 -m pytest` (440 tests: about three and a half minutes on SQLite, five and a half on MariaDB).
+- Tests are in `autoapp/tests/` and run with `python3 -m pytest` (482 tests: about four and a half minutes on SQLite, six and a half on MariaDB).
 - Each test builds its own temporary SQLite database and temporary folders. No test touches the working directory or a shared database.
 - The same suite runs against MariaDB when `AUTOAPP_TEST_DATABASE_URL` names a test database. Its tables are built once per run from `SQL/Create_Tables.sql`, the script an installation would use, and emptied before each test.
 - Tests run the real code. AutoApp's own components are not mocked. The runner tests launch the runner as a separate process, as a scheduler would.

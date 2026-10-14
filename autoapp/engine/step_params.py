@@ -118,3 +118,42 @@ def resolve_step(step: JobStep, handler_cls: Any, scope_engine: ScopeResolutionE
         raise ValueError(f"Step {step.StepOrder} ('{step.Title}'): {e}") from e
 
     return resolved
+
+
+def preview_step(step: JobStep, handler_cls: Any, scope_engine: ScopeResolutionEngine, db: Session) -> Dict[str, tuple]:
+    """
+    What each of a step's parameters resolves to, one at a time, for showing beside
+    the fields of a form: {parameter name: (resolved text, None) or (None, error)}.
+    Unlike resolve_step, a problem with one parameter does not stop the others.
+    A location appears under its parameter name ("Source") however the step gave it.
+    """
+    raw = {p.ParamName: p.ParamValue for p in step.parameters}
+    declared = handler_cls.parameters() if handler_cls else ()
+    path_params = handler_cls.path_params() if handler_cls else {}
+    per_file = {p.name for p in declared if p.file_placeholders}
+    preview: Dict[str, tuple] = {}
+
+    for param_name, role in path_params.items():
+        endpoint_name = raw.pop(f"{param_name}Endpoint", None)
+        raw_path = raw.pop(param_name, None)
+        try:
+            if endpoint_name and raw_path:
+                raise ValueError(f"Set either '{param_name}' or '{param_name}Endpoint', not both.")
+            if endpoint_name:
+                preview[param_name] = (_endpoint_path(db, endpoint_name, param_name, role, handler_cls, scope_engine)[1], None)
+            elif raw_path:
+                preview[param_name] = (_working_folder_path(
+                    scope_engine.interpolate(raw_path), param_name, scope_engine.working_folder), None)
+        except ValueError as e:
+            preview[param_name] = (None, str(e))
+
+    for name, value in raw.items():
+        try:
+            if name in per_file:
+                check_mask(value or "")
+                preview[name] = (scope_engine.interpolate(value, leave=("FILE",)), None)
+            else:
+                preview[name] = (scope_engine.interpolate(value), None)
+        except ValueError as e:
+            preview[name] = (None, str(e))
+    return preview

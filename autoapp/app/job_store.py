@@ -13,12 +13,16 @@ Rules:
     keeps its link.
 """
 import json
+import re
 from typing import List, Optional
 
 from sqlalchemy.orm import Session
 
-from app.models import Audit, Job, JobRun, JobStep, JobStepParameter, StepType, utcnow
-from app.schemas import JobDetail, JobSave, JobStepOut
+from app.models import Audit, Job, JobRun, JobStep, JobStepParameter, StepType, Variable, utcnow
+from app.schemas import JobDetail, JobSave, JobStepOut, VariableOut
+
+# A variable is written ${Name} in a value, so its name is kept to what that can hold unambiguously
+VARIABLE_NAME_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
 class JobStoreError(Exception):
@@ -49,6 +53,12 @@ def describe_job(job: Job) -> JobDetail:
             )
             for step in sorted(job.steps, key=lambda s: (s.StepOrder, s.id))
         ],
+        variables=[
+            # A secret's value never leaves the server
+            VariableOut(name=v.VarName, value=None if v.IsSecret else v.VarValue, secret=bool(v.IsSecret),
+                        description=v.Description)
+            for v in sorted(job.variables, key=lambda v: (v.VarName.lower(), v.VarName))
+        ],
     )
 
 
@@ -66,11 +76,69 @@ def _name(title: Optional[str], position: int) -> str:
     return f"step {position} ('{title}')" if title else f"step {position}"
 
 
+def _apply_variables(job: Job, submitted: list, creating: bool) -> List[str]:
+    """Makes the job's variables match the list submitted. Returns what changed, naming variables but never values."""
+    names = [v.name.strip() for v in submitted]
+    for name in names:
+        if not VARIABLE_NAME_PATTERN.match(name):
+            raise JobStoreError(
+                f"Invalid variable name '{name}': use letters, digits and underscores, starting with a letter or underscore.")
+    repeated = sorted({name for name in names if names.count(name) > 1})
+    if repeated:
+        raise JobStoreError(f"The variable '{repeated[0]}' is listed more than once.")
+
+    have = {v.VarName: v for v in job.variables}
+    added, changed, removed = [], [], []
+    for wanted in submitted:
+        name = wanted.name.strip()
+        description = (wanted.description or "").strip() or None
+        blank = wanted.value is None or wanted.value == ""
+        variable = have.get(name)
+        if variable is None:
+            job.variables.append(Variable(VarName=name, VarValue=wanted.value or "", IsSecret=wanted.secret,
+                                          Description=description))
+            added.append(name)
+            continue
+        # A secret is never sent back to the page, so a blank value for one that exists means "leave it"
+        keep_value = blank and bool(variable.IsSecret) and wanted.secret
+        new_value = variable.VarValue if keep_value else (wanted.value or "")
+        if (new_value, wanted.secret, description) != (variable.VarValue, bool(variable.IsSecret), variable.Description):
+            variable.VarValue, variable.IsSecret, variable.Description = new_value, wanted.secret, description
+            changed.append(name)
+    for name, variable in have.items():
+        if name not in names:
+            job.variables.remove(variable)
+            removed.append(name)
+
+    if creating:
+        return []
+    changes = []
+    for verb, which in (("Added", added), ("Changed", changed), ("Removed", removed)):
+        if which:
+            changes.append(f"{verb} variable{'' if len(which) == 1 else 's'} {', '.join(sorted(which))}.")
+    return changes
+
+
 def save_job(db: Session, payload: JobSave, existing_key: Optional[str], who: str) -> tuple:
     """
-    Creates the job (existing_key is None) or changes the job with that key.
-    Returns (job, changes), where changes says in words what the save did.
-    Raises JobStoreError if it cannot be done.
+    Creates the job (existing_key is None) or changes the job with that key, and
+    records the change. Returns (job, changes), where changes says in words what
+    the save did. Raises JobStoreError if it cannot be done.
+    """
+    job, changes = apply_job(db, payload, existing_key, who)
+    if changes:
+        _audit(db, job, "JOB_CREATED" if existing_key is None else "JOB_UPDATED", who,
+               {"job_key": job.JobKey, "changes": changes})
+    db.commit()
+    db.refresh(job)
+    return job, changes
+
+
+def apply_job(db: Session, payload: JobSave, existing_key: Optional[str], who: str) -> tuple:
+    """
+    Makes the changes a save would make, in the current transaction, without
+    committing or recording them. save_job commits them; a preview looks at the
+    result and rolls it back.
     """
     creating = existing_key is None
     if creating:
@@ -165,13 +233,13 @@ def save_job(db: Session, payload: JobSave, existing_key: Optional[str], who: st
     if not creating and old_order != submitted_ids:
         changes.append("Reordered the steps.")
 
-    if changes:
-        if not creating:
-            job.ModifiedDateTime = utcnow()
-            job.ModifiedBy = who
-        _audit(db, job, "JOB_CREATED" if creating else "JOB_UPDATED", who, {"job_key": job.JobKey, "changes": changes})
-    db.commit()
-    db.refresh(job)
+    if payload.variables is not None:
+        changes += _apply_variables(job, payload.variables, creating)
+
+    if changes and not creating:
+        job.ModifiedDateTime = utcnow()
+        job.ModifiedBy = who
+    db.flush()
     return job, changes
 
 

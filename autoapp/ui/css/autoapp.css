@@ -299,3 +299,15 @@ dialog.popup .detail-grid > div { display: grid; gap: 3px; }
 .create-row input { flex: 1; }
 button.new-endpoint, button.create-new { white-space: nowrap; }
 .message[hidden] { display: none; }
+
+/* ---------- Variables and previews ---------- */
+
+table.variables td { vertical-align: middle; padding: 5px 8px; }
+table.variables td:nth-child(1) { width: 22%; }
+table.variables td:nth-child(2) { width: 34%; }
+table.variables td:nth-child(3) { width: 60px; text-align: center; }
+.steps-head code, .panel p code { padding-top: 0; }
+.preview { display: block; font-size: 12px; overflow-wrap: anywhere; }
+.preview.resolved { color: var(--muted); font-family: ui-monospace, "DejaVu Sans Mono", monospace; }
+.text-field { display: grid; gap: 3px; }
+button.add-missing { justify-self: start; }

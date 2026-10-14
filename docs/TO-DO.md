@@ -30,13 +30,13 @@ Decided and removed from this list: telemetry direction (spool first, delivered 
 
 Ordered toward a demonstration: a job built in the job editor, run by a scheduler, and traced file by file. The job editor and the file trace are the two things to show.
 
-### Next: the job editor
+### Next: the other pages
 
-Specified in [UI_VISION.md](UI_VISION.md). Viewing, editing, creating and deleting a job are built, with endpoints chosen from a drop-down or registered in place. One slice remains:
+The job editor is built: viewing, editing, creating and deleting a job; endpoints chosen from a drop-down or registered in place; the job's variables; and a live preview. Specified in [UI_VISION.md](UI_VISION.md).
 
-1. **Variables and preview.** The job's variables panel, and a preview of what each `${...}` resolves to.
+1. **Endpoint, Application, Entity and Site pages.** Search and detail pages for each, in the pattern of the Job pages, with routes to change and remove them. They can be registered today but not changed.
 
-2. **The rest of the CRUD API.** Create, read, update and delete for applications, entities and sites, and their pages.
+2. **Job History and Audit Log pages.** Read-only search pages in the pattern of the Operations Log. Job History needs a `GET /api/v1/runs` route. The audit rows are already being written.
 
 ### Then: breadth
 
@@ -55,6 +55,9 @@ Specified in [UI_VISION.md](UI_VISION.md). Viewing, editing, creating and deleti
 
 ### Later
 
+- **Variables on applications, entities and sites.** The job editor shows and edits a job's own variables. An application's `Root`, which an endpoint's path uses, can so far only be set in the database. It belongs on those pages.
+- **Which variables a job can see.** A view listing every variable in reach of a job and where each comes from. Worth building once tags add a second source.
+
 - **Changing and removing endpoints, applications, entities and sites.** Each can be registered from a "New..." window but not yet changed or removed. That comes with their own pages.
 
 - **A placeholder in a tick-box parameter.** A true-or-false parameter stored as `${...}` is shown as text and can be edited, but the editor offers no way to switch a tick box to a placeholder. Add a "use a variable" switch.
@@ -65,7 +68,6 @@ Specified in [UI_VISION.md](UI_VISION.md). Viewing, editing, creating and deleti
 
 
 - **Migrations.** Adopt Alembic once there is a database whose data must survive a schema change.
-- **Job History and Audit Log pages.** Read-only search pages in the pattern of the Operations Log. Job History needs a `GET /api/v1/runs` route; the Audit Log needs the CRUD API to be writing audits.
 
 - **Trace across machines.** The trace compares paths as text. Add the site or host to the comparison once steps reach remote sites or agents on more than one machine.
 - **Skip the rest when nothing was collected.** If a job's first step is allowed to find nothing, every later step that reads the same folder needs `AllowNoFiles` too. A step option to end the job successfully at that point would be tidier.

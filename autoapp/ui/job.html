@@ -46,7 +46,8 @@
         <a href="jobs.html">Job Search</a> page.</p>
 
     <template x-if="form">
-        <div>
+        <!-- x-effect: whenever anything in the form changes, ask what it would now resolve to -->
+        <div x-effect="queuePreview(JSON.stringify(payload()))">
             <!-- The job itself -->
             <section class="panel" aria-label="Job">
                 <div class="detail-grid">
@@ -64,18 +65,14 @@
                     <label for="job-enabled">Enabled</label>
                     <div><input id="job-enabled" type="checkbox" x-model="form.active" :disabled="!editing"></div>
 
-                    <template x-if="job">
-                        <span class="label">Would it run?</span>
-                    </template>
-                    <template x-if="job">
-                        <div id="runnability">
-                            <span class="muted" x-show="!job.active">Disabled. The runner refuses a disabled job.</span>
-                            <span class="ready-text" x-show="job.active && check && check.valid">Ready to run</span>
-                            <span class="status FAILED" x-show="problems.length > 0"
-                                  x-text="problems.length + (problems.length === 1 ? ' problem' : ' problems') + ' found by the pre-run check'"></span>
-                            <span class="muted small" x-show="changed">(as last saved)</span>
-                        </div>
-                    </template>
+                    <span class="label">Would it run?</span>
+                    <div id="runnability">
+                        <span class="muted" x-show="!form.active">Disabled. The runner refuses a disabled job.</span>
+                        <span class="ready-text" x-show="form.active && verdict && verdict.valid">Ready to run</span>
+                        <span class="status FAILED" x-show="problems.length > 0"
+                              x-text="problems.length + (problems.length === 1 ? ' problem' : ' problems') + ' found by the pre-run check'"></span>
+                        <span class="muted small" id="unsaved-note" x-show="changed">(as it is on screen, not yet saved)</span>
+                    </div>
 
                     <template x-if="job">
                         <span class="label">Run it with</span>
@@ -97,9 +94,53 @@
                     </template>
                 </div>
 
-                <ul class="problems" id="job-problems" x-show="job && problems.length > 0">
+                <ul class="problems" id="job-problems" x-show="problems.length > 0">
                     <template x-for="problem in problems"><li x-text="problem"></li></template>
                 </ul>
+            </section>
+
+            <!-- Its variables: values of the job's own, written ${Name} in any step value -->
+            <section class="panel" aria-label="Variables">
+                <div class="steps-head">
+                    <h2 class="section">Variables</h2>
+                    <span class="muted small">Write <code>${Name}</code> in any step value to use one.</span>
+                </div>
+                <p class="message" id="no-variables" x-show="form.variables.length === 0">This job has no variables of its own.</p>
+
+                <div class="table-scroll" x-show="form.variables.length > 0">
+                    <table class="results variables">
+                        <thead>
+                            <tr><th>Name</th><th>Value</th><th>Secret</th><th>Description</th><th></th></tr>
+                        </thead>
+                        <tbody>
+                            <template x-for="(variable, index) in form.variables" :key="variable.uid">
+                                <tr :data-variable="variable.uid">
+                                    <td><input type="text" class="variable-name" x-model="variable.name" :disabled="!editing"
+                                               maxlength="100" placeholder="For example ArchiveFolder" aria-label="Variable name"></td>
+                                    <td><input :type="variable.secret ? 'password' : 'text'" class="variable-value" x-model="variable.value"
+                                               :disabled="!editing" aria-label="Variable value" autocomplete="off"
+                                               :placeholder="variable.secret && variable.savedSecret ? 'Set. Type a new value to replace it.' : ''"></td>
+                                    <td><input type="checkbox" class="variable-secret" x-model="variable.secret" :disabled="!editing"
+                                               title="A secret's value is hidden here, in the job log and in previews, and is never sent back to this page"
+                                               aria-label="Secret"></td>
+                                    <td><input type="text" class="variable-description" x-model="variable.description" :disabled="!editing"
+                                               aria-label="Variable description"></td>
+                                    <td><button type="button" class="link remove-variable" x-show="editing"
+                                                @click="removeVariable(index)">Remove</button></td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="actions" x-show="editing">
+                    <button type="button" class="secondary" id="add-variable" @click="addVariable()">Add variable</button>
+                </div>
+                <p class="muted small" style="margin: 12px 0 0">
+                    Always available: <code>${DATE:yyyyMMdd}</code> and other date masks, <code>${SYS:WORKING_FOLDER}</code>
+                    and <code>${SYS:INSTANCE_ID}</code>; and in a rename mask, <code>${FILE:NAME}</code>,
+                    <code>${FILE:STEM}</code> and <code>${FILE:EXT}</code>.
+                </p>
             </section>
 
             <!-- Its steps, in the order they run -->
@@ -188,6 +229,16 @@
                                                            :disabled="!editing || field.mode !== 'path'"
                                                            placeholder="For example incoming/*.csv">
                                                 </label>
+                                                <!-- Where this location really is, for the job as it is on screen -->
+                                                <span class="preview resolved" x-show="showsResolved(index, field)"
+                                                      x-text="'→ ' + (previewOf(index, field) || {}).resolved"></span>
+                                                <span class="preview error-text small"
+                                                      x-show="field.mode === 'path' && previewOf(index, field) && previewOf(index, field).error"
+                                                      x-text="(previewOf(index, field) || {}).error"></span>
+                                                <template x-for="name in (editing && field.mode === 'path' ? missingVariables(field.path) : [])" :key="name">
+                                                    <button type="button" class="link small add-missing" @click="addVariable(name)"
+                                                            x-text="'Add variable ' + name"></button>
+                                                </template>
                                             </div>
                                         </template>
 
@@ -213,7 +264,17 @@
                                         </template>
 
                                         <template x-if="['STRING', 'INTEGER'].includes(field.data_type) || field.asText">
-                                            <div><input type="text" x-model="field.text" :disabled="!editing" :placeholder="field.default || ''"></div>
+                                            <div class="text-field">
+                                                <input type="text" x-model="field.text" :disabled="!editing" :placeholder="field.default || ''">
+                                                <span class="preview resolved" x-show="showsResolved(index, field)"
+                                                      x-text="'→ ' + (previewOf(index, field) || {}).resolved"></span>
+                                                <span class="preview error-text small" x-show="previewOf(index, field) && previewOf(index, field).error"
+                                                      x-text="(previewOf(index, field) || {}).error"></span>
+                                                <template x-for="name in (editing ? missingVariables(field.text) : [])" :key="name">
+                                                    <button type="button" class="link small add-missing" @click="addVariable(name)"
+                                                            x-text="'Add variable ' + name"></button>
+                                                </template>
+                                            </div>
                                         </template>
 
                                         <span class="muted small field-help" x-text="field.description"></span>

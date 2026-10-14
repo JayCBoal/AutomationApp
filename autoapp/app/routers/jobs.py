@@ -4,17 +4,17 @@ from sqlalchemy.orm import Session
 from typing import Dict, Any, List, Optional
 
 from app.database import get_db
-from app.job_store import JobStoreError, delete_job, describe_job, save_job
-from app.models import Job, JobRun, JobStep, JobStepParameter
+from app.job_store import JobStoreError, apply_job, delete_job, describe_job, save_job
+from app.models import Job, JobRun, JobStep, JobStepParameter, Variable
 from app.schemas import (
-    JobCheckResult, JobDetail, JobInitRequest, JobInitResponse, JobSave, JobSaveResult, JobStepPayloadSchema,
-    JobSummary, LastRun
+    FieldPreview, JobCheckResult, JobDetail, JobInitRequest, JobInitResponse, JobPreview, JobSave, JobSaveResult,
+    JobStepPayloadSchema, JobSummary, LastRun
 )
 from engine.step_catalog import ENDPOINT_SUFFIX
 from engine.handlers import get_handler
 from engine.preflight import prepare_job
 from engine.scope_engine import ScopeResolutionEngine
-from engine.step_params import resolve_step
+from engine.step_params import preview_step, resolve_step
 
 router = APIRouter(prefix="/api/v1/jobs", tags=["Jobs"])
 
@@ -206,6 +206,46 @@ def _save(db: Session, payload: JobSave, existing_key: Optional[str]) -> JobSave
         raise HTTPException(status_code=e.status, detail=str(e))
     problems = job_problems(db, job)
     return JobSaveResult(job=describe_job(job), valid=not problems, problems=problems, changes=changes)
+
+
+@router.post("/preview", response_model=JobPreview)
+def preview_job(payload: JobSave, existing_key: Optional[str] = Query(
+        None, description="The key of the job being edited; leave out for a job not yet saved"),
+        db: Session = Depends(get_db)):
+    """
+    What a job would resolve to if it were saved as submitted: each step's parameters
+    with their placeholders and file locations worked out, and whether it would run.
+    Nothing is saved. The job editor calls this as its form is changed.
+    """
+    MASK = "********"
+    if existing_key is None and not payload.job_key.strip():
+        payload = payload.model_copy(update={"job_key": "UNNAMED-JOB"})     # so a new job can be previewed before it is named
+    try:
+        job, _ = apply_job(db, payload, existing_key, who=EDITOR_NAME)
+        secrets = sorted({value for (value,) in db.query(Variable.VarValue).filter(Variable.IsSecret.is_(True)) if value},
+                         key=len, reverse=True)
+
+        def safe(text: Optional[str]) -> Optional[str]:
+            for secret in secrets:
+                text = text.replace(secret, MASK) if text else text
+            return text
+
+        problems = [safe(problem) for problem in job_problems(db, job)]
+        engine = ScopeResolutionEngine(db=db, job_id=job.MasterObject_id, instance_id="PREVIEW")
+        engine.build_context()
+        steps = []
+        for step in sorted(job.steps, key=lambda s: (s.StepOrder, s.id)):
+            try:
+                handler_cls = get_handler(step.step_type.HandlerClass)
+            except ValueError:
+                handler_cls = None
+            steps.append({name: FieldPreview(resolved=safe(None if resolved is None else str(resolved)), error=safe(error))
+                          for name, (resolved, error) in preview_step(step, handler_cls, engine, db).items()})
+        return JobPreview(valid=not problems, problems=problems, steps=steps)
+    except JobStoreError as e:
+        raise HTTPException(status_code=e.status, detail=str(e))
+    finally:
+        db.rollback()       # a preview changes nothing
 
 
 @router.post("", response_model=JobSaveResult, status_code=status.HTTP_201_CREATED)

@@ -20,11 +20,18 @@
  *     PUT    /api/v1/jobs/{job_key}          save a job
  *     DELETE /api/v1/jobs/{job_key}          delete a job that has never run
  *     POST   /api/v1/endpoints               register an endpoint, from the "New..." link
+ *     POST   /api/v1/jobs/preview            what the job on screen would resolve to, saved or not
  */
 function jobDetail() {
     const address = new URLSearchParams(location.search);
     const TRUE_WORDS = ["true", "yes", "y", "1"];
     let nextUid = 1;        // gives each step on the page a name of its own, saved or not
+
+    // Bookkeeping for the preview. Kept out of the page's own state on purpose: the page re-runs
+    // queuePreview whenever state it has read changes, so a timer kept there would set itself off.
+    let previewTimer = null;
+    let previewRequest = 0;
+    let previewAsked = "";      // the form contents most recently sent, or waiting to be sent
 
     return {
         key: address.get("key") || "",
@@ -35,7 +42,8 @@ function jobDetail() {
         catalog: {},            // step type code -> its catalog entry
         allKeys: [],            // every job key, for the selector
         endpoints: [],          // every registered endpoint, for the drop-down on a file location
-        check: null,            // result of the pre-run check
+        check: null,            // result of the pre-run check, for the job as saved
+        preview: null,          // what the job as it is on screen would resolve to, and whether it would run
         editing: false,
         busy: false,
         error: "",
@@ -56,7 +64,7 @@ function jobDetail() {
                 return;
             }
             if (this.isNew) {
-                this.show({ job_key: "", description: "", active: true, steps: [] });
+                this.show({ job_key: "", description: "", active: true, steps: [], variables: [] });
                 this.editing = true;
             } else if (this.key) {
                 await this.load();
@@ -88,6 +96,15 @@ function jobDetail() {
                 description: job.description || "",
                 active: job.active,
                 steps: job.steps.map(step => this.stepForm(step)),
+                variables: (job.variables || []).map(variable => ({
+                    uid: nextUid++,
+                    name: variable.name,
+                    value: variable.value ?? "",
+                    secret: variable.secret,
+                    description: variable.description || "",
+                    // A saved secret's value is never sent to the page. Left blank, it is kept as it is.
+                    savedSecret: variable.secret,
+                })),
             };
             this.saved = JSON.stringify(this.payload());
             document.title = `${job.job_key || "New job"} - AutoApp`;
@@ -215,6 +232,12 @@ function jobDetail() {
                     id: step.id, title: step.title.trim() || null, active: step.active,
                     step_type: step.step_type, parameters: this.parametersOf(step),
                 })),
+                variables: this.form.variables.map(variable => ({
+                    name: variable.name.trim(),
+                    value: variable.secret && variable.savedSecret && variable.value === "" ? null : variable.value,
+                    secret: variable.secret,
+                    description: variable.description.trim() || null,
+                })),
             };
         },
 
@@ -236,6 +259,68 @@ function jobDetail() {
             this.editing = false;
             this.error = "";
             this.show(this.job);
+        },
+
+        // ---------- Variables ----------
+
+        /** Adds a variable to the job, and puts the cursor in its first empty box. */
+        addVariable(name = "") {
+            const variable = { uid: nextUid++, name, value: "", secret: false, description: "", savedSecret: false };
+            this.form.variables.push(variable);
+            this.$nextTick(() => {
+                const row = document.querySelector(`[data-variable="${variable.uid}"]`);
+                if (row) row.querySelector(name ? ".variable-value" : ".variable-name").focus();
+            });
+        },
+
+        removeVariable(index) { this.form.variables.splice(index, 1); },
+
+        /**
+         * The variables a value mentions that the job does not have, e.g. ["ArchiveFolder"] for
+         * "${ArchiveFolder}/in". Each is offered as "Add variable ..." beside the value.
+         */
+        missingVariables(text) {
+            const have = new Set(this.form.variables.map(variable => variable.name.trim()));
+            const mentioned = [...String(text || "").matchAll(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g)].map(match => match[1]);
+            return [...new Set(mentioned)].filter(name => !have.has(name));
+        },
+
+        // ---------- Preview: what the job on screen would resolve to ----------
+
+        /**
+         * Asks the server what the form's contents would resolve to, shortly after they
+         * stop changing. Nothing is saved by asking.
+         */
+        queuePreview(contents) {
+            if (contents === previewAsked) return;
+            previewAsked = contents;
+            clearTimeout(previewTimer);
+            previewTimer = setTimeout(async () => {
+                const request = ++previewRequest;
+                const address = "/jobs/preview" + (this.job ? "?" + new URLSearchParams({ existing_key: this.job.job_key }) : "");
+                let result;
+                try {
+                    result = await AutoApp.send("POST", address, JSON.parse(contents));
+                } catch (e) {
+                    // What is on screen could not be saved as it stands (a key already taken, say): show that as the problem
+                    result = { valid: false, problems: [e.message], steps: [] };
+                }
+                if (request !== previewRequest) return;            // the form has changed again since
+                this.preview = result;
+            }, 350);
+        },
+
+        /** The preview for one field of one step: { resolved, error }, or null if there is none yet. */
+        previewOf(index, field) {
+            const step = this.preview && this.preview.steps[index];
+            return (step && step[field.name]) || null;
+        },
+
+        /** Whether to show what a field resolves to: always for a location, otherwise only if it has a placeholder. */
+        showsResolved(index, field) {
+            const preview = this.previewOf(index, field);
+            if (!preview || preview.resolved === null) return false;
+            return field.data_type === "LOCATION" || String(field.text || "").includes("${");
         },
 
         addStep() {
@@ -274,6 +359,11 @@ function jobDetail() {
                     : await AutoApp.send("POST", "/jobs", payload);
                 this.job = result.job;
                 this.check = { valid: result.valid, problems: result.problems };
+                // The save's own verdict stands until a fresh preview arrives; any older one is discarded
+                clearTimeout(previewTimer);
+                previewRequest++;
+                previewAsked = "";
+                this.preview = null;
                 this.key = this.chosen = result.job.job_key;
                 this.isNew = false;
                 this.editing = false;
@@ -313,10 +403,13 @@ function jobDetail() {
             return "operations.html?" + new URLSearchParams({ job_key: this.job.job_key });
         },
 
+        /** Whether the job would run: as it is on screen once that has been worked out, else as saved. */
+        get verdict() { return this.preview || this.check; },
+
         /** What stops the job running, other than its being disabled, which is shown separately. */
         get problems() {
-            if (!this.check) return [];
-            return this.check.problems.filter(problem => !problem.endsWith("is disabled."));
+            if (!this.verdict) return [];
+            return this.verdict.problems.filter(problem => !problem.endsWith("is disabled."));
         },
 
         toggle(step) { step.open = !step.open; },

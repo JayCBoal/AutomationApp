@@ -99,6 +99,21 @@ class JobSummary(BaseModel):
     modified_by: Optional[str] = None
 
 
+class VariableOut(BaseModel):
+    name: str
+    value: Optional[str] = Field(None, description="Always null for a secret variable: a secret can be set, never read back")
+    secret: bool = False
+    description: Optional[str] = None
+
+
+class VariableSave(BaseModel):
+    name: str = Field(..., max_length=100)
+    value: Optional[str] = Field(
+        None, description="For a secret variable that already exists, null or blank keeps the value it has")
+    secret: bool = False
+    description: Optional[str] = None
+
+
 class JobStepOut(BaseModel):
     id: int
     order: int
@@ -120,6 +135,7 @@ class JobDetail(BaseModel):
     modified: Optional[datetime] = None
     modified_by: Optional[str] = None
     steps: List[JobStepOut]
+    variables: List[VariableOut] = Field(default_factory=list, description="The job's own variables, in name order")
 
 
 class JobStepSave(BaseModel):
@@ -137,6 +153,8 @@ class JobSave(BaseModel):
     description: Optional[str] = None
     active: bool = True
     steps: List[JobStepSave] = Field(default_factory=list)
+    variables: Optional[List[VariableSave]] = Field(
+        None, description="The job's own variables. Leave out to keep them as they are; send a list to replace them")
 
 
 class JobSaveResult(BaseModel):
@@ -145,6 +163,20 @@ class JobSaveResult(BaseModel):
     valid: bool
     problems: List[str]
     changes: List[str] = Field(..., description="What this save changed, as recorded in the audit log")
+
+
+class FieldPreview(BaseModel):
+    resolved: Optional[str] = Field(None, description="What the value becomes when the job runs")
+    error: Optional[str] = Field(None, description="Why it cannot be resolved, if it cannot")
+
+
+class JobPreview(BaseModel):
+    """What a job, as submitted but not saved, would resolve to and whether it would run."""
+    valid: bool
+    problems: List[str]
+    steps: List[Dict[str, FieldPreview]] = Field(
+        ..., description="For each step submitted, in order: each parameter by name. "
+                         "A location appears under its parameter name however the step gave it")
 
 
 class JobCheckResult(BaseModel):

@@ -12,6 +12,16 @@ Notable structural, schema and design changes to AutoApp, newest first. Line-by-
 - **Added:** the Job Detail page. It shows a job and its steps, with each step's form drawn from the step catalog. Nothing on it can be changed yet.
 - **Changed:** on the Job Search page the job key links to the Job Detail page, there is a View link, and a disabled job shows "Disabled" in grey with no Check link.
 
+### Job editor, fourth slice: variables and preview
+
+- **Added:** a job's own variables in `GET`, `POST` and `PUT /api/v1/jobs`, and a Variables panel in the job editor.
+- **Added:** `POST /api/v1/jobs/preview`, and a live preview in the editor: where each file location really is, what each value with a placeholder resolves to, and whether the job as it is on screen would run.
+- **Added:** "Add variable ..." beside a value that names a variable the job does not have.
+- **Decided:** a secret variable's value is never sent to the page. The page shows a blank box, and a blank box on save keeps the value there is.
+- **Decided:** a variable's name is letters, digits and underscores, starting with a letter or underscore, so that `${Name}` can never be mistaken for one of the scoped forms such as `${SYS:...}` or `${APP.Name}`.
+- **Decided:** the audit log names the variables a save changed, never their values.
+- **Rationale for the preview's design:** it applies the save inside a transaction, resolves with the runner's own code, and rolls back. A separate "preview" calculation would sooner or later disagree with the real one.
+
 ### Job editor, third slice: registering an endpoint in place
 
 - **Added:** `POST /api/v1/endpoints`, which registers an endpoint and writes an audit row.

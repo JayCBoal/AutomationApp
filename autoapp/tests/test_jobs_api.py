@@ -113,3 +113,41 @@ def test_the_search_and_the_check_agree_about_a_job(client, db, seed, jobs, tmp_
     for job in client.get(ROUTE).json():
         check = client.get(f"{ROUTE}/{job['job_key']}/check").json()
         assert (job["ready"], job["problem_count"]) == (check["valid"], len(check["problems"]))
+
+
+# --- One job ------------------------------------------------------------------------------------
+
+def test_one_job_comes_with_all_its_steps_in_order_and_their_parameters_as_stored(client, db, seed, jobs):
+    collect = db.get(type(jobs[0]), jobs[0].MasterObject_id)
+    seed.step(collect, 0, title="Runs first", Source="${Folder}/*.csv", Dest="staged")     # added last, ordered first
+    db.commit()
+
+    response = client.get(f"{ROUTE}/DEV-LEGAL-COLLECT")
+
+    assert response.status_code == 200
+    job = response.json()
+    assert (job["job_key"], job["active"]) == ("DEV-LEGAL-COLLECT", True)
+    assert job["description"] == "Collects legal extracts and delivers them to billing"
+    assert (job["created"] is not None, job["created_by"]) == (True, "system")
+    assert [(s["order"], s["title"], s["active"]) for s in job["steps"]] == [
+        (0, "Runs first", True), (1, "Step 1", True), (2, "Step 2", True), (3, "Step 3", False)]   # disabled included
+    first, collect_step, deliver = job["steps"][0], job["steps"][1], job["steps"][2]
+    assert (collect_step["step_type"], collect_step["step_type_name"]) == ("COPY_FILES", "Copy Files")
+    assert first["parameters"] == {"Source": "${Folder}/*.csv", "Dest": "staged"}        # placeholder left as written
+    assert collect_step["parameters"] == {"SourceEndpoint": "LEGAL_EXTRACTS", "Dest": "incoming"}
+    assert deliver["parameters"] == {"Source": "incoming/*.csv", "DestEndpoint": "BILLING_INBOX", "Move": "True"}
+    assert isinstance(collect_step["id"], int)
+
+
+def test_a_job_with_no_steps_has_an_empty_list(client, jobs):
+    job = client.get(f"{ROUTE}/DEV-RETIRED").json()
+
+    assert (job["active"], job["steps"]) == (False, [])
+
+
+def test_one_job_is_found_by_its_exact_key(client, jobs):
+    assert client.get(f"{ROUTE}/dev-billing-pickup").status_code == 200
+    response = client.get(f"{ROUTE}/DEV-BILLING-PICKUP")            # keys are case-sensitive
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "No job with JobKey 'DEV-BILLING-PICKUP' exists."

@@ -34,6 +34,10 @@ function jobSearch() {
             return `${job.problem_count} problem${job.problem_count === 1 ? "" : "s"} found: click to see`;
         },
 
+        detailLink(job) {
+            return "job.html?" + new URLSearchParams({ key: job.job_key });
+        },
+
         operationsLink(job) {
             return "operations.html?" + new URLSearchParams({ job_key: job.job_key });
         },

@@ -68,7 +68,7 @@
                     <template x-for="job in rows" :key="job.job_key">
                         <tr>
                             <td>
-                                <div class="job-key" x-text="job.job_key"></div>
+                                <a class="job-key" :href="detailLink(job)" x-text="job.job_key"></a>
                                 <div class="muted small" x-text="job.description"></div>
                             </td>
                             <td>
@@ -98,11 +98,15 @@
                             <td>
                                 <div class="row-actions">
                                     <!-- A job that passes the pre-run check says so in green. One that fails
-                                         has a bold red Check link, which lists what is wrong. -->
-                                    <span class="ready-text" x-show="job.ready"
+                                         has a bold red Check link, which lists what is wrong. A disabled job
+                                         says so in grey, whatever else may be wrong with it. -->
+                                    <span class="disabled-text" x-show="!job.active"
+                                          title="The runner refuses a disabled job">Disabled</span>
+                                    <span class="ready-text" x-show="job.active && job.ready"
                                           title="The pre-run check found no problems">Ready to run</span>
-                                    <button type="button" class="link check-link" x-show="!job.ready"
+                                    <button type="button" class="link check-link" x-show="job.active && !job.ready"
                                             :title="checkHint(job)" @click="check(job)">Check</button>
+                                    <a :href="detailLink(job)">View</a>
                                     <a :href="operationsLink(job)">Operations</a>
                                 </div>
                             </td>

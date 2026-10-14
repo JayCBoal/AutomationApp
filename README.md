@@ -55,6 +55,8 @@ python3 create_dev_db.py
 
 This creates `autoapp/autoapp.db` (SQLite) with the sample data from `SQL/Seed_Sample_Data.sql`: two applications, three endpoints and two jobs that hand a file from one to the other. It prints the commands to run the jobs and look at the result. It never overwrites an existing database.
 
+After updating AutoApp, an existing development database may lack tables or columns the new version needs. The server says exactly what is missing, in its log when it starts and on any page that fails. The simplest fix is to delete `autoapp.db` and run `create_dev_db.py` again.
+
 For MariaDB, run `SQL/Create_Tables.sql` and then `SQL/Seed_Sample_Data.sql`, and point `DATABASE_URL` at the database, for example `mysql+pymysql://user:password@dbhost/autoapp`. The list of step types and their parameters is filled in when the API server starts, or by `python3 -m app.catalog`. After changing the models, regenerate the table script with `python3 SQL/generate_ddl.py`.
 
 ## Running a job
@@ -94,7 +96,7 @@ python3 -m uvicorn app.main:app --port 8000
 
 Then open `http://localhost:8000/` in a browser:
 
-- **Jobs** finds jobs and shows what each one uses, how its last run went, and whether it would run now: "Ready to run" in green, or a red "Check" link that lists what is wrong.
+- **Jobs** finds jobs and shows what each one uses, how its last run went, and whether it would run now: "Ready to run" in green, or a red "Check" link that lists what is wrong. A job's key opens its detail page, with its steps and their parameters.
 - **Operations Log** searches every file handled and shows any file's trace.
 
 Pages that are not built yet appear greyed out in the navigation bar.

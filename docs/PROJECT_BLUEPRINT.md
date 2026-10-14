@@ -151,7 +151,7 @@ The Python models in `autoapp/app/models.py` are the definition of the schema.
 
 - Two job keys that differ only by case get two working folders. That is fine on Linux; on an agent whose file system ignores case (Windows, macOS) they would share one.
 - Sorting in the web interface: with exact comparison the database sorts capitals before lower-case letters, so pages that list names should sort them without regard to case themselves.
-- Migrations (Alembic), so a schema change can be applied to a database that already holds data. Today the table script drops and recreates everything.
+- Migrations (Alembic), so a schema change can be applied to a database that already holds data. Today the table script drops and recreates everything. Until then, the server at least names what an older database is missing (`app/schema_check.py`), in its log at startup and in the error a page shows.
 
 ## 3. Variables and placeholders
 
@@ -278,6 +278,7 @@ FastAPI application in `autoapp/app/`. The interactive description of every rout
 | `GET /api/v1/operations/{id}/trace` | Built; tested over HTTP |
 | `GET /api/v1/step-types`, `/step-types/{code}` | Built; tested over HTTP |
 | `GET /api/v1/jobs` | The job search, including whether each job would run. Built; tested over HTTP |
+| `GET /api/v1/jobs/{job_key}` | One job with its steps and parameters. Built; tested over HTTP |
 | `GET /api/v1/jobs/{job_key}/check` | Built; tested over HTTP |
 | `GET /ui/...` and `/` | The web interface's files; `/` redirects to it |
 
@@ -315,8 +316,14 @@ Nothing in this section is built in the rewrite. The 2024 prototype tracked exte
 - **Job Search** page:
   - Search by job key, description, enabled or disabled, and an endpoint the job uses.
   - Each row shows the job's steps, the endpoints it uses and how its most recent run went, with the error if it failed.
-  - Every job found is put through the pre-run check. A job that would run says **Ready to run** in green. One that would not has a bold red **Check** link, which checks the job again and lists every problem. Nothing is run.
+  - Every job found is put through the pre-run check. A job that would run says **Ready to run** in green. One that would not has a bold red **Check** link, which checks the job again and lists every problem. A disabled job says **Disabled** in grey. Nothing is run.
+  - The job key, and a **View** link, open the job's detail page.
   - **Operations** opens the Operations Log for that job.
+- **Job Detail** page, read-only so far:
+  - A selector to find and open a job; the job's key, description, enabled flag and history; the command a scheduler would run it with; and whether it would run, with any problems listed.
+  - Its steps in order, collapsed to one line each (`LEGAL_EXTRACTS -> incoming`), expandable one at a time or all at once.
+  - Each step's form is drawn from the step catalog, not written into the page: a tick box for true or false, a list for a choice, and for a file location the choice between an endpoint and a working-folder path. A parameter the step leaves out shows its default, marked as such.
+  - A parameter that the step type does not have is pointed out.
 - **Main Index** page, linking to every page. Pages not built yet are shown greyed out.
 
 **Planned**
@@ -326,7 +333,7 @@ Nothing in this section is built in the rewrite. The 2024 prototype tracked exte
 
 ## 12. Testing
 
-- Tests are in `autoapp/tests/` and run with `python3 -m pytest` (245 tests: about one minute on SQLite, two on MariaDB).
+- Tests are in `autoapp/tests/` and run with `python3 -m pytest` (275 tests: about two minutes on SQLite, three on MariaDB).
 - Each test builds its own temporary SQLite database and temporary folders. No test touches the working directory or a shared database.
 - The same suite runs against MariaDB when `AUTOAPP_TEST_DATABASE_URL` names a test database. Its tables are built once per run from `SQL/Create_Tables.sql`, the script an installation would use, and emptied before each test.
 - Tests run the real code. AutoApp's own components are not mocked. The runner tests launch the runner as a separate process, as a scheduler would.

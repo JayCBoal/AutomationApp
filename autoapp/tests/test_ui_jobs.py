@@ -11,7 +11,7 @@ from conftest import wait_for_search
 
 @pytest.fixture
 def jobs(db, seed, endpoints):
-    """Three jobs: one that collects and delivers, one that only picks up, one disabled with a mistake in it."""
+    """Four jobs: one that collects and delivers, one that only picks up, one with a mistake in it, one disabled."""
     collect = seed.job("DEV-LEGAL-COLLECT")
     collect.Description = "Collects legal extracts and delivers them to billing"
     seed.step(collect, 1, title="Collect", SourceEndpoint="LEGAL_EXTRACTS", Dest="incoming")
@@ -22,8 +22,12 @@ def jobs(db, seed, endpoints):
     seed.step(pickup, 2, title="Not yet", Source="to_load/*.csv", Dest="done").IsActive = False
 
     broken = seed.job("DEV-BROKEN")
-    broken.IsActive = False
-    seed.step(broken, 1, title="Collect", SourceEndpoint="NO_SUCH_ENDPOINT", Dest="incoming", Mvoe="True")
+    seed.step(broken, 1, title="Collect", SourceEndpoint="LEGAL_EXTRACTS", Dest="incoming", Mvoe="True")
+    seed.step(broken, 2, title="Deliver", Source="incoming/*.csv", DestEndpoint="NO_SUCH_ENDPOINT")
+
+    retired = seed.job("DEV-RETIRED")
+    retired.IsActive = False
+    seed.step(retired, 1, title="Collect", SourceEndpoint="NO_SUCH_ENDPOINT", Dest="incoming")
     db.commit()
 
 
@@ -46,8 +50,8 @@ def test_page_lists_jobs_in_name_order_with_what_each_uses(page, jobs):
     rows = open_jobs(page)
 
     assert [row.locator(".job-key").inner_text() for row in rows.all()] == [
-        "dev-billing-pickup", "DEV-BROKEN", "DEV-LEGAL-COLLECT"]
-    assert "3 jobs, in name order" in page.locator("#result-summary").inner_text()
+        "dev-billing-pickup", "DEV-BROKEN", "DEV-LEGAL-COLLECT", "DEV-RETIRED"]
+    assert "4 jobs, in name order" in page.locator("#result-summary").inner_text()
 
     collect = row_for(rows, "DEV-LEGAL-COLLECT")
     assert "Collects legal extracts and delivers them to billing" in collect.inner_text()
@@ -57,7 +61,7 @@ def test_page_lists_jobs_in_name_order_with_what_each_uses(page, jobs):
     assert "Never run" in collect.inner_text()
 
     assert "1 step (+1 disabled)" in row_for(rows, "dev-billing-pickup").inner_text()
-    assert row_for(rows, "DEV-BROKEN").locator(".status").first.inner_text() == "Disabled"
+    assert row_for(rows, "DEV-RETIRED").locator(".status").first.inner_text() == "Disabled"
 
 
 def test_last_run_shows_how_the_most_recent_run_went(page, jobs, outbox, run_runner, load_spool):
@@ -93,10 +97,10 @@ def test_criteria_narrow_the_results_and_clear_restores_them(page, jobs):
 
     page.locator("input[name=endpoint]").fill("")
     rows = search(page)
-    assert [row.locator(".job-key").inner_text() for row in rows.all()] == ["DEV-BROKEN"]
+    assert [row.locator(".job-key").inner_text() for row in rows.all()] == ["DEV-RETIRED"]
 
     page.get_by_role("button", name="Clear").click()
-    page.wait_for_function("document.querySelectorAll('table.results tbody tr').length === 3")
+    page.wait_for_function("document.querySelectorAll('table.results tbody tr').length === 4")
     assert page.locator("select[name=active]").input_value() == ""
 
 
@@ -138,11 +142,44 @@ def test_a_job_that_would_run_says_ready_in_green_and_one_that_would_not_says_ch
     assert broken.inner_text() == "Check"
     assert look(broken) == [colour("--failure"), "700"]             # red and bold
     assert colour("--success") != colour("--failure")
-    assert broken.get_attribute("title") == "2 problems found: click to see"
+    assert broken.get_attribute("title") == "2 problems found: click to see"         # one in each step
     # "Ready to run" is plain text, with nothing to click; a job shows one or the other, never both
     assert ready_row.locator("button.check-link").is_hidden()
     assert ready_row.get_by_role("button").count() == 0         # no button is on show in that row
     assert broken_row.locator(".ready-text").is_hidden()
+
+
+def test_a_disabled_job_says_disabled_in_grey_with_no_link_whatever_else_is_wrong(page, jobs):
+    rows = open_jobs(page)
+    retired = row_for(rows, "DEV-RETIRED")          # disabled, and its step names an endpoint that does not exist
+
+    label = retired.locator(".disabled-text")
+    muted = page.evaluate("""() => {
+        const probe = document.createElement('span');
+        probe.style.color = getComputedStyle(document.documentElement).getPropertyValue('--muted');
+        document.body.appendChild(probe);
+        const shown = getComputedStyle(probe).color;
+        probe.remove();
+        return shown;
+    }""")
+    assert label.inner_text() == "Disabled"
+    assert label.evaluate("e => [getComputedStyle(e).color, getComputedStyle(e).fontWeight]") == [muted, "400"]
+    assert retired.get_by_role("button").count() == 0               # no Check link
+    assert retired.locator(".ready-text").is_hidden()
+    # and the other jobs do not say Disabled
+    assert row_for(rows, "DEV-BROKEN").locator(".disabled-text").is_hidden()
+    assert row_for(rows, "DEV-LEGAL-COLLECT").locator(".disabled-text").is_hidden()
+
+
+def test_job_key_and_view_link_open_the_job(page, jobs):
+    rows = open_jobs(page)
+
+    row_for(rows, "DEV-LEGAL-COLLECT").get_by_role("link", name="View").click()
+    page.wait_for_url("**/ui/job.html?key=DEV-LEGAL-COLLECT")
+
+    rows = open_jobs(page)
+    row_for(rows, "dev-billing-pickup").locator("a.job-key").click()
+    page.wait_for_url("**/ui/job.html?key=dev-billing-pickup")
 
 
 def test_check_on_a_job_fixed_since_the_search_says_it_is_now_ready(page, jobs, db):
@@ -150,12 +187,12 @@ def test_check_on_a_job_fixed_since_the_search_says_it_is_now_ready(page, jobs, 
     from app.models import Job, JobStepParameter
     rows = open_jobs(page)
     broken = db.query(Job).filter(Job.JobKey == "DEV-BROKEN").one()
-    broken.IsActive = True
-    for parameter in broken.steps[0].parameters:
-        if parameter.ParamName == "Mvoe":
-            db.delete(parameter)
-        elif parameter.ParamName == "SourceEndpoint":
-            parameter.ParamValue = "LEGAL_EXTRACTS"
+    for step in broken.steps:
+        for parameter in step.parameters:
+            if parameter.ParamName == "Mvoe":
+                db.delete(parameter)
+            elif parameter.ParamName == "DestEndpoint":
+                parameter.ParamValue = "BILLING_INBOX"
     db.commit()
 
     row_for(rows, "DEV-BROKEN").get_by_role("button", name="Check").click()
@@ -180,8 +217,8 @@ def test_check_lists_every_problem_in_a_job(page, jobs):
     problems = [item.inner_text() for item in window.locator("ul.problems li").all()]
     assert window.locator("h2").inner_text() == "Check: DEV-BROKEN"
     assert "2 problems found" in window.inner_text()
-    assert problems[0] == "Job 'DEV-BROKEN' is disabled."
-    assert problems[1].startswith("Step 1 ('Collect'): Unknown parameter 'Mvoe'.")
+    assert problems[0].startswith("Step 1 ('Collect'): Unknown parameter 'Mvoe'.")
+    assert problems[1].startswith("Step 2 ('Deliver'): 'DestEndpoint' refers to Endpoint 'NO_SUCH_ENDPOINT'")
     assert window.locator(".all-clear").count() == 0
 
 
@@ -208,7 +245,7 @@ def test_export_as_csv_gives_the_jobs_on_screen(page, jobs, run_runner, load_spo
     assert download.value.suggested_filename == "autoapp_jobs.csv"
     with open(download.value.path(), newline="") as f:
         exported = {row["Job"]: row for row in csv.DictReader(f)}
-    assert sorted(exported) == ["DEV-LEGAL-COLLECT", "dev-billing-pickup"]
+    assert sorted(exported) == ["DEV-BROKEN", "DEV-LEGAL-COLLECT", "dev-billing-pickup"]     # not the disabled one
     collect = exported["DEV-LEGAL-COLLECT"]
     assert (collect["Enabled"], collect["Enabled steps"], collect["Disabled steps"]) == ("Yes", "2", "0")
     assert collect["Endpoints"] == "BILLING_INBOX; LEGAL_EXTRACTS"

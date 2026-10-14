@@ -32,32 +32,30 @@ Ordered toward a demonstration: a job built in the job editor, run by a schedule
 
 ### Next: the job editor
 
-Specified in [UI_VISION.md](UI_VISION.md). The Job Search page is built; its job keys will link to the editor. To be built in four slices, each usable on its own:
+Specified in [UI_VISION.md](UI_VISION.md). The Job Search page and the first slice, viewing a job, are built. Three slices remain, each usable on its own:
 
-1. **View a job.** The job, its steps and their parameters, with the forms drawn from the step catalog. Read-only. Needs `GET /api/v1/jobs/{job_key}`.
+1. **Edit and save.** Unlock with Edit; change parameters; add, remove, reorder and enable or disable steps; Submit saves the whole job after checking it. Needs the first write routes in the API, and writes to `Audits`.
 
-2. **Edit and save.** Unlock with Edit; change parameters; add, remove, reorder and enable or disable steps; Submit saves the whole job after checking it. Needs the first write routes in the API, and writes to `Audits`.
+2. **Endpoint picker.** Each file location offers an endpoint or a working-folder path, with "New..." to register an endpoint in place. Needs endpoint list and create routes.
 
-3. **Endpoint picker.** Each file location offers an endpoint or a working-folder path, with "New..." to register an endpoint in place. Needs endpoint list and create routes.
+3. **Variables and preview.** The job's variables panel, and a preview of what each `${...}` resolves to.
 
-4. **Variables and preview.** The job's variables panel, and a preview of what each `${...}` resolves to.
-
-5. **The rest of the CRUD API.** Create, read, update and delete for applications, entities and sites, and their pages.
+4. **The rest of the CRUD API.** Create, read, update and delete for applications, entities and sites, and their pages.
 
 ### Then: breadth
 
-6. **More step handlers.** Each one also adds a catalog entry, so it appears in the editor.
+5. **More step handlers.** Each one also adds a catalog entry, so it appears in the editor.
    - Delete files
    - SQL execution
    - SFTP transfer (this is what makes endpoints on remote sites usable)
    - REST call
    - Send email
 
-7. **Tags.** Depends on decision 3. Expose tag assignments in the models, add the `TAG` scope to the variable cascade.
+6. **Tags.** Depends on decision 3. Expose tag assignments in the models, add the `TAG` scope to the variable cascade.
 
-8. **Runner controls.** Depends on decision 6.
+7. **Runner controls.** Depends on decision 6.
 
-9. **Scheduler integration.** Depends on decision 7.
+8. **Scheduler integration.** Depends on decision 7.
 
 ### Later
 
@@ -73,13 +71,13 @@ Specified in [UI_VISION.md](UI_VISION.md). The Job Search page is built; its job
 - **Retention.** A purge rule for `Operations`, which grows by one row per file.
 - **Killed runs.** Pick up spool files left as `.jsonl.tmp` by a run that did not end normally, and mark the run accordingly.
 
-10. **Runner uses the API.** Depends on decision 2.
+9. **Runner uses the API.** Depends on decision 2.
 
-11. **Security.** Encrypt `Credentials.SecretData`; stop returning `IsSecret` variables; API authentication; vault connectors. Needed before anyone other than the author uses it.
+10. **Security.** Encrypt `Credentials.SecretData`; stop returning `IsSecret` variables; API authentication; vault connectors. Needed before anyone other than the author uses it.
 
-12. **Asynchronous processes.** Port the prototype's async instance tracking and polling.
+11. **Asynchronous processes.** Port the prototype's async instance tracking and polling.
 
-13. **Dependency declaration.** Move dependencies from `requirements.txt` into `pyproject.toml` and make the project installable.
+12. **Dependency declaration.** Move dependencies from `requirements.txt` into `pyproject.toml` and make the project installable.
 
 ## Done
 

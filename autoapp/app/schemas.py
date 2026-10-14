@@ -78,6 +78,29 @@ class JobSummary(BaseModel):
     modified_by: Optional[str] = None
 
 
+class JobStepOut(BaseModel):
+    id: int
+    order: int
+    title: Optional[str] = None
+    active: bool
+    step_type: str = Field(..., description="The step type's code; see /api/v1/step-types")
+    step_type_name: str
+    parameters: Dict[str, Optional[str]] = Field(
+        ..., description="As stored: placeholders unresolved, a location under its path or its Endpoint name")
+
+
+class JobDetail(BaseModel):
+    """One job with its steps and their parameters, as the job editor shows it."""
+    job_key: str
+    description: Optional[str] = None
+    active: bool
+    created: Optional[datetime] = None
+    created_by: Optional[str] = None
+    modified: Optional[datetime] = None
+    modified_by: Optional[str] = None
+    steps: List[JobStepOut]
+
+
 class JobCheckResult(BaseModel):
     job_key: str
     valid: bool

@@ -55,7 +55,8 @@ const AutoApp = (() => {
         const holder = document.getElementById("app-chrome");
         if (!holder) return;
         const title = holder.dataset.title || "";
-        const here = location.pathname.split("/").pop() || "index.html";
+        // A detail page marks its search page as the current one: data-nav="jobs.html"
+        const here = holder.dataset.nav || location.pathname.split("/").pop() || "index.html";
 
         const link = page => page.href
             ? `<a href="${page.href}" class="${page.href === here ? "current" : ""}">${escapeHtml(page.name)}</a>`

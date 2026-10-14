@@ -6,7 +6,7 @@ from typing import Dict, Any, List, Optional
 from app.database import get_db
 from app.models import Job, JobRun, JobStep, JobStepParameter
 from app.schemas import (
-    JobCheckResult, JobInitRequest, JobInitResponse, JobStepPayloadSchema, JobSummary, LastRun
+    JobCheckResult, JobDetail, JobInitRequest, JobInitResponse, JobStepOut, JobStepPayloadSchema, JobSummary, LastRun
 )
 from engine.step_catalog import ENDPOINT_SUFFIX
 from engine.handlers import get_handler
@@ -181,6 +181,36 @@ def initialize_job(payload: JobInitRequest, db: Session = Depends(get_db)):
         working_folder=working_folder,
         variables=resolved_vars,
         steps=compiled_steps
+    )
+
+
+@router.get("/{job_key}", response_model=JobDetail)
+def get_job(job_key: str, db: Session = Depends(get_db)):
+    """One job with all its steps, enabled or not, in order, and each step's parameters as stored."""
+    job = db.query(Job).filter(Job.JobKey == job_key).first()
+    if not job:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"No job with JobKey '{job_key}' exists.")
+
+    return JobDetail(
+        job_key=job.JobKey,
+        description=job.Description,
+        active=bool(job.IsActive),
+        created=job.CreatedDateTime,
+        created_by=job.CreatedBy,
+        modified=job.ModifiedDateTime,
+        modified_by=job.ModifiedBy,
+        steps=[
+            JobStepOut(
+                id=step.id,
+                order=step.StepOrder,
+                title=step.Title,
+                active=bool(step.IsActive),
+                step_type=step.step_type.HandlerClass,
+                step_type_name=step.step_type.TypeName,
+                parameters={p.ParamName: p.ParamValue for p in step.parameters},
+            )
+            for step in sorted(job.steps, key=lambda s: (s.StepOrder, s.id))
+        ],
     )
 
 

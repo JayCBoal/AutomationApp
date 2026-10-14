@@ -245,3 +245,37 @@ ul.problems li { margin-bottom: 8px; overflow-wrap: anywhere; white-space: pre-w
 .all-clear { color: var(--success); font-weight: 600; }
 .ready-text { color: var(--success); }
 button.check-link { color: var(--failure); font-weight: 700; }
+.disabled-text { color: var(--muted); }
+a.job-key { font-weight: 600; text-decoration: none; }
+a.job-key:hover { text-decoration: underline; }
+
+/* ---------- Detail pages ---------- */
+
+.selector { display: flex; align-items: center; gap: 12px; }
+.selector input { max-width: 520px; }
+.selector .spacer, .steps-head .spacer, .step-head .spacer { flex: 1; }
+.detail-grid { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 10px 14px; align-items: start; }
+.detail-grid > label, .detail-grid .label { color: var(--muted); padding-top: 5px; }
+.required { color: var(--failure); font-weight: 700; }
+textarea { width: 100%; background: var(--input); color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 5px 7px; font: inherit; resize: vertical; }
+input:disabled, select:disabled, textarea:disabled { background: var(--panel-raised); color: var(--text); opacity: 1; border-style: dashed; }
+input[type=checkbox], input[type=radio] { width: auto; }
+code { font-family: ui-monospace, "DejaVu Sans Mono", monospace; font-size: 13px; overflow-wrap: anywhere; padding-top: 5px; }
+label.inline { display: flex; align-items: center; gap: 8px; color: var(--text); white-space: nowrap; }
+#job-problems { margin-top: 14px; color: var(--failure); }
+
+.steps-head { display: flex; align-items: center; gap: 14px; }
+.steps-head h2.section { margin: 0 0 10px; }
+.step { border: 1px solid var(--border); border-radius: 5px; margin-bottom: 8px; background: var(--panel-raised); }
+.step.disabled .step-title, .step.disabled .step-order { color: var(--muted); text-decoration: line-through; }
+.step-head { display: flex; align-items: center; gap: 12px; padding: 8px 12px; }
+.step-order { font-weight: 700; min-width: 20px; text-align: right; }
+.step-title { font-weight: 600; }
+.expander { background: none; border: none; color: var(--text); cursor: pointer; font-size: 16px; padding: 0 4px; width: 26px; }
+.step-body { padding: 4px 16px 14px 50px; border-top: 1px solid var(--border); }
+.step-body .detail-grid { grid-template-columns: 1fr; gap: 0; }
+.field-row { display: grid; grid-template-columns: 140px minmax(0, 420px) minmax(0, 1fr); gap: 6px 14px; align-items: center; padding: 6px 0; }
+.field-row .label { padding-top: 0; }
+.location-choice { display: grid; gap: 6px; }
+.location-choice label.inline input[type=text] { flex: 1; min-width: 0; }
+.unknown-parameters { margin-top: 10px; }

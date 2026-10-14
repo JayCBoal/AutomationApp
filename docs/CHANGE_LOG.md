@@ -6,6 +6,17 @@ Notable structural, schema and design changes to AutoApp, newest first. Line-by-
 
 ## 2026-10-13
 
+### Job Detail page, first slice: viewing a job
+
+- **Added:** `GET /api/v1/jobs/{job_key}`, one job with all its steps and their parameters as stored.
+- **Added:** the Job Detail page. It shows a job and its steps, with each step's form drawn from the step catalog. Nothing on it can be changed yet.
+- **Changed:** on the Job Search page the job key links to the Job Detail page, there is a View link, and a disabled job shows "Disabled" in grey with no Check link.
+
+### An out-of-date database explains itself
+
+- **Added:** when the server starts, and whenever a database error occurs, the database's tables are compared with what this version expects. Anything missing is named in the server log and in the error the page shows.
+- **Rationale:** a development database built before the step catalog columns existed answered "Internal Server Error" on the Job Detail page, with nothing to say why.
+
 ### Job Search page
 
 - **Added:** `GET /api/v1/jobs`, the job search, returning each job with its step counts, the endpoints it uses and its most recent run.

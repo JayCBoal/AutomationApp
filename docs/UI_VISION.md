@@ -2,7 +2,7 @@
 
 What the AutoApp web interface should contain and how it should behave. This is the specification the interface is built from.
 
-**Built so far:** the Main Index, the Job Search and the Operations Log, including the trace. See the blueprint for how the pages are put together.
+**Built so far:** the Main Index, the Job Search, the Job Detail page for viewing a job, and the Operations Log, including the trace. See the blueprint for how the pages are put together.
 
 It is based on the 2024 mockup deck (linked from the original design document) and adapted to the current data model. Items marked **Proposed** are not in the mockups and need a decision.
 
@@ -52,7 +52,7 @@ A header with the AutoApp name and the page title, and a navigation bar on every
 | Application Search / Detail | search, detail | Mockup | Name, abbreviation, description, support distribution list |
 | Entity Search / Detail | search, detail | Mockup (same pattern as Application) | An entity's sites are listed on its detail page |
 | Site Search / Detail | search, detail | Mockup (same pattern) | Host, port, protocol, owning entity, credential |
-| Job Search / Detail | search, detail | Mockup's Process pages, changed | Search is **built**. The detail page is the job editor, which is next |
+| Job Search / Detail | search, detail | Mockup's Process pages, changed | Search is **built**. The detail page shows a job; editing is next |
 | Endpoint Search / Detail | search, detail | Replaces Source and Delivery pages | See below |
 | Operations Log | search | Mockup, changed | **Built.** The file trace; see below |
 | Job History | search | Mockup | Reads `JobRuns`: one row per run, with status and error |

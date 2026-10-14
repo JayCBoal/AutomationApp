@@ -11,3 +11,5 @@ venv/
 .pytest_cache/
 demo/output/
 _test_out/
+dev_env.sh
+*.before-catalog-columns

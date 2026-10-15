@@ -8,6 +8,7 @@ Runs every active step of one Job, in StepOrder, and returns an OS exit code
 import argparse
 import os
 import sys
+import uuid
 from typing import Optional
 
 from sqlalchemy.orm import Session
@@ -25,12 +26,19 @@ LOG_LEVEL_PARAM = "LogLevel"
 
 def run_job(db: Session, job_key: str, instance_id: str, spool_dir: str,
             working_root: Optional[str] = None, run_number: int = 1,
-            scheduler: Optional[str] = None, api_url: Optional[str] = None) -> int:
+            scheduler: Optional[str] = None, api_url: Optional[str] = None, run_id: Optional[str] = None) -> int:
     """Executes the job and returns the exit code to hand back to the scheduler."""
-    with LocalSpoolTelemetryClient(spool_dir=spool_dir, instance_id=instance_id, api_url=api_url) as telemetry:
+    with LocalSpoolTelemetryClient(spool_dir=spool_dir, instance_id=instance_id, api_url=api_url,
+                                   run_id=run_id) as telemetry:
+        def send_log():
+            # The job log goes with the run's records, so it can be read with the run
+            telemetry.log_lines(job_log.take_lines())
+
         telemetry.start_run(job_key, run_number=run_number, scheduler=scheduler)
         job_log.summary(f"Job '{job_key}', instance {instance_id}, run number {run_number}")
         job_log.debug(f"Run ID {telemetry.run_id}; spool file {telemetry.active_file_path}")
+        send_log()
+        telemetry.deliver()         # so the run shows as running straight away
 
         try:
             job = db.query(Job).filter(Job.JobKey == job_key).first()
@@ -75,15 +83,18 @@ def run_job(db: Session, job_key: str, instance_id: str, spool_dir: str,
                         handler.run(resolved.params)
                 finally:
                     # Send what this step recorded; a failure here never affects the job
+                    send_log()
                     telemetry.deliver()
 
         except Exception as e:
             job_log.error(f"Job '{job_key}' failed: {e}")
+            send_log()
             telemetry.end_run("FAILED", error=str(e))
             return 1
 
-        telemetry.end_run("SUCCESS")
         job_log.summary(f"Job '{job_key}' completed successfully.")
+        send_log()
+        telemetry.end_run("SUCCESS")
         return 0
 
 
@@ -102,6 +113,9 @@ def main():
                              "(default: the AUTOAPP_API_URL environment variable; if unset, telemetry stays in the spool)")
     parser.add_argument("--working-root", default=None,
                         help="Root of job working folders (default: the AUTOAPP_WORKING_ROOT environment variable)")
+    parser.add_argument("--run-id", type=uuid.UUID, default=None,
+                        help="The ID to record the run under (default: a new one). AutoApp's own Run Job page "
+                             "passes one, so it can follow the run; a scheduler leaves it out.")
     parser.add_argument("--log-level", default=os.getenv("AUTOAPP_LOG_LEVEL", job_log.DEFAULT_LEVEL),
                         type=str.upper, choices=list(job_log.LEVELS),
                         help="How much the job log says: DETAIL (default) logs every action, SUMMARY one line "
@@ -115,7 +129,8 @@ def main():
         secrets = [value for (value,) in db.query(Variable.VarValue).filter(Variable.IsSecret.is_(True))]
         job_log.configure(args.log_level, secrets=secrets)
         exit_code = run_job(db, args.job_key, args.instance_id, args.spool_dir, args.working_root,
-                            run_number=args.run_number, scheduler=args.scheduler, api_url=args.api_url)
+                            run_number=args.run_number, scheduler=args.scheduler, api_url=args.api_url,
+                            run_id=str(args.run_id) if args.run_id else None)
     finally:
         db.close()
     sys.exit(exit_code)

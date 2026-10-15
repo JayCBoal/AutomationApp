@@ -31,6 +31,13 @@ Updated 2026-10-13. The order under "Work queue" is a proposal; the items under 
 6. **Prototype features.** Which of these carry forward: start at step, stop after step, skip steps; per-step success, warning and failure return codes; and a "use date" (business date) for date masks, which today always show the moment the run started?
 
 7. **What "inside the scheduler" means first.** The goal is for AutoApp to be used from within a scheduling product. Decide the first integration target and its shape: for example, job definitions edited in the scheduler's interface through AutoApp's API, results written back to the scheduler's job log, and single sign-on. This raises the priority of the CRUD API relative to a standalone web interface.
+   - **Put off for now (2026-10-15):** there is no WLA software on the development machine to integrate with. The Run Job page stands in for a scheduler meanwhile.
+   - **The user's thoughts so far (2026-10-15), for when this comes back:**
+     - In the WLA's own job editor, creating or editing a job of the AutoApp type (whatever it ends up being called) opens AutoApp's Job Detail page.
+     - Ideally the integration goes both ways, so that the AutoApp job's attributes are visible in the host WLA's interface. Whether that is feasible is not known yet.
+     - Most other pages only need to be reachable from the standalone AutoApp interface, as they are used less often.
+     - The exception is the Operations Log, seen as AutoApp's stand-out feature: reaching it from inside the host WLA's interface is a must.
+   - **Still open from earlier:** which values matter (an order date and the like; Control-M must be order-date aware, and AutoApp should gather everything the source WLA job has and be able to map it), which direction first, and which scheduler first.
 
 8. **Repository housekeeping.** `AutomationApp/_gemini_debris/` and the zip files in `PriorArt/CodeRepo/backup/` can be deleted once no longer wanted.
 
@@ -51,9 +58,9 @@ Every page of the web interface is built. See [UI_VISION.md](UI_VISION.md) for w
    - REST call
    - Send email
 
-### Then: the scheduler conversation
+### Put off: the scheduler conversation
 
-2. **Scheduler integration.** Decision 7. The questions still open: which values matter (an order date and the like), which direction first, and which scheduler first.
+2. **Scheduler integration.** Decision 7, which holds the user's thoughts so far. Put off on 2026-10-15 because no WLA software is available to try it against.
 
 ### Then: breadth
 

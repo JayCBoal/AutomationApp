@@ -1,20 +1,21 @@
 """
 The records of what happened: job runs, and changes to definitions.
 
-    GET /api/v1/runs      Job History: one row per run of a job
+    GET /api/v1/runs             Job History: one row per run of a job
+    GET /api/v1/runs/{run_id}    one run, with its job log
     GET /api/v1/audits    Audit Log: one row per change to a job, endpoint, application, entity or site
 """
 import json
 from datetime import datetime
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import case, func
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import Audit, JobRun, Operation
+from app.models import Audit, JobRun, JobRunLog, Operation
 
 MAX_RESULTS = 500
 router = APIRouter(tags=["History"])
@@ -34,6 +35,7 @@ class RunOut(BaseModel):
     error: Optional[str] = None
     operations: int
     failed_operations: int
+    has_log: bool = False
 
 
 @router.get("/api/v1/runs", response_model=List[RunOut])
@@ -71,18 +73,43 @@ def list_runs(
             .filter(Operation.JobRun_id.in_([run.id for run in runs])).group_by(Operation.JobRun_id)
         )
         counts = {run_id: (total, int(failed or 0)) for run_id, total, failed in rows}
-    return [
-        RunOut(
-            run_id=run.RunID, job_key=run.JobKey, instance_id=run.SchedulerInstanceID, run_number=run.RunNumber,
-            scheduler=run.SchedulerName, host=run.Host, status=run.Status, started=run.StartedDateTime,
-            ended=run.EndedDateTime,
-            duration_seconds=(run.EndedDateTime - run.StartedDateTime).total_seconds()
-            if run.StartedDateTime and run.EndedDateTime else None,
-            error=run.ErrorMessage,
-            operations=counts.get(run.id, (0, 0))[0], failed_operations=counts.get(run.id, (0, 0))[1],
-        )
-        for run in runs
-    ]
+    logged = set()
+    if runs:
+        logged = {run_id for (run_id,) in db.query(JobRunLog.JobRun_id).filter(
+            JobRunLog.JobRun_id.in_([run.id for run in runs])).distinct()}
+    return [_describe(run, counts.get(run.id, (0, 0)), run.id in logged) for run in runs]
+
+
+def _describe(run: JobRun, counts, has_log: bool) -> RunOut:
+    return RunOut(
+        run_id=run.RunID, job_key=run.JobKey, instance_id=run.SchedulerInstanceID, run_number=run.RunNumber,
+        scheduler=run.SchedulerName, host=run.Host, status=run.Status, started=run.StartedDateTime,
+        ended=run.EndedDateTime,
+        duration_seconds=(run.EndedDateTime - run.StartedDateTime).total_seconds()
+        if run.StartedDateTime and run.EndedDateTime else None,
+        error=run.ErrorMessage, operations=counts[0], failed_operations=counts[1], has_log=has_log,
+    )
+
+
+class RunDetail(RunOut):
+    log: List[str] = []
+
+
+@router.get("/api/v1/runs/{run_id}", response_model=RunDetail)
+def get_run(run_id: str, db: Session = Depends(get_db)):
+    """
+    One run, with its job log as far as it has arrived: the runner sends it after
+    each step, so a run still going shows what it has done so far. Secret values
+    were masked by the runner.
+    """
+    run = db.query(JobRun).filter(JobRun.RunID == run_id).first()
+    if run is None:
+        raise HTTPException(404, f"AutoApp has no record of run '{run_id}'.")
+    total, failed = (db.query(func.count(Operation.id), func.sum(case((Operation.OpStatus == "FAILED", 1), else_=0)))
+                     .filter(Operation.JobRun_id == run.id).one())
+    chunks = db.query(JobRunLog.LogText).filter(JobRunLog.JobRun_id == run.id).order_by(JobRunLog.Seq).all()
+    lines = [line for (text,) in chunks for line in text.split("\n")]
+    return RunDetail(**_describe(run, (total or 0, int(failed or 0)), bool(chunks)).model_dump(), log=lines)
 
 
 class AuditOut(BaseModel):

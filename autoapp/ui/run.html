@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Run Job - AutoApp</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="css/autoapp.css">
+    <script src="js/common.js"></script>
+    <script src="js/run.js"></script>
+    <script defer src="vendor/alpine-3.17.4.min.js"></script>
+</head>
+<body>
+<div id="app-chrome" data-title="Run Job"></div>
+
+<!-- Runs a job now, the way a scheduler would, and shows its job log as it runs -->
+<main x-data="runPage()">
+    <form class="panel" @submit.prevent="start()" aria-label="Job to run">
+        <div class="detail-grid">
+            <label for="run-job">Job <span class="required" title="Required">*</span></label>
+            <div class="create-row">
+                <input id="run-job" type="text" list="lookup-jobs" x-model="jobKey" autocomplete="off"
+                       placeholder="Type to find a job" @change="checkJob()" @input.debounce.300ms="checkJob()">
+                <a x-show="known" :href="'job.html?' + new URLSearchParams({ key: jobKey.trim() })" class="small">Open the job</a>
+            </div>
+
+            <span class="label">Would it run?</span>
+            <div id="run-check">
+                <span class="muted" x-show="!known">Choose a job.</span>
+                <template x-if="known && check">
+                    <div>
+                        <span class="status" :class="check.valid ? 'SUCCESS' : 'FAILED'"
+                              x-text="check.valid ? 'Ready to run' : (check.problems.length + (check.problems.length === 1 ? ' problem' : ' problems') + ' found by the pre-run check')"></span>
+                        <ul class="problems" x-show="!check.valid">
+                            <template x-for="problem in check.problems"><li x-text="problem"></li></template>
+                        </ul>
+                        <p class="muted small" x-show="!check.valid">It can still be run, to see how it fails.</p>
+                    </div>
+                </template>
+            </div>
+
+            <label for="run-instance">Instance ID</label>
+            <div class="create-row">
+                <input id="run-instance" type="text" x-model="instanceId" maxlength="100" autocomplete="off"
+                       placeholder="Made from the time, e.g. UI-20261015-183012">
+                <span class="muted small">What a scheduler would pass. Each run of a job needs its own.</span>
+            </div>
+
+            <label for="run-level">Log level</label>
+            <div class="create-row">
+                <select id="run-level" x-model="logLevel">
+                    <template x-for="level in levels"><option x-text="level" :selected="level === logLevel"></option></template>
+                </select>
+                <span class="muted small">DETAIL logs every action; SUMMARY one line per step; DEBUG adds troubleshooting detail; SILENT errors only.</span>
+            </div>
+        </div>
+        <div class="actions">
+            <button type="submit" class="primary" id="run-button" :disabled="busy || running || !known">Run</button>
+            <span class="muted small">The server starts the runner as a separate process, as a scheduler would.</span>
+        </div>
+    </form>
+
+    <p class="message error" id="page-error" x-show="error" x-text="error" role="alert" x-cloak></p>
+
+    <template x-if="launch">
+        <section class="panel run-panel" aria-label="The run">
+            <div class="steps-head">
+                <h2 class="section" style="margin-top: 0">The run</h2>
+                <span class="status" id="run-outcome" :class="outcomeClass" x-text="outcome"></span>
+                <span class="muted small" x-show="launch.exit_code !== null" x-text="'exit code ' + launch.exit_code"></span>
+            </div>
+            <p class="small"><code id="run-command" x-text="launch.command"></code></p>
+            <p class="small" x-show="run">
+                <span x-text="'Started ' + time(run && run.started)"></span>
+                <span x-show="run && run.ended" x-text="' · took ' + duration(run)"></span>
+                <span x-show="run" x-text="' · ' + (run ? run.operations : 0) + ' operations'"></span>
+                · <a id="run-operations" :href="run ? operationsLink(run) : '#'">See its operations</a>
+                · <a :href="'log.html?' + new URLSearchParams({ run: launch.run_id })">Its log page</a>
+                · <a href="history.html">Job History</a>
+            </p>
+            <div class="error-text small" x-show="run && run.error" x-text="run && run.error"></div>
+
+            <pre class="job-log" id="job-log" x-ref="log" @scroll="logScrolled($event)"
+                 x-show="(run && run.log.length) || (launch.state === 'FINISHED' && launch.output.length && !run)"><template
+                 x-for="(line, index) in (run && run.log.length ? run.log : launch.output)" :key="index"><span
+                 :class="lineClass(line)" x-text="line + '\n'"></span></template></pre>
+            <p class="muted small" x-show="running && !(run && run.log.length)">Waiting for the runner...</p>
+        </section>
+    </template>
+</main>
+</body>
+</html>

@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Job Log - AutoApp</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="css/autoapp.css">
+    <script src="js/common.js"></script>
+    <script src="js/run.js"></script>
+    <script defer src="vendor/alpine-3.17.4.min.js"></script>
+</head>
+<body>
+<!-- One run's job log: log.html?run=<RunID>. Opened from Job History. -->
+<div id="app-chrome" data-title="Job Log" data-nav="history.html"></div>
+
+<main x-data="runLogPage()">
+    <p class="message error" id="page-error" x-show="error" x-text="error" role="alert" x-cloak></p>
+    <p class="message" x-show="runMissing" x-cloak>AutoApp has no record of this run.</p>
+
+    <template x-if="run">
+        <section class="panel run-panel" aria-label="The run">
+            <div class="steps-head">
+                <h2 class="section" style="margin-top: 0"><a :href="jobLink(run)" x-text="run.job_key"></a></h2>
+                <span class="status" id="run-outcome" :class="run.status" x-text="run.status"></span>
+            </div>
+            <p class="small">
+                instance <code x-text="run.instance_id"></code>
+                <span x-show="run.run_number > 1" x-text="'· run ' + run.run_number"></span>
+                <span x-show="run.scheduler" x-text="'· scheduler ' + run.scheduler"></span>
+                <span x-show="run.host" x-text="'· on ' + run.host"></span>
+            </p>
+            <p class="small">
+                <span x-text="'Started ' + time(run.started)"></span>
+                <span x-show="run.ended" x-text="' · ended ' + time(run.ended) + ' · took ' + duration(run)"></span>
+                <span x-text="' · ' + run.operations + ' operations'"></span>
+                · <a id="run-operations" :href="operationsLink(run)">See its operations</a>
+            </p>
+            <div class="error-text small" x-show="run.error" x-text="run.error"></div>
+
+            <pre class="job-log" id="job-log" x-ref="log" @scroll="logScrolled($event)" x-show="run.log.length"><template
+                 x-for="(line, index) in run.log" :key="index"><span :class="lineClass(line)" x-text="line + '\n'"></span></template></pre>
+            <p class="message" id="no-log" x-show="run.log.length === 0 && run.status !== 'RUNNING'">No job log was recorded
+                for this run. Runs from before AutoApp kept job logs have none.</p>
+            <p class="muted small" x-show="run.status === 'RUNNING'">Still running; the log fills in as each step ends.</p>
+        </section>
+    </template>
+</main>
+</body>
+</html>

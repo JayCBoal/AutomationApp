@@ -17,6 +17,7 @@ DROP TABLE IF EXISTS Sources;
 DROP TABLE IF EXISTS Deliveries;
 DROP TABLE IF EXISTS Operations;
 DROP TABLE IF EXISTS JobStepParameters;
+DROP TABLE IF EXISTS JobRunLogs;
 DROP TABLE IF EXISTS Endpoints;
 DROP TABLE IF EXISTS TagAssignments;
 DROP TABLE IF EXISTS Sites;
@@ -229,6 +230,16 @@ CREATE TABLE `Endpoints` (
 	UNIQUE (`Name`), 
 	FOREIGN KEY(`Site_MasterObject_id`) REFERENCES `Sites` (`MasterObject_id`) ON DELETE SET NULL, 
 	FOREIGN KEY(`Application_MasterObject_id`) REFERENCES `Applications` (`MasterObject_id`) ON DELETE SET NULL
+)ENGINE=InnoDB CHARSET=utf8mb4 COLLATE utf8mb4_bin;
+
+CREATE TABLE `JobRunLogs` (
+	id INTEGER NOT NULL AUTO_INCREMENT, 
+	`JobRun_id` INTEGER NOT NULL, 
+	`Seq` INTEGER NOT NULL, 
+	`LogText` MEDIUMTEXT NOT NULL, 
+	PRIMARY KEY (id), 
+	CONSTRAINT uq_runlog_run_seq UNIQUE (`JobRun_id`, `Seq`), 
+	FOREIGN KEY(`JobRun_id`) REFERENCES `JobRuns` (id) ON DELETE CASCADE
 )ENGINE=InnoDB CHARSET=utf8mb4 COLLATE utf8mb4_bin;
 
 CREATE TABLE `JobStepParameters` (

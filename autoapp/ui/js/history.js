@@ -17,6 +17,7 @@ function jobHistory() {
         init() { this.startSearch(); },
         time: AutoApp.formatTime,
         jobLink(run) { return "job.html?" + new URLSearchParams({ key: run.job_key }); },
+        logLink(run) { return "log.html?" + new URLSearchParams({ run: run.run_id }); },
         operationsLink(run) {
             return "operations.html?" + new URLSearchParams({ job_key: run.job_key, instance_id: run.instance_id });
         },

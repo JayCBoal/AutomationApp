@@ -12,11 +12,14 @@ LogLevel step parameter:
 
 Errors go to stderr and everything else to stdout. Values of variables marked
 secret are replaced with ******** wherever they would appear.
+
+Every line written is also kept, as written, so the runner can send the log with
+the run's other records (take_lines); the server keeps it with the run.
 """
 import logging
 import sys
 from contextlib import contextmanager
-from typing import Iterable, Optional
+from typing import Iterable, List, Optional
 
 SUMMARY = 25        # between logging.INFO (20) and logging.WARNING (30)
 LEVELS = {"DEBUG": logging.DEBUG, "DETAIL": logging.INFO, "SUMMARY": SUMMARY, "SILENT": logging.ERROR}
@@ -56,6 +59,19 @@ class _RedactSecrets(logging.Filter):
         return True
 
 
+class _Keep(logging.Handler):
+    """Keeps every line written, already masked and formatted, until take_lines() collects them."""
+    def __init__(self):
+        super().__init__()
+        self.lines: List[str] = []
+
+    def emit(self, record):
+        self.lines.append(self.format(record))
+
+
+_kept = _Keep()
+
+
 def configure(level: Optional[str] = None, secrets: Iterable[str] = ()) -> None:
     """Sets up the job log for this process. Call once, before the job starts."""
     for handler in list(_logger.handlers):
@@ -66,11 +82,18 @@ def configure(level: Optional[str] = None, secrets: Iterable[str] = ()) -> None:
     out.addFilter(lambda record: record.levelno < logging.ERROR)
     err = logging.StreamHandler(sys.stderr)
     err.setLevel(logging.ERROR)
-    for handler in (out, err):
+    _kept.lines = []
+    for handler in (out, err, _kept):
         handler.setFormatter(_Formatter())
         handler.addFilter(redact)
         _logger.addHandler(handler)
     _logger.setLevel(level_number(level))
+
+
+def take_lines() -> List[str]:
+    """The lines written since the last call, masked as they were written."""
+    lines, _kept.lines = _kept.lines, []
+    return lines
 
 
 @contextmanager

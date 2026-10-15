@@ -255,7 +255,16 @@ class RunEndRecord(BaseModel):
     EndedAtUtc: datetime
 
 
-TelemetryRecord = Annotated[Union[RunStartRecord, OperationRecord, RunEndRecord], Field(discriminator="Record")]
+class LogRecord(BaseModel):
+    """Lines of the job log, as the runner printed them, secrets already masked."""
+    Record: Literal["LOG"]
+    RunID: str
+    Seq: int
+    Lines: List[str]
+
+
+TelemetryRecord = Annotated[Union[RunStartRecord, OperationRecord, LogRecord, RunEndRecord],
+                            Field(discriminator="Record")]
 
 
 class TelemetryBatch(BaseModel):

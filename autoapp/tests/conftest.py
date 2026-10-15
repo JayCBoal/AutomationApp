@@ -165,12 +165,17 @@ def seed(db):
     return Seeder(db)
 
 
-def read_spool(spool_dir) -> list:
-    """Returns every record from the completed (.jsonl) spool files in a folder."""
+def read_spool(spool_dir, with_log=False) -> list:
+    """
+    Returns the records from the completed (.jsonl) spool files in a folder. The job
+    log's LOG records are left out unless with_log is set, as most tests are about the rest.
+    """
     records = []
     for spool_file in sorted(Path(spool_dir).glob("*.jsonl")):
         for line in spool_file.read_text().splitlines():
-            records.append(json.loads(line))
+            record = json.loads(line)
+            if with_log or record["Record"] != "LOG":
+                records.append(record)
     return records
 
 
@@ -221,7 +226,8 @@ def live_api(db, db_url, tmp_path):
          "--log-level", "warning"],
         cwd=AUTOAPP_DIR,
         # The server needs to know where working folders live to check a job's file locations
-        env={**subprocess_env(db_url), "AUTOAPP_WORKING_ROOT": str(tmp_path / "work")},
+        env={**subprocess_env(db_url), "AUTOAPP_WORKING_ROOT": str(tmp_path / "work"),
+             "AUTOAPP_SPOOL_DIR": str(tmp_path / "spool")},
     )
     try:
         deadline = time.time() + 20

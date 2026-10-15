@@ -6,6 +6,16 @@ Notable structural, schema and design changes to AutoApp, newest first. Line-by-
 
 ## 2026-10-15
 
+### Running jobs from the web interface, and keeping job logs
+
+- **Added:** the job log is kept with each run. The runner sends its lines, secrets already masked, as `LOG` records after the run starts, after each step and at the end; they are stored in the new `JobRunLogs` table. `GET /api/v1/runs/{run_id}` gives a run with its log.
+- **Added:** a Job Log page, and a Log link on every row of Job History. Runs from before this change have no log.
+- **Added:** the Run Job page and `POST /api/v1/launches`. The server starts the real runner as a separate process, as a scheduler would, with "AutoApp UI" as its scheduler, and the page follows the run's log as it goes. The job editor has a Run button.
+- **Added:** the runner's `--run-id`, used by the Run Job page so it can follow the run it started. A scheduler leaves it out.
+- **Changed:** the runner sends its records as soon as the run starts, not only after the first step, so a run shows as running at once.
+- **Decided:** scheduler integration is put off, as there is no WLA software to try it against. The user's thoughts on it are recorded in TO-DO decision 7.
+- **Migration:** add the `JobRunLogs` table (see `SQL/Create_Tables.sql`). `autoapp_dev` has it.
+
 ### Tags
 
 - **Changed:** `Tags` has a parent (`Parent_MasterObject_id`), nested to any depth, and `Name` in place of `TagName`. Names are unique under one parent, so a tag is named by its path, `Finance/Reporting`. `Category` is dropped.

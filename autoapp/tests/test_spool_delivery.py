@@ -63,7 +63,8 @@ def test_runner_posts_after_each_step_and_sends_each_record_once(db, job, tmp_pa
     from engine.runner import run_job
     posts = []
     monkeypatch.setattr("engine.telemetry_client.post_records",
-                        lambda api_url, records, timeout=None: posts.append([r["Record"] for r in records]))
+                        lambda api_url, records, timeout=None: posts.append(
+                            [r["Record"] for r in records if r["Record"] != "LOG"]))
     db.commit()
 
     exit_code = run_job(db, "DEV-LOAD", "88421", str(tmp_path / "spool"),
@@ -71,7 +72,8 @@ def test_runner_posts_after_each_step_and_sends_each_record_once(db, job, tmp_pa
 
     assert exit_code == 0
     assert posts == [
-        ["RUN_START", "OPERATION", "OPERATION"],    # after step 1
+        ["RUN_START"],                              # as it starts, so the run shows as running at once
+        ["OPERATION", "OPERATION"],                 # after step 1
         ["OPERATION", "OPERATION"],                 # after step 2
         ["RUN_END"],                                # when the run ends
     ]

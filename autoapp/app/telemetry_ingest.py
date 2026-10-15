@@ -1,5 +1,5 @@
 """
-Loads telemetry records (see app/schemas.py) into JobRuns and Operations.
+Loads telemetry records (see app/schemas.py) into JobRuns, Operations and JobRunLogs.
 
 Used by the /api/v1/telemetry/records route and by engine.spool_delivery.
 Loading is safe to repeat: a run is identified by its RunID and an operation by
@@ -11,8 +11,8 @@ from typing import Any, Dict, List, Optional
 
 from sqlalchemy.orm import Session
 
-from app.models import Endpoint, Job, JobRun, JobStep, Operation
-from app.schemas import OperationRecord, RunEndRecord, RunStartRecord, TelemetryBatch, TelemetryIngestResult
+from app.models import Endpoint, Job, JobRun, JobRunLog, JobStep, Operation
+from app.schemas import LogRecord, OperationRecord, RunEndRecord, RunStartRecord, TelemetryBatch, TelemetryIngestResult
 
 
 def _naive_utc(value: Optional[datetime]) -> Optional[datetime]:
@@ -102,6 +102,15 @@ def ingest_batch(db: Session, batch: TelemetryBatch) -> TelemetryIngestResult:
                     EndedDateTime=_naive_utc(record.EndedAtUtc),
                 ))
                 result.operations_added += 1
+
+            elif isinstance(record, LogRecord):
+                already = db.query(JobRunLog.id).filter(
+                    JobRunLog.JobRun_id == run.id, JobRunLog.Seq == record.Seq
+                ).first()
+                if already:
+                    result.duplicates_skipped += 1
+                    continue
+                db.add(JobRunLog(JobRun_id=run.id, Seq=record.Seq, LogText="\n".join(record.Lines)))
 
             elif isinstance(record, RunEndRecord):
                 if run.EndedDateTime is not None:

@@ -5,6 +5,7 @@ Every run gets its own spool file, one JSON record per line:
 
     RUN_START   which job, and the identifiers the scheduler passed
     OPERATION   one thing a step did: for a file step, one file
+    LOG         lines of the job log, as the runner printed them (secrets masked)
     RUN_END     how the run finished
 
 The file is "<name>.jsonl.tmp" while the run is in progress and is renamed to
@@ -109,6 +110,11 @@ class LocalSpoolTelemetryClient:
             "StartedAtUtc": started_at,
             "EndedAtUtc": ended_at or utc_now_iso(),
         })
+
+    def log_lines(self, lines: List[str]) -> None:
+        """Records lines of the job log. Nothing is written for none."""
+        if lines:
+            self._write("LOG", {"Lines": list(lines)})
 
     def end_run(self, status: str, error: Optional[str] = None) -> None:
         self._write("RUN_END", {"Status": status, "Error": error, "EndedAtUtc": utc_now_iso()})

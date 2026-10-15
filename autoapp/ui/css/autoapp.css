@@ -341,3 +341,12 @@ tr.overridden code { text-decoration: line-through; color: var(--muted); }
 table.tag-variables { max-width: 900px; }
 table.tag-variables td:nth-child(1) { width: 30%; }
 table.tag-variables td:nth-child(2) { width: 35%; }
+
+/* ---------- Job logs ---------- */
+.job-log { background: var(--input); border: 1px solid var(--border); border-radius: 4px; padding: 10px 12px;
+           max-height: 65vh; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; margin: 10px 0 0;
+           font-family: ui-monospace, "DejaVu Sans Mono", monospace; font-size: 12.5px; line-height: 1.45; }
+.job-log .log-error { color: var(--failure); }
+.job-log .log-warn { color: var(--warning); }
+.job-log .log-debug { color: var(--muted); }
+.run-panel .steps-head .status { font-weight: 600; }

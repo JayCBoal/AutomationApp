@@ -51,7 +51,7 @@
         <p class="message capped" x-show="capped">Only the newest <span x-text="rows.length"></span> are shown.</p>
         <div class="table-scroll" x-show="rows.length > 0">
             <table class="results">
-                <thead><tr><th>Job</th><th>Status</th><th>Started</th><th>Took</th><th>Scheduler</th><th>Files</th></tr></thead>
+                <thead><tr><th>Job</th><th>Status</th><th>Started</th><th>Took</th><th>Scheduler</th><th>Files</th><th>Log</th></tr></thead>
                 <tbody>
                     <template x-for="run in rows" :key="run.run_id">
                         <tr>
@@ -72,6 +72,10 @@
                                 <a class="files" :href="operationsLink(run)"
                                    x-text="run.operations + (run.operations === 1 ? ' operation' : ' operations')"></a>
                                 <div class="error-text small" x-show="run.failed_operations" x-text="run.failed_operations + ' failed'"></div>
+                            </td>
+                            <td class="nowrap">
+                                <a class="run-log" :href="logLink(run)" x-show="run.has_log || run.status === 'RUNNING'">Log</a>
+                                <span class="muted small" x-show="!run.has_log && run.status !== 'RUNNING'">None kept</span>
                             </td>
                         </tr>
                     </template>

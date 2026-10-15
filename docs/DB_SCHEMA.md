@@ -35,6 +35,7 @@ erDiagram
     MasterObjects ||--o| Endpoints : "MasterObject_id"
     Sites |o--o{ Endpoints : "Site_MasterObject_id"
     Applications |o--o{ Endpoints : "Application_MasterObject_id"
+    JobRuns ||--o{ JobRunLogs : "JobRun_id"
     JobSteps ||--o{ JobStepParameters : "JobStep_id"
     JobRuns ||--o{ Operations : "JobRun_id"
     JobSteps |o--o{ Operations : "JobStep_id"
@@ -193,6 +194,12 @@ erDiagram
         datetime StartedDateTime
         datetime EndedDateTime
     }
+    JobRunLogs {
+        int id PK
+        int JobRun_id FK "required"
+        int Seq "required"
+        text LogText "required"
+    }
     Operations {
         int id PK
         int JobRun_id FK "required"
@@ -234,6 +241,7 @@ erDiagram
     MasterObjects ||--o| Endpoints : "MasterObject_id"
     Sites |o--o{ Endpoints : "Site_MasterObject_id"
     Applications |o--o{ Endpoints : "Application_MasterObject_id"
+    JobRuns ||--o{ JobRunLogs : "JobRun_id"
     JobRuns ||--o{ Operations : "JobRun_id"
     JobSteps |o--o{ Operations : "JobStep_id"
     Endpoints |o--o{ Operations : "SourceEndpoint_id"
@@ -247,4 +255,5 @@ erDiagram
 | `Tags` | `Parent_MasterObject_id`, `Name` |
 | `Variables` | `MasterObject_id`, `VarName` |
 | `TagAssignments` | `Tag_MasterObject_id`, `Target_MasterObject_id` |
+| `JobRunLogs` | `JobRun_id`, `Seq` |
 | `Operations` | `JobRun_id`, `Seq` |

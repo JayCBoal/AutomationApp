@@ -10,7 +10,8 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.catalog import sync_catalog
 from app.database import get_db
 from app.routers import (
-    definitions, endpoints, history, jobs, lookups, operations, registry, settings, step_types, telemetry, variables
+    definitions, endpoints, history, jobs, launches, lookups, operations, registry, settings, step_types, telemetry,
+    variables
 )
 from app.schema_check import out_of_date_message, schema_problems
 
@@ -86,6 +87,7 @@ for router in definitions.routers:
     app.include_router(router)
 app.include_router(variables.router)
 app.include_router(settings.router)
+app.include_router(launches.router)
 
 
 @app.get("/health", tags=["Health"])

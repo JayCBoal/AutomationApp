@@ -325,7 +325,8 @@ What the runner prints while a job runs, for the scheduler to capture against th
 
 **Built**
 
-- **Spool** (`engine/telemetry_client.py`). The runner writes one JSON line per record to a spool file unique to the run: `RUN_START`, one `OPERATION` per file, and `RUN_END`.
+- **Spool** (`engine/telemetry_client.py`). The runner writes one JSON line per record to a spool file unique to the run: `RUN_START`, one `OPERATION` per file, `LOG` records carrying the job log, and `RUN_END`.
+- **Job logs kept with each run.** Every line the runner prints is also kept (secret values already masked) and sent as `LOG` records: after the run starts, after each step, and at the end. They are stored in `JobRunLogs`, one row per record, so a run's log can be read with the run, even while it is going. A step's lines arrive when that step ends.
   - The file is named `.jsonl.tmp` while the job is running and renamed to `.jsonl` when it finishes.
   - Writing locally first means a job never fails, waits or loses its record because the API or database is unreachable.
 - **Delivery through the API.** If the runner is given an API address (`--api-url` or `AUTOAPP_API_URL`), it posts the new records after each step and at the end of the run. A spool file whose records all arrived is moved to a `delivered` subfolder.
@@ -374,6 +375,8 @@ FastAPI application in `autoapp/app/`. The interactive description of every rout
 | `GET /api/v1/tag-variables?tag=...&tag=...&own=...` | What a set of tags gives together and where each variable comes from, and their conflicts; secrets masked. The pages ask it before a tag is added. Built; tested over HTTP |
 | `GET /api/v1/settings`, `PUT /api/v1/settings/{key}` | The system-wide settings. Built; tested over HTTP |
 | `GET /api/v1/runs`, `GET /api/v1/audits` | Job History and the Audit Log. Built; tested over HTTP |
+| `GET /api/v1/runs/{run_id}` | One run, with its job log as far as it has arrived. Built; tested over HTTP |
+| `POST /api/v1/launches`, `GET /api/v1/launches/{id}` | Run a job now: the server starts the real runner as a separate process, as a scheduler would, and says when it has finished. Built; tested over HTTP |
 | `POST /api/v1/applications`, `/entities`, `/sites` | Register an application, entity or site. Built; tested over HTTP |
 | `GET /api/v1/jobs/{job_key}/check` | Built; tested over HTTP |
 | `GET /ui/...` and `/` | The web interface's files; `/` redirects to it |
@@ -382,7 +385,9 @@ FastAPI application in `autoapp/app/`. The interactive description of every rout
 
 ## 9. Security
 
-Nothing in this section is built.
+Nothing in this section is built, apart from keeping secret values out of the pages, the job log and the operation records.
+
+- Anyone who can reach the web interface can run any job from the Run Job page.
 
 - `Credentials.SecretData` is stored as plain text.
 - `/jobs/init` returns every variable, including those flagged `IsSecret`.
@@ -440,7 +445,11 @@ Nothing in this section is built in the rewrite. The 2024 prototype tracked exte
   - An endpoint links to the files taken from it and delivered to it on the Operations Log. Renaming an endpoint renames it in every job step that names it.
   - **Tags panel** (everything but a tag): the tags it carries, as links, and a table of what they give it and from which tag, with secrets masked and a struck-out value where its own variable wins. While editing, a tag is chosen from a drop-down (or made with **New...**); before it is added, the panel shows the variables it would give and any conflict it would bring with the tags already there. The panel is one piece of markup and code in `common.js` (`fillTagPanels`, `tagEditing`), shared with the job editor.
   - A tag's page shows its parent, the variables it inherits from its parents and from which one, and, under Used by, its child tags and what carries it.
-- **Job History** page: every run, newest first, with its status, error, timing, the scheduler's identifiers, and a link to the files it handled.
+- **Job History** page: every run, newest first, with its status, error, timing, the scheduler's identifiers, a link to the files it handled, and a **Log** link to its job log.
+- **Job Log** page (`log.html?run=...`): one run's job log as the runner printed it, with errors and warnings picked out, and the run's status, times and a link to its operations. A run still going is followed until it ends.
+- **Run Job** page: runs a job now, as a scheduler would, for trying jobs out without one. Choose a job (it shows whether it would run), an instance ID (one is made from the time if left blank, e.g. `UI-20261015-183012`) and a log level, and **Run**. The server starts the real runner as a separate process, with "AutoApp UI" as its scheduler; the page shows the command, follows the run and shows its log as each step ends, then the outcome and exit code. The job editor has a **Run** button that opens this page with the job chosen.
+  - The server remembers its launches only until it restarts; the runs themselves are in Job History as usual.
+  - The runner it starts keeps its spool in `autoapp/spool`, or where `AUTOAPP_SPOOL_DIR` says.
 - **Audit Log** page: every change to a definition or a setting, newest first, saying in words what changed, with a link to the thing changed if it still exists.
 - **Settings** page: each system-wide setting with what it means, drawn from the declarations in `engine/settings.py`. The variable precedence is a list put in order with arrows. Each setting is saved on its own, can be undone, or put back to its default.
 - **Main Index** page, linking to every page.

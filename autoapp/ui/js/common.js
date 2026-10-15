@@ -22,6 +22,7 @@ const AutoApp = (() => {
         { group: "centre", name: "Entities", href: "search.html?kind=entities", about: "Outside parties: vendors, clients, partners" },
         { group: "centre", name: "Sites", href: "search.html?kind=sites", about: "An entity's servers" },
         { group: "centre", name: "Jobs", href: "jobs.html", about: "Job definitions, steps and parameters" },
+        { group: "centre", name: "Run Job", href: "run.html", about: "Run a job now, as a scheduler would, and watch its log" },
         { group: "centre", name: "Endpoints", href: "search.html?kind=endpoints", about: "The registered places files come from and go to" },
         { group: "centre", name: "Tags", href: "search.html?kind=tags", about: "Labels anything can carry, and the variables they give" },
         { group: "right", name: "Operations Log", href: "operations.html", about: "Every file handled, and each file's trace" },

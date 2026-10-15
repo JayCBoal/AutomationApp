@@ -107,6 +107,8 @@ The web interface is plain HTML, CSS and JavaScript in `autoapp/ui/`, with no bu
 
 ## Trying the demo jobs
 
+The quickest way is the **Run Job** page in the web interface: choose a job and press **Run**. The server runs it the way a scheduler would and shows its job log as it goes. Every run's log can be opened again from **Job History**. The commands below do the same from a terminal.
+
 The sample data has two pairs of jobs. Each pair hands files from one application to another, and the second pair shows the newer step types. Run them in this order: each second job picks up what the first one delivered. On the development machine, start in a terminal where `dev_env.sh` has been sourced, with the server running in another (`autoapp_server`), so each run's record goes straight into the database.
 
 ```bash

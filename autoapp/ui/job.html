@@ -32,6 +32,8 @@
         </datalist>
         <span class="spacer"></span>
         <a class="button secondary" href="job.html?new" x-show="!editing">New job</a>
+        <a class="button secondary" id="run-job-button" x-show="job && !editing"
+           :href="job ? 'run.html?' + new URLSearchParams({ key: job.job_key }) : '#'">Run</a>
         <button type="button" class="secondary" id="edit-button" x-show="form && !editing" @click="edit()">Edit</button>
         <button type="button" class="secondary danger" id="delete-button" x-show="editing && job" :disabled="busy"
                 @click="remove()">Delete job</button>

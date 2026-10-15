@@ -109,6 +109,12 @@ classDiagram
         +datetime StartedDateTime
         +datetime EndedDateTime
     }
+    class JobRunLog {
+        +int id
+        +int JobRun_id
+        +int Seq
+        +text LogText
+    }
     class JobStep {
         +int id
         +int job_id

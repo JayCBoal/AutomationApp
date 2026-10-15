@@ -132,7 +132,7 @@ An endpoint has no direction. The same folder can be a destination for one job a
 
 Registering an endpoint, application, entity or site writes one too.
 
-**Planned:** audit rows for variables and the other definitions, as their editing is built, and an Audit Log page.
+Changing or deleting an application, entity, site or endpoint writes one as well, and the Audit Log page shows them.
 
 ### Source of truth
 
@@ -323,6 +323,8 @@ FastAPI application in `autoapp/app/`. The interactive description of every rout
 | `POST /api/v1/jobs/preview` | What an unsaved job would resolve to, and whether it would run. Saves nothing. Built; tested over HTTP |
 | `GET /api/v1/endpoints`, `POST /api/v1/endpoints` | List the registered endpoints; register a new one. Built; tested over HTTP |
 | `GET /api/v1/lookups` | The names offered in drop-downs. Built; tested over HTTP |
+| `GET`, `PUT`, `DELETE /api/v1/{applications,entities,sites,endpoints}[/{name}]` | Search, view, change and remove them. Built; tested over HTTP |
+| `GET /api/v1/runs`, `GET /api/v1/audits` | Job History and the Audit Log. Built; tested over HTTP |
 | `POST /api/v1/applications`, `/entities`, `/sites` | Register an application, entity or site. Built; tested over HTTP |
 | `GET /api/v1/jobs/{job_key}/check` | Built; tested over HTTP |
 | `GET /ui/...` and `/` | The web interface's files; `/` redirects to it |
@@ -379,7 +381,16 @@ Nothing in this section is built in the rewrite. The 2024 prototype tracked exte
   - **Live preview:** as the form is edited, each file location shows where it really is, and any value with a placeholder shows what it resolves to, or why it cannot be. "Would it run?" follows the form too, before anything is saved. Secret values are masked.
   - A placeholder naming a variable the job does not have offers **Add variable ...**, which adds it to the panel ready for its value.
   - That window's Application and Site boxes have a **New...** of their own, and the New site window has one for its Entity. All four windows are one mechanism in `common.js` (`createInPlace`), driven by a short description of each form, so a later page gets them by asking.
-- **Main Index** page, linking to every page. Pages not built yet are shown greyed out.
+- **Application, Entity, Site and Endpoint** pages: one search page and one detail page serve all four (`search.html?kind=sites`, `detail.html?kind=sites&name=...`), drawn from a short description of each kind in `definitions.js`.
+  - Search by any field; each row says how much uses it.
+  - **New** opens the detail page blank and unlocked, so a new one is created with its variables and its active flag in one go. The small "New..." windows remain for registering something from inside another form.
+  - The detail page arrives locked; Edit, Submit and Cancel work as on the job editor. Fields that name another kind have its drop-down and a **New...** link.
+  - **Used by** lists what refers to it, as links. Something still in use cannot be deleted, and the page says what uses it.
+  - Applications, entities and sites have a Variables panel. An application's `Root`, which its endpoints' paths use, is set here.
+  - An endpoint links to the files taken from it and delivered to it on the Operations Log. Renaming an endpoint renames it in every job step that names it.
+- **Job History** page: every run, newest first, with its status, error, timing, the scheduler's identifiers, and a link to the files it handled.
+- **Audit Log** page: every change to a definition, newest first, saying in words what changed, with a link to the thing changed if it still exists.
+- **Main Index** page, linking to every page.
 
 **Planned**
 
@@ -388,7 +399,7 @@ Nothing in this section is built in the rewrite. The 2024 prototype tracked exte
 
 ## 12. Testing
 
-- Tests are in `autoapp/tests/` and run with `python3 -m pytest` (482 tests: about four and a half minutes on SQLite, six and a half on MariaDB).
+- Tests are in `autoapp/tests/` and run with `python3 -m pytest` (588 tests: about six minutes on SQLite, eight on MariaDB).
 - Each test builds its own temporary SQLite database and temporary folders. No test touches the working directory or a shared database.
 - The same suite runs against MariaDB when `AUTOAPP_TEST_DATABASE_URL` names a test database. Its tables are built once per run from `SQL/Create_Tables.sql`, the script an installation would use, and emptied before each test.
 - Tests run the real code. AutoApp's own components are not mocked. The runner tests launch the runner as a separate process, as a scheduler would.

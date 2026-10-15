@@ -2,7 +2,7 @@
 
 What the AutoApp web interface should contain and how it should behave. This is the specification the interface is built from.
 
-**Built so far:** the Main Index, the Job Search, the job editor (viewing, editing, creating and deleting a job), and the Operations Log, including the trace. See the blueprint for how the pages are put together.
+**Built:** every page in the navigation: the Main Index; Application, Entity, Site and Endpoint search and detail pages; the Job Search and job editor; the Operations Log with its trace; Job History; and the Audit Log. See the blueprint for how the pages are put together.
 
 It is based on the 2024 mockup deck (linked from the original design document) and adapted to the current data model. Items marked **Proposed** are not in the mockups and need a decision.
 
@@ -13,6 +13,7 @@ It is based on the 2024 mockup deck (linked from the original design document) a
 - Records of what happened (operations, audits, job history) are read-only and have no detail page; everything meaningful is shown in the search results.
 - Pages update in place. Expanding a job, reordering a step or unlocking a form does not reload the page.
 - **A box that names something registered elsewhere offers what there is.** Wherever a box takes the name of an endpoint, application, entity, site, job or scheduler, it has a drop-down of the existing names, narrowed by what is typed. This applies to search criteria and to editing alike, and to any such box added later. Free-text boxes, such as paths and filenames, have no list.
+- **New opens the full detail page.** A page's own "New" button opens a blank detail page, so everything can be set when creating, variables included.
 - **What a box names can be registered on the spot.** Where a box is for choosing something to use, as opposed to searching, it has a "New..." link that opens a small window to register one without leaving the page. That window follows the same rule, so windows open from one another: a new endpoint's site can be created from the endpoint window, and that site's entity from the site window. What is registered this way is created at once and offered in the drop-downs straight away.
 
 ## Navigation
@@ -51,14 +52,14 @@ A header with the AutoApp name and the page title, and a navigation bar on every
 | Page | Kind | Origin | Notes |
 | :--- | :--- | :--- | :--- |
 | Main Index | index | Mockup | **Built.** Links to every page |
-| Application Search / Detail | search, detail | Mockup | Name, abbreviation, description, support distribution list |
-| Entity Search / Detail | search, detail | Mockup (same pattern as Application) | An entity's sites are listed on its detail page |
-| Site Search / Detail | search, detail | Mockup (same pattern) | Host, port, protocol, owning entity, credential |
+| Application Search / Detail | search, detail | Mockup | **Built.** Name, abbreviation, description, support distribution list |
+| Entity Search / Detail | search, detail | Mockup (same pattern as Application) | **Built.** An entity's sites are listed on its detail page |
+| Site Search / Detail | search, detail | Mockup (same pattern) | **Built.** Host, port, protocol, owning entity, credential |
 | Job Search / Detail | search, detail | Mockup's Process pages, changed | **Built** |
-| Endpoint Search / Detail | search, detail | Replaces Source and Delivery pages | See below |
+| Endpoint Search / Detail | search, detail | Replaces Source and Delivery pages | **Built.** See below |
 | Operations Log | search | Mockup, changed | **Built.** The file trace; see below |
-| Job History | search | Mockup | Reads `JobRuns`: one row per run, with status and error |
-| Audit Log | search | Mockup | Read-only. Changes to definitions: who changed what, and when |
+| Job History | search | Mockup | **Built.** Reads `JobRuns`: one row per run, with status and error |
+| Audit Log | search | Mockup | **Built.** Read-only. Changes to definitions: who changed what, and when |
 | Async Parent Process Search / Detail | search, detail | Mockup | Deferred until asynchronous processes are rebuilt |
 | Step Type Detail | detail | Mentioned in the design document, no mockup | **Not planned.** Step types are seen where they matter, in the job editor |
 | Tag Search / Detail | search, detail | **Proposed** | Waits on the tag design |

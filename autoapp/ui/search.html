@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>AutoApp</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="css/autoapp.css">
+    <script src="js/common.js"></script>
+    <script src="js/definitions.js"></script>
+    <script defer src="vendor/alpine-3.17.4.min.js"></script>
+</head>
+<body>
+<!-- One search page for applications, entities, sites and endpoints: search.html?kind=sites -->
+<div id="app-chrome" data-title="Search" data-nav="search.html?kind={kind}"></div>
+
+<main x-data="definitionSearch()">
+    <p class="message error" x-show="!spec" x-cloak>There is no page for <span x-text="unknown || 'nothing'"></span>.</p>
+
+    <template x-if="spec">
+        <div>
+            <!-- Search criteria. Text boxes ignore case and match anywhere in the field. -->
+            <form class="panel" @submit.prevent="search()" aria-label="Search criteria">
+                <div class="criteria">
+                    <fieldset>
+                        <legend x-text="spec.title"></legend>
+                        <template x-for="field in spec.fields" :key="field.name">
+                            <label>
+                                <span x-text="field.label"></span>
+                                <template x-if="field.type === 'checkbox'">
+                                    <select x-model="criteria[field.name]" :name="field.name">
+                                        <option value="">Any</option>
+                                        <option value="true">Yes</option>
+                                        <option value="false">No</option>
+                                    </select>
+                                </template>
+                                <template x-if="field.type !== 'checkbox'">
+                                    <input type="text" x-model="criteria[field.name]" :name="field.name"
+                                           :list="field.lookup ? 'lookup-' + field.lookup : (field.name === 'name' ? 'lookup-' + kind : null)"
+                                           autocomplete="off">
+                                </template>
+                            </label>
+                        </template>
+                    </fieldset>
+                </div>
+                <div class="actions">
+                    <button type="submit" class="primary" :disabled="loading">Search</button>
+                    <button type="button" class="secondary" @click="clear()" :disabled="loading">Clear</button>
+                    <span class="spacer"></span>
+                    <a class="button secondary" id="new-button" :href="newLink()" x-text="'New ' + spec.title.toLowerCase()"></a>
+                    <button type="button" class="secondary" @click="exportCsv()" :disabled="rows.length === 0">Export as CSV</button>
+                </div>
+            </form>
+
+            <section class="panel" aria-label="Results">
+                <p class="message error" x-show="error" x-text="error" role="alert"></p>
+                <p class="message" id="result-summary" x-show="!error" x-text="summary"></p>
+                <p class="message capped" x-show="capped">Only the first <span x-text="rows.length"></span> are shown.
+                    Narrow the criteria to see the rest.</p>
+
+                <div class="table-scroll" x-show="rows.length > 0">
+                    <table class="results">
+                        <thead>
+                            <tr>
+                                <template x-for="column in columns" :key="column.label"><th x-text="column.label"></th></template>
+                                <th>Used by</th>
+                                <th>Last changed</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <template x-for="row in rows" :key="row.name">
+                                <tr>
+                                    <template x-for="column in columns" :key="column.label">
+                                        <td :data-column="column.label">
+                                            <template x-if="column.link">
+                                                <a class="item-name" :href="link(row.name)" x-text="row.name"></a>
+                                            </template>
+                                            <template x-if="!column.link">
+                                                <div class="main" :class="{ status: column.status, Enabled: column.status && row.active,
+                                                                            Disabled: column.status && !row.active, code: column.code }"
+                                                     x-text="column.main(row) ?? ''"></div>
+                                            </template>
+                                            <div class="muted small sub" :class="{ code: column.code }" x-show="column.sub && column.sub(row)"
+                                                 x-text="column.sub ? (column.sub(row) ?? '') : ''"></div>
+                                        </td>
+                                    </template>
+                                    <td class="nowrap used-by" x-text="usedBy(row)"></td>
+                                    <td class="nowrap last-changed">
+                                        <div x-text="time(row.modified) || '—'"></div>
+                                        <div class="muted small" x-show="row.modified_by" x-text="'by ' + row.modified_by"></div>
+                                    </td>
+                                    <td><a :href="link(row.name) + '&edit'">Edit</a></td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        </div>
+    </template>
+</main>
+</body>
+</html>

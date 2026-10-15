@@ -7,14 +7,16 @@ detail pages, and changing or removing them, come later.
 """
 import json
 import re
-from typing import Optional
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.job_store import JobStoreError, apply_variables
 from app.models import Application, Audit, Entity, Site
+from app.schemas import VariableSave
 
 # These names are referred to from elsewhere, so they are kept to characters that are safe anywhere
 NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
@@ -43,9 +45,15 @@ def required(kind: str, label: str, value: Optional[str]) -> str:
     return value
 
 
-def record(db: Session, obj, kind: str, name: str) -> None:
+def record(db: Session, obj, kind: str, name: str, variables: Optional[List[VariableSave]] = None) -> None:
     db.add(obj)
     db.flush()
+    if variables:
+        try:
+            apply_variables(obj, variables, creating=True)
+        except JobStoreError as e:
+            db.rollback()
+            raise HTTPException(e.status, str(e))
     db.add(Audit(MasterObject_id=obj.MasterObject_id, Action=f"{kind.upper()}_CREATED", PerformedBy=EDITOR_NAME,
                  Details=json.dumps({kind: name, "changes": [f"Registered {kind} '{name}'."]})))
     db.commit()
@@ -61,6 +69,8 @@ class ApplicationCreate(BaseModel):
     name: str = Field(..., max_length=100)
     abbr: str = Field(..., max_length=10, description="A short form of the name, unique among applications")
     description: Optional[str] = None
+    active: bool = True
+    variables: Optional[List[VariableSave]] = None
 
 
 class ApplicationOut(BaseModel):
@@ -77,8 +87,8 @@ def create_application(payload: ApplicationCreate, db: Session = Depends(get_db)
     if db.query(Application).filter(Application.Abbr == abbr).first():
         raise HTTPException(409, f"The abbreviation '{abbr}' is already used by another application.")
     application = Application(Name=name, Abbr=abbr, Description=(payload.description or "").strip() or None,
-                              CreatedBy=EDITOR_NAME)
-    record(db, application, "application", name)
+                              IsActive=payload.active, CreatedBy=EDITOR_NAME)
+    record(db, application, "application", name, payload.variables)
     return ApplicationOut(name=application.Name, abbr=application.Abbr, description=application.Description)
 
 
@@ -91,6 +101,8 @@ class EntityCreate(BaseModel):
     name: str = Field(..., max_length=64)
     abbr: str = Field(..., max_length=10)
     description: Optional[str] = Field(None, max_length=256)
+    active: bool = True
+    variables: Optional[List[VariableSave]] = None
 
 
 class EntityOut(BaseModel):
@@ -105,8 +117,8 @@ def create_entity(payload: EntityCreate, db: Session = Depends(get_db)):
     name = clean_name("entity", payload.name, Entity, db)
     abbr = required("entity", "an abbreviation", payload.abbr)
     entity = Entity(Name=name, Abbr=abbr, Description=(payload.description or "").strip() or None,
-                    CreatedBy=EDITOR_NAME)
-    record(db, entity, "entity", name)
+                    IsActive=payload.active, CreatedBy=EDITOR_NAME)
+    record(db, entity, "entity", name, payload.variables)
     return EntityOut(name=entity.Name, abbr=entity.Abbr, description=entity.Description)
 
 
@@ -122,6 +134,8 @@ class SiteCreate(BaseModel):
     port: int = Field(22, ge=1, le=65535)
     protocol: str = Field("SFTP", max_length=16)
     description: Optional[str] = Field(None, max_length=256)
+    active: bool = True
+    variables: Optional[List[VariableSave]] = None
 
 
 class SiteOut(BaseModel):
@@ -146,7 +160,8 @@ def create_site(payload: SiteCreate, db: Session = Depends(get_db)):
             raise HTTPException(422, f"There is no entity named '{payload.entity.strip()}'.")
     site = Site(Name=name, Host=host, Port=payload.port, Protocol=protocol,
                 Description=(payload.description or "").strip() or None,
-                Entity_MasterObject_id=entity.MasterObject_id if entity else None, CreatedBy=EDITOR_NAME)
-    record(db, site, "site", name)
+                Entity_MasterObject_id=entity.MasterObject_id if entity else None,
+                IsActive=payload.active, CreatedBy=EDITOR_NAME)
+    record(db, site, "site", name, payload.variables)
     return SiteOut(name=site.Name, entity=entity.Name if entity else None, host=site.Host, port=site.Port,
                    protocol=site.Protocol, description=site.Description)

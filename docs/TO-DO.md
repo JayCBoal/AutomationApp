@@ -30,35 +30,36 @@ Decided and removed from this list: telemetry direction (spool first, delivered 
 
 Ordered toward a demonstration: a job built in the job editor, run by a scheduler, and traced file by file. The job editor and the file trace are the two things to show.
 
-### Next: the other pages
+### Next: more step types, for a fuller demonstration
 
-The job editor is built: viewing, editing, creating and deleting a job; endpoints chosen from a drop-down or registered in place; the job's variables; and a live preview. Specified in [UI_VISION.md](UI_VISION.md).
+Every page of the web interface is built. See [UI_VISION.md](UI_VISION.md) for what remains proposed.
 
-1. **Endpoint, Application, Entity and Site pages.** Search and detail pages for each, in the pattern of the Job pages, with routes to change and remove them. They can be registered today but not changed.
-
-2. **Job History and Audit Log pages.** Read-only search pages in the pattern of the Operations Log. Job History needs a `GET /api/v1/runs` route. The audit rows are already being written.
-
-### Then: breadth
-
-3. **More step handlers.** Each one also adds a catalog entry, so it appears in the editor.
+1. **More step handlers.** Each one also adds a catalog entry, so it appears in the editor.
    - Delete files
    - SQL execution
    - SFTP transfer (this is what makes endpoints on remote sites usable)
    - REST call
    - Send email
 
-4. **Tags.** Depends on decision 3. Expose tag assignments in the models, add the `TAG` scope to the variable cascade.
+### Then: tags
 
-5. **Runner controls.** Depends on decision 6.
+2. **Tags.** Depends on decision 3. Tags are master objects already (`Tags`, with `TagAssignments` linking a tag to any master object); what is missing is the editing, the pages, and the `TAG` level in the variable cascade.
+   - A job can share variables with other jobs through a tag, which replaces what the old process level gave.
+   - Jobs, endpoints and the rest can be grouped and searched by tag.
 
-6. **Scheduler integration.** Depends on decision 7.
+### Then: breadth
+
+
+3. **Runner controls.** Depends on decision 6.
+
+4. **Scheduler integration.** Depends on decision 7.
 
 ### Later
 
-- **Variables on applications, entities and sites.** The job editor shows and edits a job's own variables. An application's `Root`, which an endpoint's path uses, can so far only be set in the database. It belongs on those pages.
+- **Exact differences in the audit log.** Each audit row records who changed what, as sentences ("Changed step 2 ('Archive'): parameters."), but not the values before and after. Store a before-and-after list with each row (each field; each step's parameters; steps added, removed or moved; variables, except that a secret variable says only that it changed), and add "Show details" on the Audit Log page. Applies to changes made from then on.
+
 - **Which variables a job can see.** A view listing every variable in reach of a job and where each comes from. Worth building once tags add a second source.
 
-- **Changing and removing endpoints, applications, entities and sites.** Each can be registered from a "New..." window but not yet changed or removed. That comes with their own pages.
 
 - **A placeholder in a tick-box parameter.** A true-or-false parameter stored as `${...}` is shown as text and can be edited, but the editor offers no way to switch a tick box to a placeholder. Add a "use a variable" switch.
 - **Duplicate a job**, to start a new job from an existing one.
@@ -75,13 +76,13 @@ The job editor is built: viewing, editing, creating and deleting a job; endpoint
 - **Retention.** A purge rule for `Operations`, which grows by one row per file.
 - **Killed runs.** Pick up spool files left as `.jsonl.tmp` by a run that did not end normally, and mark the run accordingly.
 
-7. **Runner uses the API.** Depends on decision 2.
+5. **Runner uses the API.** Depends on decision 2.
 
-8. **Security.** Encrypt `Credentials.SecretData`; stop returning `IsSecret` variables; API authentication; vault connectors. Needed before anyone other than the author uses it.
+6. **Security.** Encrypt `Credentials.SecretData`; stop returning `IsSecret` variables; API authentication; vault connectors. Needed before anyone other than the author uses it.
 
-9. **Asynchronous processes.** Port the prototype's async instance tracking and polling.
+7. **Asynchronous processes.** Port the prototype's async instance tracking and polling.
 
-10. **Dependency declaration.** Move dependencies from `requirements.txt` into `pyproject.toml` and make the project installable.
+8. **Dependency declaration.** Move dependencies from `requirements.txt` into `pyproject.toml` and make the project installable.
 
 ## Done
 

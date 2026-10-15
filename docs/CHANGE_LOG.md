@@ -4,6 +4,20 @@ Notable structural, schema and design changes to AutoApp, newest first. Line-by-
 
 ---
 
+## 2026-10-14
+
+### The rest of the web interface
+
+- **Added:** search and detail pages for applications, entities, sites and endpoints. One page of each kind serves all four, drawn from a description of each in `definitions.js`.
+- **Added:** `GET`, `PUT` and `DELETE` on `/api/v1/applications`, `/entities`, `/sites` and `/endpoints`, sharing one implementation in `app/registry_store.py`.
+- **Decided:** something still in use cannot be deleted: an application or site an endpoint belongs to, an entity that owns a site, an endpoint a job step names. History is not "use": an endpoint that only past operations mention can be deleted, and those operations keep its path.
+- **Decided:** renaming an endpoint renames it in every job step that names it.
+- **Added:** the Job History page (`GET /api/v1/runs`) and the Audit Log page (`GET /api/v1/audits`).
+- **Decided:** a "New" button opens the full detail page, blank, rather than a small window, so variables and the active flag can be set at the same time. The small windows are kept for registering something from within another form.
+- Every page in the navigation is now built.
+
+---
+
 ## 2026-10-13
 
 ### Job Detail page, first slice: viewing a job

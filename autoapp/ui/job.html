@@ -158,7 +158,7 @@
                         <div class="step-head">
                             <button type="button" class="expander" @click="toggle(step)" :aria-expanded="step.open ? 'true' : 'false'"
                                     :title="step.open ? 'Hide parameters' : 'Show parameters'"
-                                    x-text="step.open ? '▾' : '▸'"></button>
+                                    x-text="step.open ? '▼' : '▶'"></button>
                             <span class="step-order" x-text="index + 1"></span>
 
                             <span class="step-title" x-show="!editing" x-text="step.title"></span>
@@ -229,16 +229,6 @@
                                                            :disabled="!editing || field.mode !== 'path'"
                                                            placeholder="For example incoming/*.csv">
                                                 </label>
-                                                <!-- Where this location really is, for the job as it is on screen -->
-                                                <span class="preview resolved" x-show="showsResolved(index, field)"
-                                                      x-text="'→ ' + (previewOf(index, field) || {}).resolved"></span>
-                                                <span class="preview error-text small"
-                                                      x-show="field.mode === 'path' && previewOf(index, field) && previewOf(index, field).error"
-                                                      x-text="(previewOf(index, field) || {}).error"></span>
-                                                <template x-for="name in (editing && field.mode === 'path' ? missingVariables(field.path) : [])" :key="name">
-                                                    <button type="button" class="link small add-missing" @click="addVariable(name)"
-                                                            x-text="'Add variable ' + name"></button>
-                                                </template>
                                             </div>
                                         </template>
 
@@ -266,18 +256,25 @@
                                         <template x-if="['STRING', 'INTEGER'].includes(field.data_type) || field.asText">
                                             <div class="text-field">
                                                 <input type="text" x-model="field.text" :disabled="!editing" :placeholder="field.default || ''">
-                                                <span class="preview resolved" x-show="showsResolved(index, field)"
-                                                      x-text="'→ ' + (previewOf(index, field) || {}).resolved"></span>
-                                                <span class="preview error-text small" x-show="previewOf(index, field) && previewOf(index, field).error"
-                                                      x-text="(previewOf(index, field) || {}).error"></span>
-                                                <template x-for="name in (editing ? missingVariables(field.text) : [])" :key="name">
-                                                    <button type="button" class="link small add-missing" @click="addVariable(name)"
-                                                            x-text="'Add variable ' + name"></button>
-                                                </template>
                                             </div>
                                         </template>
 
                                         <span class="muted small field-help" x-text="field.description"></span>
+
+                                        <!-- What the value really comes to, for the job as it is on screen. It runs the
+                                             full width under the box and its description, so a long path stays on one line. -->
+                                        <div class="field-preview">
+                                            <span class="preview resolved" x-show="showsResolved(index, field)"
+                                                  x-text="'→ ' + (previewOf(index, field) || {}).resolved"></span>
+                                            <span class="preview error-text small"
+                                                  x-show="(field.data_type !== 'LOCATION' || field.mode === 'path') && previewOf(index, field) && previewOf(index, field).error"
+                                                  x-text="(previewOf(index, field) || {}).error"></span>
+                                            <template x-for="name in (editing ? missingVariables(field.data_type === 'LOCATION' ? (field.mode === 'path' ? field.path : '') : field.text) : [])"
+                                                      :key="name">
+                                                <button type="button" class="link small add-missing" @click="addVariable(name)"
+                                                        x-text="'Add variable ' + name"></button>
+                                            </template>
+                                        </div>
                                     </div>
                                 </template>
                             </div>

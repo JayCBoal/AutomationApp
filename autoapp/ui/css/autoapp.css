@@ -271,7 +271,8 @@ label.inline { display: flex; align-items: center; gap: 8px; color: var(--text);
 .step-head { display: flex; align-items: center; gap: 12px; padding: 8px 12px; }
 .step-order { font-weight: 700; min-width: 20px; text-align: right; }
 .step-title { font-weight: 600; }
-.expander { background: none; border: none; color: var(--text); cursor: pointer; font-size: 16px; padding: 0 4px; width: 26px; }
+.expander { background: var(--panel); border: 1px solid var(--border); border-radius: 4px; color: var(--text); cursor: pointer; font-size: 15px; line-height: 1; width: 30px; height: 28px; padding: 0; }
+.expander:hover { border-color: var(--accent); color: var(--accent); }
 .step-body { padding: 4px 16px 14px 50px; border-top: 1px solid var(--border); }
 .step-body .detail-grid { grid-template-columns: 1fr; gap: 0; }
 .field-row { display: grid; grid-template-columns: 140px minmax(0, 420px) minmax(0, 1fr); gap: 6px 14px; align-items: center; padding: 6px 0; }
@@ -311,3 +312,8 @@ table.variables td:nth-child(3) { width: 60px; text-align: center; }
 .preview.resolved { color: var(--muted); font-family: ui-monospace, "DejaVu Sans Mono", monospace; }
 .text-field { display: grid; gap: 3px; }
 button.add-missing { justify-self: start; }
+.create-row input[type=checkbox] { flex: 0 0 auto; }
+ul#used-by { margin: 0; padding-left: 20px; }
+.field-preview { grid-column: 2 / -1; display: grid; gap: 2px; justify-items: start; }
+.field-preview:empty, .field-preview:not(:has(:not([style*='display: none']))) { display: none; }
+table.results .code { font-family: ui-monospace, "DejaVu Sans Mono", monospace; font-size: 12px; overflow-wrap: anywhere; }

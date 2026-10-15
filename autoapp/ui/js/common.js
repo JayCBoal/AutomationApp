@@ -17,14 +17,14 @@ const AutoApp = (() => {
     // Every page in the interface, in navigation-bar order. A page with no "href" is not built yet.
     const PAGES = [
         { group: "left", name: "Main Index", href: "index.html", about: "Every page in AutoApp" },
-        { group: "centre", name: "Applications", about: "The systems that produce and consume files" },
-        { group: "centre", name: "Entities", about: "Outside parties: vendors, clients, partners" },
-        { group: "centre", name: "Sites", about: "An entity's servers" },
+        { group: "centre", name: "Applications", href: "search.html?kind=applications", about: "The systems that produce and consume files" },
+        { group: "centre", name: "Entities", href: "search.html?kind=entities", about: "Outside parties: vendors, clients, partners" },
+        { group: "centre", name: "Sites", href: "search.html?kind=sites", about: "An entity's servers" },
         { group: "centre", name: "Jobs", href: "jobs.html", about: "Job definitions, steps and parameters" },
-        { group: "centre", name: "Endpoints", about: "The registered places files come from and go to" },
+        { group: "centre", name: "Endpoints", href: "search.html?kind=endpoints", about: "The registered places files come from and go to" },
         { group: "right", name: "Operations Log", href: "operations.html", about: "Every file handled, and each file's trace" },
-        { group: "right", name: "Job History", about: "Every run of every job" },
-        { group: "right", name: "Audit Log", about: "Who changed which definition, and when" },
+        { group: "right", name: "Job History", href: "history.html", about: "Every run of every job" },
+        { group: "right", name: "Audit Log", href: "audit.html", about: "Who changed which definition, and when" },
     ];
 
     // ---------- Theme ----------
@@ -56,9 +56,12 @@ const AutoApp = (() => {
     function renderChrome() {
         const holder = document.getElementById("app-chrome");
         if (!holder) return;
-        const title = holder.dataset.title || "";
-        // A detail page marks its search page as the current one: data-nav="jobs.html"
-        const here = holder.dataset.nav || location.pathname.split("/").pop() || "index.html";
+        // A page shared by several kinds sets window.AUTOAPP_PAGE_TITLE before this runs
+        const title = window.AUTOAPP_PAGE_TITLE || holder.dataset.title || "";
+        // A detail page marks its search page as the current one: data-nav="jobs.html".
+        // {kind} stands for the page's ?kind=, for the pages shared by several kinds.
+        const kind = new URLSearchParams(location.search).get("kind") || "";
+        const here = (holder.dataset.nav || location.pathname.split("/").pop() || "index.html").replace("{kind}", kind);
 
         const link = page => page.href
             ? `<a href="${page.href}" class="${page.href === here ? "current" : ""}">${escapeHtml(page.name)}</a>`
@@ -478,5 +481,5 @@ const AutoApp = (() => {
         return page;
     }
 
-    return { PAGES, get, send, createInPlace, parseUtc, formatTime, localInputToUtc, timeZoneName, formatSize, toCsv, download, searchPage };
+    return { PAGES, get, send, createInPlace, ensureLookups, parseUtc, formatTime, localInputToUtc, timeZoneName, formatSize, toCsv, download, searchPage };
 })();

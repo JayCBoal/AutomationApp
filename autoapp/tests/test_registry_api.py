@@ -134,3 +134,25 @@ def test_each_registration_is_recorded_in_the_audit_log(client, db):
         ("ENTITY_CREATED", ["Registered entity 'ACME_BANK'."], True),
         ("SITE_CREATED", ["Registered site 'ACME_SFTP'."], True),
     ]
+
+
+def test_a_new_application_entity_or_site_can_start_inactive_and_with_variables(client, db):
+    variables = [{"name": "Root", "value": "/data/x"}, {"name": "Password", "value": "s3cr3t", "secret": True}]
+
+    client.post("/api/v1/applications", json={"name": "X_APP", "abbr": "X", "active": False, "variables": variables})
+    client.post("/api/v1/entities", json={"name": "X_CORP", "abbr": "X", "variables": variables[:1]})
+    client.post("/api/v1/sites", json={"name": "X_SFTP", "host": "h", "active": False})
+
+    application = client.get("/api/v1/applications/X_APP").json()
+    assert application["active"] is False
+    assert [(v["name"], v["value"], v["secret"]) for v in application["variables"]] == [
+        ("Password", None, True), ("Root", "/data/x", False)]
+    assert client.get("/api/v1/entities/X_CORP").json()["variables"][0]["value"] == "/data/x"
+    assert client.get("/api/v1/sites/X_SFTP").json()["active"] is False
+
+
+def test_a_new_one_with_an_unusable_variable_is_refused_entirely(client, db):
+    response = client.post("/api/v1/applications", json={"name": "X_APP", "abbr": "X", "variables": [{"name": "bad name", "value": "v"}]})
+
+    assert response.status_code == 422 and "Invalid variable name" in response.json()["detail"]
+    assert db.query(Application).count() == 0

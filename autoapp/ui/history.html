@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Job History - AutoApp</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="css/autoapp.css">
+    <script src="js/common.js"></script>
+    <script src="js/history.js"></script>
+    <script defer src="vendor/alpine-3.17.4.min.js"></script>
+</head>
+<body>
+<div id="app-chrome" data-title="Job History"></div>
+
+<main x-data="jobHistory()">
+    <form class="panel" @submit.prevent="search()" aria-label="Search criteria">
+        <div class="criteria">
+            <fieldset>
+                <legend>Run</legend>
+                <label>Job <input type="text" x-model="criteria.job_key" name="job_key" data-lookup="jobs"></label>
+                <label>Status
+                    <select x-model="criteria.status" name="status">
+                        <option value="">Any</option><option>SUCCESS</option><option>FAILED</option><option>RUNNING</option>
+                    </select>
+                </label>
+            </fieldset>
+            <fieldset>
+                <legend>Scheduler</legend>
+                <label title="The scheduler's instance ID, exactly as it issued it">Instance ID
+                    <input type="text" x-model="criteria.instance_id" name="instance_id"></label>
+                <label>Scheduler <input type="text" x-model="criteria.scheduler" name="scheduler" data-lookup="schedulers"></label>
+            </fieldset>
+            <fieldset>
+                <legend>Started</legend>
+                <label>From <input type="datetime-local" x-model="criteria.date_from" name="date_from"></label>
+                <label>To <input type="datetime-local" x-model="criteria.date_to" name="date_to"></label>
+            </fieldset>
+        </div>
+        <div class="actions">
+            <button type="submit" class="primary" :disabled="loading">Search</button>
+            <button type="button" class="secondary" @click="clear()" :disabled="loading">Clear</button>
+            <span class="spacer"></span>
+            <button type="button" class="secondary" @click="exportCsv()" :disabled="rows.length === 0">Export as CSV</button>
+        </div>
+    </form>
+
+    <section class="panel" aria-label="Results" x-cloak>
+        <p class="message error" x-show="error" x-text="error" role="alert"></p>
+        <p class="message" id="result-summary" x-show="!error" x-text="summary"></p>
+        <p class="message capped" x-show="capped">Only the newest <span x-text="rows.length"></span> are shown.</p>
+        <div class="table-scroll" x-show="rows.length > 0">
+            <table class="results">
+                <thead><tr><th>Job</th><th>Status</th><th>Started</th><th>Took</th><th>Scheduler</th><th>Files</th></tr></thead>
+                <tbody>
+                    <template x-for="run in rows" :key="run.run_id">
+                        <tr>
+                            <td><a class="job-key" :href="jobLink(run)" x-text="run.job_key"></a></td>
+                            <td>
+                                <span class="status" :class="run.status" x-text="run.status"></span>
+                                <div class="error-text small" x-show="run.error" x-text="run.error"></div>
+                            </td>
+                            <td class="nowrap" x-text="time(run.started)"></td>
+                            <td class="nowrap" x-text="duration(run)"></td>
+                            <td>
+                                instance <span x-text="run.instance_id"></span>
+                                <span x-show="run.run_number > 1" x-text="'· run ' + run.run_number"></span>
+                                <div class="muted small" x-show="run.scheduler" x-text="'scheduler ' + run.scheduler"></div>
+                                <div class="muted small" x-show="run.host" x-text="'on ' + run.host"></div>
+                            </td>
+                            <td class="nowrap">
+                                <a class="files" :href="operationsLink(run)"
+                                   x-text="run.operations + (run.operations === 1 ? ' operation' : ' operations')"></a>
+                                <div class="error-text small" x-show="run.failed_operations" x-text="run.failed_operations + ' failed'"></div>
+                            </td>
+                        </tr>
+                    </template>
+                </tbody>
+            </table>
+        </div>
+    </section>
+</main>
+</body>
+</html>

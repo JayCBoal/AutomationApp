@@ -62,6 +62,7 @@
                         <th>Steps</th>
                         <th>Endpoints used</th>
                         <th>Last run</th>
+                        <th>Last changed</th>
                         <th></th>
                     </tr>
                 </thead>
@@ -95,6 +96,10 @@
                                     </div>
                                 </template>
                                 <span class="muted" x-show="!job.last_run">Never run</span>
+                            </td>
+                            <td class="nowrap last-changed">
+                                <div x-text="time(job.modified) || '—'"></div>
+                                <div class="muted small" x-show="job.modified_by" x-text="'by ' + job.modified_by"></div>
                             </td>
                             <td>
                                 <div class="row-actions">

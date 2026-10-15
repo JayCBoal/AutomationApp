@@ -6,6 +6,7 @@ import pytest
 from app.models import Audit, Endpoint
 
 ROUTE = "/api/v1/endpoints"
+FIELDS = ("name", "application", "site", "entity", "path", "filename_pattern", "description")
 
 
 def test_endpoints_are_listed_in_name_order_with_who_owns_them(client, db, seed):
@@ -20,7 +21,7 @@ def test_endpoints_are_listed_in_name_order_with_who_owns_them(client, db, seed)
 
     assert response.status_code == 200
     assert [e["name"] for e in response.json()] == ["ACME_PAYMENTS", "BARE", "legal_extracts"]      # whatever their case
-    payments, bare, legal = response.json()
+    payments, bare, legal = [{k: e[k] for k in FIELDS} for e in response.json()]
     assert payments == {"name": "ACME_PAYMENTS", "application": "PAYMENTS_APP", "site": "ACME_SFTP",
                         "entity": "ACME_BANK", "path": "/inbound", "filename_pattern": "PAY_*.csv", "description": None}
     assert (legal["application"], legal["site"], legal["entity"]) == ("LEGAL_APP", None, None)
@@ -60,7 +61,7 @@ def test_an_endpoint_is_registered_and_can_then_be_listed(client, db, seed):
     assert response.json() == {
         "name": "LEGAL_EXTRACTS", "application": "LEGAL_APP", "site": None, "entity": None,
         "path": "${APP.Root}/outbox", "filename_pattern": "Legal_*.csv", "description": "Client extracts"}
-    assert client.get(ROUTE).json() == [response.json()]
+    assert [{k: e[k] for k in FIELDS} for e in client.get(ROUTE).json()] == [response.json()]
     assert [e["value"] for e in client.get("/api/v1/lookups").json()["endpoints"]] == ["LEGAL_EXTRACTS"]
 
 

@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>AutoApp</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="css/autoapp.css">
+    <script src="js/common.js"></script>
+    <script src="js/definitions.js"></script>
+    <script defer src="vendor/alpine-3.17.4.min.js"></script>
+</head>
+<body>
+<!-- One detail page for applications, entities, sites and endpoints: detail.html?kind=sites&name=ACME_SFTP -->
+<div id="app-chrome" data-title="Detail" data-nav="search.html?kind={kind}"></div>
+
+<main x-data="definitionDetail()">
+    <p class="message error" x-show="!spec" x-cloak>There is no page for <span x-text="unknown || 'nothing'"></span>.</p>
+
+    <template x-if="spec">
+        <div>
+            <div class="panel selector">
+                <label for="item-selector" x-text="spec.title"></label>
+                <input id="item-selector" type="text" :list="'lookup-' + kind" x-model="chosen" @change="choose()"
+                       :placeholder="'Type to find ' + (spec.title === 'Entity' || spec.title === 'Endpoint' || spec.title === 'Application' ? 'an ' : 'a ') + spec.title.toLowerCase()"
+                       autocomplete="off" :disabled="editing">
+                <span class="spacer"></span>
+                <a class="button secondary" id="new-button" x-show="!editing" :href="newLink()"
+                   x-text="'New ' + spec.title.toLowerCase()"></a>
+                <button type="button" class="secondary" id="edit-button" x-show="form && !editing" @click="edit()">Edit</button>
+                <button type="button" class="secondary danger" id="delete-button" x-show="editing && !isNew" :disabled="busy" @click="remove()"
+                        x-text="'Delete ' + spec.title.toLowerCase()"></button>
+                <button type="button" class="secondary" id="cancel-button" x-show="editing" :disabled="busy" @click="cancel()">Cancel</button>
+                <button type="button" class="primary" id="submit-button" x-show="editing" :disabled="busy || !changed" @click="submit()">Submit</button>
+            </div>
+
+            <p class="message error" id="page-error" x-show="error" x-text="error" role="alert" x-cloak></p>
+            <p class="message saved" id="save-notice" x-show="notice" x-text="notice" role="status" x-cloak></p>
+            <p class="message" id="choose-prompt" x-show="!form && !error && !isNew" x-cloak>Choose one above, or find one on the
+                <a :href="'search.html?kind=' + kind" x-text="spec.title + ' Search'"></a> page.</p>
+
+            <template x-if="form">
+                <div>
+                    <section class="panel" :aria-label="spec.title">
+                        <div class="detail-grid">
+                            <template x-for="field in spec.fields" :key="field.name">
+                                <div class="field-pair" style="display: contents">
+                                    <label :for="'field-' + field.name">
+                                        <span x-text="field.label"></span>
+                                        <span class="required" x-show="field.required" title="Required">*</span>
+                                    </label>
+                                    <div class="create-row">
+                                        <template x-if="field.type === 'checkbox'">
+                                            <input :id="'field-' + field.name" type="checkbox" x-model="form[field.name]" :disabled="!editing">
+                                        </template>
+                                        <template x-if="field.type !== 'checkbox'">
+                                            <input :id="'field-' + field.name" :type="field.type || 'text'" x-model="form[field.name]"
+                                                   :disabled="!editing || field.derived === true" :maxlength="field.max || null"
+                                                   :list="field.lookup && !field.derived ? 'lookup-' + field.lookup : null" autocomplete="off">
+                                        </template>
+                                        <button type="button" class="link create-new" x-show="editing && field.create"
+                                                :data-creates="field.create" @click="createFor(field)">New...</button>
+                                        <span class="muted small" x-show="field.help" x-text="field.help"></span>
+                                    </div>
+                                </div>
+                            </template>
+
+                            <span class="label" x-show="item">History</span>
+                            <div class="muted small" x-show="item">
+                                <span x-show="item && item.modified">Last changed <span x-text="item && time(item.modified)"></span>
+                                    by <span x-text="item && item.modified_by"></span>.</span>
+                                <template x-if="item && kind === 'endpoints'">
+                                    <span>See the files <a id="files-from" :href="operationsLink('source')">taken from it</a>
+                                        and <a id="files-to" :href="operationsLink('dest')">delivered to it</a>.</span>
+                                </template>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- What refers to this one. It cannot be deleted while anything does. -->
+                    <section class="panel" aria-label="Used by" x-show="item">
+                        <h2 class="section" style="margin-top: 0">Used by</h2>
+                        <p class="message" id="used-by-none" x-show="item && item.used_by.length === 0">Nothing uses it.</p>
+                        <ul id="used-by" x-show="item && item.used_by.length > 0">
+                            <template x-for="user in (item ? item.used_by : [])" :key="user.kind + user.name">
+                                <li><a :href="link(user.kind, user.name)" x-text="user.name"></a>
+                                    <span class="muted small" x-text="'(' + user.kind.replace(/s$/, '') + ')'"></span></li>
+                            </template>
+                        </ul>
+                    </section>
+
+                    <template x-if="spec.variables">
+                        <section class="panel" aria-label="Variables">
+                            <div class="steps-head">
+                                <h2 class="section">Variables</h2>
+                                <span class="muted small" x-show="kind === 'applications'">An endpoint's path can use these as
+                                    <code>${APP.Name}</code>.</span>
+                                <span class="muted small" x-show="kind === 'entities'">An endpoint on one of its sites can use these as
+                                    <code>${ENTITY.Name}</code>.</span>
+                            </div>
+                            <p class="message" id="no-variables" x-show="form.variables.length === 0">None.</p>
+                            <div class="table-scroll" x-show="form.variables.length > 0">
+                                <table class="results variables">
+                                    <thead><tr><th>Name</th><th>Value</th><th>Secret</th><th>Description</th><th></th></tr></thead>
+                                    <tbody>
+                                        <template x-for="(variable, index) in form.variables" :key="variable.uid">
+                                            <tr>
+                                                <td><input type="text" class="variable-name" x-model="variable.name" :disabled="!editing" aria-label="Variable name"></td>
+                                                <td><input :type="variable.secret ? 'password' : 'text'" class="variable-value" x-model="variable.value"
+                                                           :disabled="!editing" autocomplete="off" aria-label="Variable value"
+                                                           :placeholder="variable.secret && variable.savedSecret ? 'Set. Type a new value to replace it.' : ''"></td>
+                                                <td><input type="checkbox" class="variable-secret" x-model="variable.secret" :disabled="!editing" aria-label="Secret"></td>
+                                                <td><input type="text" class="variable-description" x-model="variable.description" :disabled="!editing" aria-label="Variable description"></td>
+                                                <td><button type="button" class="link remove-variable" x-show="editing" @click="removeVariable(index)">Remove</button></td>
+                                            </tr>
+                                        </template>
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div class="actions" x-show="editing">
+                                <button type="button" class="secondary" id="add-variable" @click="addVariable()">Add variable</button>
+                            </div>
+                        </section>
+                    </template>
+                </div>
+            </template>
+        </div>
+    </template>
+</main>
+</body>
+</html>

@@ -84,6 +84,17 @@ def test_steps_are_listed_in_order_and_start_collapsed(page, jobs):
     assert "disabled" in steps.nth(2).get_attribute("class")
 
 
+def test_the_expand_button_is_big_enough_to_see_and_hit(page, jobs):
+    steps = open_job(page)
+
+    box = steps.nth(0).locator(".expander").bounding_box()
+
+    assert box["width"] >= 28 and box["height"] >= 26
+    assert steps.nth(0).locator(".expander").inner_text() == "▶"
+    expand(steps.nth(0))
+    assert steps.nth(0).locator(".expander").inner_text() == "▼"
+
+
 def test_a_step_expands_and_collapses(page, jobs):
     steps = open_job(page)
     first, second = steps.nth(0), steps.nth(1)

@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Audit Log - AutoApp</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="css/autoapp.css">
+    <script src="js/common.js"></script>
+    <script src="js/history.js"></script>
+    <script defer src="vendor/alpine-3.17.4.min.js"></script>
+</head>
+<body>
+<div id="app-chrome" data-title="Audit Log"></div>
+
+<main x-data="auditLog()">
+    <form class="panel" @submit.prevent="search()" aria-label="Search criteria">
+        <div class="criteria">
+            <fieldset>
+                <legend>Change</legend>
+                <label title="The job key, or the name of the endpoint, application, entity or site">Name
+                    <input type="text" x-model="criteria.name" name="name"></label>
+                <label title="For example Job updated, or deleted">Action <input type="text" x-model="criteria.action" name="action"></label>
+                <label>By <input type="text" x-model="criteria.performed_by" name="performed_by"></label>
+            </fieldset>
+            <fieldset>
+                <legend>When</legend>
+                <label>From <input type="datetime-local" x-model="criteria.date_from" name="date_from"></label>
+                <label>To <input type="datetime-local" x-model="criteria.date_to" name="date_to"></label>
+            </fieldset>
+        </div>
+        <div class="actions">
+            <button type="submit" class="primary" :disabled="loading">Search</button>
+            <button type="button" class="secondary" @click="clear()" :disabled="loading">Clear</button>
+            <span class="spacer"></span>
+            <button type="button" class="secondary" @click="exportCsv()" :disabled="rows.length === 0">Export as CSV</button>
+        </div>
+    </form>
+
+    <section class="panel" aria-label="Results" x-cloak>
+        <p class="message error" x-show="error" x-text="error" role="alert"></p>
+        <p class="message" id="result-summary" x-show="!error" x-text="summary"></p>
+        <p class="message capped" x-show="capped">Only the newest <span x-text="rows.length"></span> are shown.</p>
+        <div class="table-scroll" x-show="rows.length > 0">
+            <table class="results">
+                <thead><tr><th>When</th><th>What</th><th>Changed</th><th>By</th><th>What changed</th></tr></thead>
+                <tbody>
+                    <template x-for="audit in rows" :key="audit.id">
+                        <tr>
+                            <td class="nowrap" x-text="time(audit.time)"></td>
+                            <td class="nowrap action" x-text="actionText(audit)"></td>
+                            <td>
+                                <template x-if="link(audit)"><a class="subject" :href="link(audit)" x-text="audit.name"></a></template>
+                                <template x-if="!link(audit)"><span class="subject" x-text="audit.name"></span></template>
+                            </td>
+                            <td class="muted" x-text="audit.performed_by"></td>
+                            <td>
+                                <template x-for="change in audit.changes"><div class="change" x-text="change"></div></template>
+                            </td>
+                        </tr>
+                    </template>
+                </tbody>
+            </table>
+        </div>
+    </section>
+</main>
+</body>
+</html>

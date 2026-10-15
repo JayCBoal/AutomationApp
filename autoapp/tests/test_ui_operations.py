@@ -426,14 +426,15 @@ def test_navigation_links_only_to_pages_that_exist(page, db):
     open_log(page)
     nav = page.locator("nav.app-nav")
 
-    assert [link.inner_text() for link in nav.locator("a").all()] == ["Main Index", "Jobs", "Operations Log"]
-    assert "Endpoints" in [item.inner_text() for item in nav.locator("span.planned").all()]
+    assert [link.inner_text() for link in nav.locator("a").all()] == [
+        "Main Index", "Applications", "Entities", "Sites", "Jobs", "Endpoints", "Operations Log", "Job History", "Audit Log"]
+    assert nav.locator("span.planned").count() == 0                  # every page is built
     assert "current" in nav.get_by_role("link", name="Operations Log").get_attribute("class")
 
     nav.get_by_role("link", name="Main Index").click()
     page.wait_for_selector(".index-card")
     assert [card.locator(".name").inner_text() for card in page.locator("a.index-card[href]").all()] == [
-        "Jobs", "Operations Log"]
+        "Applications", "Entities", "Sites", "Jobs", "Endpoints", "Operations Log", "Job History", "Audit Log"]
     page.locator("a.index-card[href]", has_text="Operations Log").click()
     page.wait_for_url("**/ui/operations.html")
 

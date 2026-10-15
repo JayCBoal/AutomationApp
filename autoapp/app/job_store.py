@@ -76,8 +76,11 @@ def _name(title: Optional[str], position: int) -> str:
     return f"step {position} ('{title}')" if title else f"step {position}"
 
 
-def _apply_variables(job: Job, submitted: list, creating: bool) -> List[str]:
-    """Makes the job's variables match the list submitted. Returns what changed, naming variables but never values."""
+def apply_variables(job, submitted: list, creating: bool) -> List[str]:
+    """
+    Makes the variables of a job (or of any other object that can hold variables) match the
+    list submitted. Returns what changed, naming variables but never values.
+    """
     names = [v.name.strip() for v in submitted]
     for name in names:
         if not VARIABLE_NAME_PATTERN.match(name):
@@ -234,7 +237,7 @@ def apply_job(db: Session, payload: JobSave, existing_key: Optional[str], who: s
         changes.append("Reordered the steps.")
 
     if payload.variables is not None:
-        changes += _apply_variables(job, payload.variables, creating)
+        changes += apply_variables(job, payload.variables, creating)
 
     if changes and not creating:
         job.ModifiedDateTime = utcnow()

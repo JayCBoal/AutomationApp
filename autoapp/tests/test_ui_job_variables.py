@@ -175,6 +175,21 @@ def test_each_location_shows_where_it_really_is(page, job, outbox, tmp_path):
     assert field(steps.nth(0), "Dest").locator(".preview.resolved").inner_text() == f"→ {work}/staging/in"
 
 
+def test_a_long_resolved_path_runs_the_width_under_the_box_and_its_description(page, job):
+    steps = open_job(page)
+    expand(steps.nth(0))
+    wait_for_preview(page)
+
+    dest = field(steps.nth(0), "Dest")
+    preview_width = dest.locator(".preview.resolved").evaluate("e => e.getBoundingClientRect().width")
+    box_width = dest.locator(".path-value").evaluate("e => e.closest('.location-choice').getBoundingClientRect().width")
+    help_right = dest.locator(".field-help").evaluate("e => e.getBoundingClientRect().right")
+    preview_right = dest.locator(".preview.resolved").evaluate("e => e.parentElement.getBoundingClientRect().right")
+
+    assert preview_width > box_width                         # not squeezed into the box's column
+    assert abs(preview_right - help_right) < 2               # its line ends where the description's column ends
+
+
 def test_a_value_without_a_placeholder_shows_no_preview(page, job):
     steps = open_job(page)
     expand(steps.nth(0))

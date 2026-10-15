@@ -33,19 +33,6 @@ def describe(endpoint: Endpoint) -> EndpointOut:
     )
 
 
-@router.get("", response_model=List[EndpointOut])
-def list_endpoints(
-    name: Optional[str] = Query(None, description="Part of an endpoint name"),
-    limit: int = Query(MAX_RESULTS, ge=1, le=MAX_RESULTS),
-    db: Session = Depends(get_db),
-):
-    """The registered endpoints, in name order. This is what the job editor offers for a step's file locations."""
-    query = db.query(Endpoint)
-    if name:
-        query = query.filter(Endpoint.Name.ilike(f"%{name}%"))
-    return [describe(e) for e in query.order_by(func.lower(Endpoint.Name), Endpoint.Name).limit(limit)]
-
-
 @router.post("", response_model=EndpointOut, status_code=status.HTTP_201_CREATED)
 def create_endpoint(payload: EndpointCreate, db: Session = Depends(get_db)):
     """Registers a place files come from or go to, so that job steps can refer to it by name."""

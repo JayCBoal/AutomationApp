@@ -64,6 +64,14 @@ def test_page_lists_jobs_in_name_order_with_what_each_uses(page, jobs):
     assert row_for(rows, "DEV-RETIRED").locator(".status").first.inner_text() == "Disabled"
 
 
+def test_each_job_says_when_it_was_last_changed_and_by_whom(page, jobs):
+    rows = open_jobs(page)
+
+    changed = row_for(rows, "DEV-LEGAL-COLLECT").locator(".last-changed")
+    assert changed.locator("div").first.inner_text().startswith("20")
+    assert changed.locator("div").nth(1).inner_text() == "by system"
+
+
 def test_last_run_shows_how_the_most_recent_run_went(page, jobs, outbox, run_runner, load_spool):
     run_runner("DEV-LEGAL-COLLECT", "88421")
     load_spool()

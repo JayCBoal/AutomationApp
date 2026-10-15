@@ -6,6 +6,13 @@ Notable structural, schema and design changes to AutoApp, newest first. Line-by-
 
 ## 2026-10-14
 
+### Endpoints are master objects
+
+- **Changed:** `Endpoints` is a subtype of `MasterObjects`, like applications, entities, sites, credentials, tags and jobs. Its key is `MasterObject_id`; `Operations.SourceEndpoint_id` and `DestEndpoint_id` refer to it.
+- **Rationale:** an endpoint is a definition like the others. As a master object it has a created date and who created it, its audit rows link to it, and it can hold variables and tags once those are wired up for it.
+- **Checked:** no other table should be a master object. Steps, parameters, variables and tag assignments belong to something else; the step catalog comes from the code; runs, operations and audits are records.
+- **Migration:** a database built before this needs rebuilding. `autoapp_dev` was migrated in place, keeping its data.
+
 ### The rest of the web interface
 
 - **Added:** search and detail pages for applications, entities, sites and endpoints. One page of each kind serves all four, drawn from a description of each in `definitions.js`.

@@ -117,7 +117,7 @@ def build_db_schema():
            "## Reading the diagrams", "",
            "- `PK` primary key, `FK` foreign key, `UK` unique.",
            "- A line ending in a crow's foot is the \"many\" side. The label is the foreign key column.",
-           "- `Applications`, `Entities`, `Sites`, `Credentials`, `Tags` and `Jobs` each share "
+           "- `Applications`, `Entities`, `Sites`, `Credentials`, `Tags`, `Jobs` and `Endpoints` each share "
            "their primary key with one row in `MasterObjects`.", "",
            "## Overview", "", "All tables and how they connect.", "",
            "```mermaid", "erDiagram"]

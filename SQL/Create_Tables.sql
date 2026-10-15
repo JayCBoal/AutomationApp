@@ -37,7 +37,7 @@ SET FOREIGN_KEY_CHECKS = 1;
 
 CREATE TABLE `MasterObjects` (
 	id INTEGER NOT NULL AUTO_INCREMENT, 
-	`ObjectType` ENUM('APPLICATION','ENTITY','SITE','CREDENTIAL','TAG','JOB') NOT NULL, 
+	`ObjectType` ENUM('APPLICATION','ENTITY','SITE','CREDENTIAL','TAG','JOB','ENDPOINT') NOT NULL, 
 	`CreatedDateTime` DATETIME DEFAULT (now()), 
 	`CreatedBy` VARCHAR(100) DEFAULT 'system', 
 	`ModifiedDateTime` DATETIME, 
@@ -207,16 +207,15 @@ CREATE TABLE `TagAssignments` (
 )ENGINE=InnoDB CHARSET=utf8mb4 COLLATE utf8mb4_bin;
 
 CREATE TABLE `Endpoints` (
-	id INTEGER NOT NULL AUTO_INCREMENT, 
+	`MasterObject_id` INTEGER NOT NULL, 
 	`Name` VARCHAR(100) NOT NULL, 
 	`Site_MasterObject_id` INTEGER, 
 	`Application_MasterObject_id` INTEGER, 
 	`Path` VARCHAR(256) NOT NULL, 
 	`FilenamePattern` VARCHAR(128) NOT NULL, 
 	`Description` VARCHAR(256), 
-	`ModifiedDateTime` DATETIME, 
-	`ModifiedBy` VARCHAR(50), 
-	PRIMARY KEY (id), 
+	PRIMARY KEY (`MasterObject_id`), 
+	FOREIGN KEY(`MasterObject_id`) REFERENCES `MasterObjects` (id) ON DELETE CASCADE, 
 	UNIQUE (`Name`), 
 	FOREIGN KEY(`Site_MasterObject_id`) REFERENCES `Sites` (`MasterObject_id`) ON DELETE SET NULL, 
 	FOREIGN KEY(`Application_MasterObject_id`) REFERENCES `Applications` (`MasterObject_id`) ON DELETE SET NULL
@@ -256,8 +255,8 @@ CREATE TABLE `Operations` (
 	CONSTRAINT uq_run_seq UNIQUE (`JobRun_id`, `Seq`), 
 	FOREIGN KEY(`JobRun_id`) REFERENCES `JobRuns` (id) ON DELETE CASCADE, 
 	FOREIGN KEY(`JobStep_id`) REFERENCES `JobSteps` (id) ON DELETE SET NULL, 
-	FOREIGN KEY(`SourceEndpoint_id`) REFERENCES `Endpoints` (id) ON DELETE SET NULL, 
-	FOREIGN KEY(`DestEndpoint_id`) REFERENCES `Endpoints` (id) ON DELETE SET NULL
+	FOREIGN KEY(`SourceEndpoint_id`) REFERENCES `Endpoints` (`MasterObject_id`) ON DELETE SET NULL, 
+	FOREIGN KEY(`DestEndpoint_id`) REFERENCES `Endpoints` (`MasterObject_id`) ON DELETE SET NULL
 )ENGINE=InnoDB CHARSET=utf8mb4 COLLATE utf8mb4_bin;
 
 CREATE INDEX `ix_Operations_DestFilename` ON `Operations` (`DestFilename`);

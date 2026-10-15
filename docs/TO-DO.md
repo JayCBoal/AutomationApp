@@ -10,7 +10,10 @@ Updated 2026-10-13. The order under "Work queue" is a proposal; the items under 
 
 2. **How the runner gets its payload.** The design says agents pull over HTTPS from `/api/v1/jobs/init` and never connect to the database. The runner currently connects to the database directly. Options: switch the runner to the API now; support both; or leave direct access until the API has authentication.
 
-3. **Tag rules.** When two tags on the same job define the same variable, is that an error, or does a precedence rule pick one? Do tags have a parent and child hierarchy?
+3. **Tag rules.** Partly decided 2026-10-14:
+   - **Hierarchy: decided.** A tag can have a parent, nested to any depth, and inherits its ancestors' variables. To confirm when building: a tag's own variable overrides one of the same name from its ancestors, as a job's overrides the cascade.
+   - **Conflicts: decided for now.** When two tags on the same job (or two separate branches of tags) define the same variable, the pre-run check reports it as an error. No precedence rule.
+   - **Open:** possibly later an optional setting on the job saying which tag wins. To come back to.
 
 4. **Working folder.** Currently `<working root>/<JobKey>`, private to the job and reused by every run of it. Confirm, or make it per run. Also decide whether archive folders live inside it or are registered endpoints.
 
@@ -43,7 +46,7 @@ Every page of the web interface is built. See [UI_VISION.md](UI_VISION.md) for w
 
 ### Then: tags
 
-2. **Tags.** Depends on decision 3. Tags are master objects already (`Tags`, with `TagAssignments` linking a tag to any master object); what is missing is the editing, the pages, and the `TAG` level in the variable cascade.
+2. **Tags.** The rules are in decision 3. Tags are master objects already (`Tags`, with `TagAssignments` linking a tag to any master object); what is missing is the editing, the pages, and the `TAG` level in the variable cascade.
    - A job can share variables with other jobs through a tag, which replaces what the old process level gave.
    - Jobs, endpoints and the rest can be grouped and searched by tag.
 

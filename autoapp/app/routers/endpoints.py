@@ -40,7 +40,7 @@ def create_endpoint(payload: EndpointCreate, db: Session = Depends(get_db)):
     if not NAME_PATTERN.match(name):
         raise HTTPException(422, f"Invalid endpoint name '{payload.name}': use letters, digits, '-', '_' and '.', "
                                  f"starting with a letter or digit.")
-    if db.query(Endpoint.id).filter(Endpoint.Name == name).first():
+    if db.query(Endpoint.MasterObject_id).filter(Endpoint.Name == name).first():
         raise HTTPException(409, f"An endpoint named '{name}' is already registered.")
     path, pattern = payload.path.strip(), payload.filename_pattern.strip()
     if not path:
@@ -63,10 +63,11 @@ def create_endpoint(payload: EndpointCreate, db: Session = Depends(get_db)):
         Description=(payload.description or "").strip() or None,
         Application_MasterObject_id=application.MasterObject_id if application else None,
         Site_MasterObject_id=site.MasterObject_id if site else None,
-        ModifiedBy=EDITOR_NAME,
+        CreatedBy=EDITOR_NAME,
     )
     db.add(endpoint)
-    db.add(Audit(Action="ENDPOINT_CREATED", PerformedBy=EDITOR_NAME,
+    db.flush()
+    db.add(Audit(MasterObject_id=endpoint.MasterObject_id, Action="ENDPOINT_CREATED", PerformedBy=EDITOR_NAME,
                  Details=json.dumps({"endpoint": name, "changes": [f"Registered endpoint '{name}'."]})))
     db.commit()
     db.refresh(endpoint)

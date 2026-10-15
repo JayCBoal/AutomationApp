@@ -26,7 +26,7 @@ WHERE NOT EXISTS (SELECT 1 FROM StepTypes WHERE Code = 'COPY_FILES');
 -- (the API server does the same each time it starts).
 
 -- ----------------------------------------------------------------------------
--- 2. Master objects. Every application, entity, site, tag and job has one row
+-- 2. Master objects. Every application, entity, site, tag, job and endpoint has one row
 --    here, and a row with the same id in its own table.
 -- ----------------------------------------------------------------------------
 INSERT INTO MasterObjects (id, ObjectType) VALUES
@@ -37,7 +37,10 @@ INSERT INTO MasterObjects (id, ObjectType) VALUES
 (5, 'JOB'),
 (6, 'JOB'),
 (7, 'TAG'),
-(8, 'TAG');
+(8, 'TAG'),
+(9, 'ENDPOINT'),
+(10, 'ENDPOINT'),
+(11, 'ENDPOINT');
 
 INSERT INTO Applications (MasterObject_id, Name, Abbr, Description) VALUES
 (1, 'LEGAL_APP',   'LGL', 'Legal case management system'),
@@ -54,10 +57,10 @@ INSERT INTO Sites (MasterObject_id, Entity_MasterObject_id, Name, Host, Port, Pr
 -- 3. Endpoints: the registered places files come from and go to.
 --    ${APP.Root} is the Root variable of the endpoint's own application.
 -- ----------------------------------------------------------------------------
-INSERT INTO Endpoints (id, Name, Application_MasterObject_id, Site_MasterObject_id, Path, FilenamePattern, Description) VALUES
-(1, 'LEGAL_APP_EXTRACTS',  1, NULL, '${APP.Root}/outbox', '${FilePattern}', 'Client extract files produced by the legal application'),
-(2, 'BILLING_APP_INBOX',   2, NULL, '${APP.Root}/inbox',  '*.csv',          'Files for the billing application to load'),
-(3, 'ACME_BANK_PAYMENTS',  2, 4,    '/inbound/payments',  'PAY_*.csv',      'Payment files sent to Acme Bank. On a remote site, so not usable until the SFTP step type exists.');
+INSERT INTO Endpoints (MasterObject_id, Name, Application_MasterObject_id, Site_MasterObject_id, Path, FilenamePattern, Description) VALUES
+(9, 'LEGAL_APP_EXTRACTS',  1, NULL, '${APP.Root}/outbox', '${FilePattern}', 'Client extract files produced by the legal application'),
+(10, 'BILLING_APP_INBOX',   2, NULL, '${APP.Root}/inbox',  '*.csv',          'Files for the billing application to load'),
+(11, 'ACME_BANK_PAYMENTS',  2, 4,    '/inbound/payments',  'PAY_*.csv',      'Payment files sent to Acme Bank. On a remote site, so not usable until the SFTP step type exists.');
 
 -- ----------------------------------------------------------------------------
 -- 4. Jobs and their steps

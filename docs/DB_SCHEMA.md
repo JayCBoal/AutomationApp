@@ -8,7 +8,7 @@ This is the schema the Python models create. The MariaDB script `SQL/Create_Tabl
 
 - `PK` primary key, `FK` foreign key, `UK` unique.
 - A line ending in a crow's foot is the "many" side. The label is the foreign key column.
-- `Applications`, `Entities`, `Sites`, `Credentials`, `Tags` and `Jobs` each share their primary key with one row in `MasterObjects`.
+- `Applications`, `Entities`, `Sites`, `Credentials`, `Tags`, `Jobs` and `Endpoints` each share their primary key with one row in `MasterObjects`.
 
 ## Overview
 
@@ -31,6 +31,7 @@ erDiagram
     Entities |o--o{ Sites : "Entity_MasterObject_id"
     Tags ||--o{ TagAssignments : "Tag_MasterObject_id"
     MasterObjects ||--o{ TagAssignments : "Target_MasterObject_id"
+    MasterObjects ||--o| Endpoints : "MasterObject_id"
     Sites |o--o{ Endpoints : "Site_MasterObject_id"
     Applications |o--o{ Endpoints : "Application_MasterObject_id"
     JobSteps ||--o{ JobStepParameters : "JobStep_id"
@@ -46,7 +47,7 @@ erDiagram
 erDiagram
     MasterObjects {
         int id PK
-        enum ObjectType "required; one of: APPLICATION, ENTITY, SITE, CREDENTIAL, TAG, JOB"
+        enum ObjectType "required; one of: APPLICATION, ENTITY, SITE, CREDENTIAL, TAG, JOB, ENDPOINT"
         datetime CreatedDateTime
         string(100) CreatedBy
         datetime ModifiedDateTime
@@ -168,15 +169,13 @@ erDiagram
 ```mermaid
 erDiagram
     Endpoints {
-        int id PK
+        int MasterObject_id PK, FK
         string(100) Name UK "required"
         int Site_MasterObject_id FK
         int Application_MasterObject_id FK
         string(256) Path "required"
         string(128) FilenamePattern "required"
         string(256) Description
-        datetime ModifiedDateTime
-        string(50) ModifiedBy
     }
     JobRuns {
         int id PK
@@ -224,6 +223,7 @@ erDiagram
     }
     MasterObjects |o--o{ Audits : "MasterObject_id"
     Jobs |o--o{ JobRuns : "Job_MasterObject_id"
+    MasterObjects ||--o| Endpoints : "MasterObject_id"
     Sites |o--o{ Endpoints : "Site_MasterObject_id"
     Applications |o--o{ Endpoints : "Application_MasterObject_id"
     JobRuns ||--o{ Operations : "JobRun_id"

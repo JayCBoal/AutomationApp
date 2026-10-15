@@ -35,6 +35,16 @@ classDiagram
         +bool IsActive
     }
     MasterObject <|-- Credential
+    class Endpoint {
+        +int MasterObject_id
+        +string(100) Name
+        +int Site_MasterObject_id
+        +int Application_MasterObject_id
+        +string(256) Path
+        +string(128) FilenamePattern
+        +string(256) Description
+    }
+    MasterObject <|-- Endpoint
     class Entity {
         +int MasterObject_id
         +string(64) Name
@@ -84,17 +94,6 @@ classDiagram
         +string(100) PerformedBy
         +text Details
         +datetime CreatedDateTime
-    }
-    class Endpoint {
-        +int id
-        +string(100) Name
-        +int Site_MasterObject_id
-        +int Application_MasterObject_id
-        +string(256) Path
-        +string(128) FilenamePattern
-        +string(256) Description
-        +datetime ModifiedDateTime
-        +string(50) ModifiedBy
     }
     class JobRun {
         +int id

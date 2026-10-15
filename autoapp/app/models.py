@@ -29,7 +29,7 @@ class MasterObject(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     ObjectType = Column(
-        Enum('APPLICATION', 'ENTITY', 'SITE', 'CREDENTIAL', 'TAG', 'JOB', name='object_type_enum'),
+        Enum('APPLICATION', 'ENTITY', 'SITE', 'CREDENTIAL', 'TAG', 'JOB', 'ENDPOINT', name='object_type_enum'),
         nullable=False
     )
     CreatedDateTime = Column(DateTime, default=utcnow, server_default=func.now())
@@ -195,10 +195,15 @@ class TagAssignment(Base):
 # ============================================================================
 # Unified Endpoint Model
 # ============================================================================
-class Endpoint(Base):
+class Endpoint(MasterObject):
+    """
+    A registered place files come from or go to. Like the other definitions it is a
+    master object: it has a created and changed date, and can hold variables and tags.
+    Its id (endpoint.id) is its MasterObjects id, which is also MasterObject_id.
+    """
     __tablename__ = 'Endpoints'
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
+    MasterObject_id = Column(Integer, ForeignKey('MasterObjects.id', ondelete='CASCADE'), primary_key=True)
     # Stable name that job steps use to reference this endpoint (SourceEndpoint / DestEndpoint)
     Name = Column(String(100), nullable=False, unique=True)
     Site_MasterObject_id = Column(Integer, ForeignKey('Sites.MasterObject_id', ondelete='SET NULL'), nullable=True)
@@ -206,11 +211,15 @@ class Endpoint(Base):
     Path = Column(String(256), nullable=False)
     FilenamePattern = Column(String(128), nullable=False)
     Description = Column(String(256), nullable=True)
-    ModifiedDateTime = Column(DateTime, onupdate=utcnow)
-    ModifiedBy = Column(String(50), nullable=True)
 
-    site = relationship("Site")
-    application = relationship("Application")
+    # foreign_keys spelled out: an endpoint's table refers to three master objects (itself, its site, its application)
+    site = relationship("Site", foreign_keys=[Site_MasterObject_id])
+    application = relationship("Application", foreign_keys=[Application_MasterObject_id])
+
+    __mapper_args__ = {
+        'polymorphic_identity': 'ENDPOINT',
+        'inherit_condition': MasterObject_id == MasterObject.id,
+    }
 
 
 # ============================================================================
@@ -320,11 +329,11 @@ class Operation(Base):
     OpType = Column(String(50), nullable=False)
     OpStatus = Column(String(20), nullable=False)
     # Registered Endpoints the file came from / went to; NULL for a location inside the working folder
-    SourceEndpoint_id = Column(Integer, ForeignKey('Endpoints.id', ondelete='SET NULL'), nullable=True)
+    SourceEndpoint_id = Column(Integer, ForeignKey('Endpoints.MasterObject_id', ondelete='SET NULL'), nullable=True)
     SourcePath = Column(Text, nullable=True)
     SourceFilename = Column(String(255), nullable=True, index=True)
     SourceSize = Column(BigInteger, nullable=True)
-    DestEndpoint_id = Column(Integer, ForeignKey('Endpoints.id', ondelete='SET NULL'), nullable=True)
+    DestEndpoint_id = Column(Integer, ForeignKey('Endpoints.MasterObject_id', ondelete='SET NULL'), nullable=True)
     DestPath = Column(Text, nullable=True)
     DestFilename = Column(String(255), nullable=True, index=True)
     DestSize = Column(BigInteger, nullable=True)

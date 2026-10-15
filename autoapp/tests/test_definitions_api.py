@@ -275,3 +275,46 @@ def test_changes_and_removals_are_in_the_audit_log(client, db, world):
         ("SITE_UPDATED", ["Changed the port."]),
         ("ENTITY_DELETED", ["Deleted entity 'GLOBEX'."]),
     ]
+
+
+# --- Endpoints are master objects, like the other definitions -------------------------------------
+
+def test_an_endpoint_has_a_created_date_and_who_created_it(client, db):
+    client.post("/api/v1/endpoints", json={"name": "SCRATCH", "path": "/data/scratch"})
+
+    [listed] = client.get("/api/v1/endpoints").json()
+
+    assert listed["modified"] is not None and listed["modified_by"] == "web interface"
+
+
+def test_an_endpoint_is_registered_as_a_master_object_and_removed_with_it(client, db):
+    from app.models import MasterObject
+    client.post("/api/v1/endpoints", json={"name": "SCRATCH", "path": "/data/scratch"})
+    db.expire_all()
+    endpoint = db.query(Endpoint).one()
+    assert (endpoint.ObjectType, endpoint.id) == ("ENDPOINT", endpoint.MasterObject_id)
+    assert db.get(MasterObject, endpoint.MasterObject_id) is not None
+
+    client.delete("/api/v1/endpoints/SCRATCH")
+
+    db.expire_all()
+    assert db.query(MasterObject).filter(MasterObject.ObjectType == "ENDPOINT").count() == 0
+
+
+def test_an_endpoints_audit_rows_point_at_it(client, db):
+    client.post("/api/v1/endpoints", json={"name": "SCRATCH", "path": "/data/scratch"})
+    client.put("/api/v1/endpoints/SCRATCH", json={"description": "Edited"})
+
+    db.expire_all()
+    endpoint = db.query(Endpoint).one()
+    assert [(a.Action, a.MasterObject_id) for a in db.query(Audit).order_by(Audit.id)] == [
+        ("ENDPOINT_CREATED", endpoint.MasterObject_id), ("ENDPOINT_UPDATED", endpoint.MasterObject_id)]
+
+
+def test_operations_still_link_to_their_endpoints(client, db, world, outbox, run_runner, load_spool):
+    assert run_runner("DEV-LOAD").returncode == 0
+    load_spool()
+    db.expire_all()
+
+    linked = {op.source_endpoint.Name for op in db.query(Operation) if op.source_endpoint is not None}
+    assert linked == {"LEGAL_EXTRACTS"}

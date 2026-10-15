@@ -104,7 +104,7 @@ def search_operations(
         ep = aliased(Endpoint)
         app, site_, entity_ = Application.__table__.alias(), Site.__table__.alias(), Entity.__table__.alias()
         query = (
-            query.outerjoin(ep, endpoint_id == ep.id)
+            query.outerjoin(ep, endpoint_id == ep.MasterObject_id)
             .outerjoin(app, ep.Application_MasterObject_id == app.c.MasterObject_id)
             .outerjoin(site_, ep.Site_MasterObject_id == site_.c.MasterObject_id)
             .outerjoin(entity_, site_.c.Entity_MasterObject_id == entity_.c.MasterObject_id)

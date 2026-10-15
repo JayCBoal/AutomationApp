@@ -22,7 +22,7 @@ def test_every_kind_of_name_is_listed_in_order_with_a_label_to_tell_entries_apar
 
     values = lambda kind: [entry["value"] for entry in lookups[kind]]
     labels = lambda kind: {entry["value"]: entry["label"] for entry in lookups[kind]}
-    assert sorted(lookups) == ["applications", "endpoints", "entities", "jobs", "schedulers", "sites"]
+    assert sorted(lookups) == ["applications", "endpoints", "entities", "jobs", "schedulers", "sites", "tags"]
     assert values("endpoints") == ["EXTRACTS", "PAYMENTS"]
     assert labels("endpoints")["EXTRACTS"] == "legal_app  \u2014  /out/*.csv"
     assert labels("endpoints")["PAYMENTS"] == "legal_app \u00b7 ACME_BANK \u00b7 ACME_SFTP  \u2014  /inbound/PAY_*.csv"
@@ -36,4 +36,4 @@ def test_every_kind_of_name_is_listed_in_order_with_a_label_to_tell_entries_apar
 
 def test_an_empty_database_gives_empty_lists(client):
     assert client.get(ROUTE).json() == {
-        "endpoints": [], "applications": [], "entities": [], "sites": [], "jobs": [], "schedulers": []}
+        "endpoints": [], "applications": [], "entities": [], "sites": [], "jobs": [], "schedulers": [], "tags": []}

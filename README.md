@@ -105,6 +105,36 @@ Pages that are not built yet appear greyed out in the navigation bar.
 
 The web interface is plain HTML, CSS and JavaScript in `autoapp/ui/`, with no build step: edit a file and reload the page. It reads everything through the REST API, which is described at `http://localhost:8000/docs`.
 
+## Trying the demo jobs
+
+The sample data has two pairs of jobs. Each pair hands files from one application to another, and the second pair shows the newer step types. Run them in this order: each second job picks up what the first one delivered. On the development machine, start in a terminal where `dev_env.sh` has been sourced, with the server running in another (`autoapp_server`), so each run's record goes straight into the database.
+
+```bash
+cd autoapp
+# Files from the legal application to billing: copy, archive, move
+python3 -m engine.runner --job-key DEV-LEGAL-COLLECT_AND_DELIVER --instance-id 3001 --working-root $AUTOAPP_WORKING_ROOT
+python3 -m engine.runner --job-key DEV-BILLING-LOAD              --instance-id 3002 --working-root $AUTOAPP_WORKING_ROOT
+
+# Billing reports to finance: query the sales database, check, zip and deliver; then pick up, unzip, check, keep
+python3 -m engine.runner --job-key DEV-BILLING-INVOICE_EXPORT    --instance-id 3003 --working-root $AUTOAPP_WORKING_ROOT
+python3 -m engine.runner --job-key DEV-FINANCE-LOAD_REPORTS      --instance-id 3004 --working-root $AUTOAPP_WORKING_ROOT
+```
+
+Each command ends with `Job '...' completed successfully.` and exit code 0.
+
+- The first job copies `Legal_Batch_*.csv` from `/tmp/autoapp_sample/legal_app/outbox`, leaving them there, so the pair can be run again at any time.
+- The export job can also be run again at any time: it replaces the day's files. The finance job needs a fresh archive each time (it fails, saying it found nothing, if the inbox is empty), so run the export job before it again.
+
+What to look at afterwards:
+
+- **The files.** The export job's results end up in `/tmp/autoapp_sample/work/DEV-FINANCE-LOAD_REPORTS/reports/<today>/`: `Open_Invoices_<today>.csv`, the 12 open and overdue invoices with a line of column names, and `Payments_<today>.csv`. The archive itself is kept in that job's `archive/` folder, and the finance inbox, `/tmp/autoapp_sample/finance_app/inbox`, is empty again.
+- **The job log**, printed by each command: every step, every file, and what each value resolved to. The finance job's `OlderThanDays: ${ReportRetentionDays}  (resolved: 30)` comes from the `Finance` tag, through `Finance / Reporting`. The database's password shows as `***`.
+- **Job History** in the web interface: one row per run, with its status.
+- **Operations Log**: one row per file per step. Type `Open_Invoices` in Filename and choose **Trace** on any row. The trace runs from the query that wrote the file (`SQL_EXPORT`, from "Database query") through the check, into the archive, to finance, out of the archive, and on to the archive folder.
+- **The sales database**, to compare with the CSV: `sqlite3 /tmp/autoapp_sample/sales.db "SELECT invoice_no, status FROM invoices WHERE status <> 'PAID'"`, or on MariaDB the `autoapp_sales` database in DBeaver.
+
+If the server was not running, the runs' records are waiting in `autoapp/spool/`. Start the server and run `python3 -m engine.spool_delivery`, or load them straight into the database with `env -u AUTOAPP_API_URL python3 -m engine.spool_delivery`.
+
 ## Layout
 
 ```

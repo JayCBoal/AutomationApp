@@ -9,7 +9,9 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.catalog import sync_catalog
 from app.database import get_db
-from app.routers import definitions, endpoints, history, jobs, lookups, operations, registry, step_types, telemetry, variables
+from app.routers import (
+    definitions, endpoints, history, jobs, lookups, operations, registry, settings, step_types, telemetry, variables
+)
 from app.schema_check import out_of_date_message, schema_problems
 
 logger = logging.getLogger("AutoApp.API")
@@ -78,9 +80,12 @@ app.include_router(history.router)
 app.include_router(registry.applications)
 app.include_router(registry.entities)
 app.include_router(registry.sites)
+app.include_router(registry.tags)
+app.include_router(registry.tag_variables)
 for router in definitions.routers:
     app.include_router(router)
 app.include_router(variables.router)
+app.include_router(settings.router)
 
 
 @app.get("/health", tags=["Health"])

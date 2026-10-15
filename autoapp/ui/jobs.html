@@ -34,6 +34,8 @@
                 <legend>Uses</legend>
                 <label title="An endpoint that one of the job's steps reads from or writes to">Endpoint
                     <input type="text" x-model="criteria.endpoint" name="endpoint" data-lookup="endpoints"></label>
+                <label title="A tag the job carries; a parent tag finds jobs carrying any tag under it">Tag
+                    <input type="text" x-model="criteria.tag" name="tag" data-lookup="tags"></label>
             </fieldset>
         </div>
         <div class="actions">
@@ -61,6 +63,7 @@
                         <th>Status</th>
                         <th>Steps</th>
                         <th>Endpoints used</th>
+                        <th>Tags</th>
                         <th>Last run</th>
                         <th>Last changed</th>
                         <th></th>
@@ -81,6 +84,11 @@
                             <td>
                                 <template x-for="name in job.endpoints" :key="name">
                                     <span class="tag" x-text="name"></span>
+                                </template>
+                            </td>
+                            <td class="job-tags">
+                                <template x-for="path in job.tags" :key="path">
+                                    <span class="tag" x-text="AutoApp.showPath(path)"></span>
                                 </template>
                             </td>
                             <td class="last-run">

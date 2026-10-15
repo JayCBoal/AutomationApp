@@ -11,7 +11,7 @@
     <script defer src="vendor/alpine-3.17.4.min.js"></script>
 </head>
 <body>
-<!-- One detail page for applications, entities, sites and endpoints: detail.html?kind=sites&name=ACME_SFTP -->
+<!-- One detail page for applications, entities, sites, endpoints and tags: detail.html?kind=sites&name=ACME_SFTP -->
 <div id="app-chrome" data-title="Detail" data-nav="search.html?kind={kind}"></div>
 
 <main x-data="definitionDetail()">
@@ -83,7 +83,7 @@
                         <p class="message" id="used-by-none" x-show="item && item.used_by.length === 0">Nothing uses it.</p>
                         <ul id="used-by" x-show="item && item.used_by.length > 0">
                             <template x-for="user in (item ? item.used_by : [])" :key="user.kind + user.name">
-                                <li><a :href="link(user.kind, user.name)" x-text="user.name"></a>
+                                <li><a :href="link(user.kind, user.name)" x-text="user.kind === 'tags' ? showPath(user.name) : user.name"></a>
                                     <span class="muted small" x-text="'(' + user.kind.replace(/s$/, '') + ')'"></span></li>
                             </template>
                         </ul>
@@ -120,12 +120,31 @@
                             <div class="actions" x-show="editing">
                                 <button type="button" class="secondary" id="add-variable" @click="addVariable()">Add variable</button>
                             </div>
+
+                            <!-- A tag's parents' variables, which act as if they were its own unless it has one of the same name -->
+                            <div id="inherited-variables" x-show="kind === 'tags' && inherited.length > 0">
+                                <h3 class="small">Inherited from its parents</h3>
+                                <table class="results tag-variables compact">
+                                    <thead><tr><th>Name</th><th>Value</th><th>From tag</th></tr></thead>
+                                    <tbody>
+                                        <template x-for="variable in inherited" :key="variable.name">
+                                            <tr><td><code x-text="variable.name"></code></td><td><code x-text="variable.value ?? ''"></code></td>
+                                                <td class="small" x-text="showPath(variable.source)"></td></tr>
+                                        </template>
+                                    </tbody>
+                                </table>
+                            </div>
                         </section>
+                    </template>
+
+                    <template x-if="spec.carriesTags">
+                        <div data-tags-panel></div>
                     </template>
                 </div>
             </template>
         </div>
     </template>
 </main>
+<script>AutoApp.fillTagPanels()</script>
 </body>
 </html>

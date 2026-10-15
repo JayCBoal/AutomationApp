@@ -5,12 +5,12 @@ Updated 2026-10-13. The order under "Work queue" is a proposal; the items under 
 ## Decisions needed
 
 1. **Sharing between related jobs.** With the process level removed, each job stands alone. Two things it used to provide need a replacement, if they are wanted:
-   - Variables shared by several jobs. Proposal: tags (see decision 3).
-   - A way to see several jobs as one piece of work. The file trace already follows a file from job to job, so this is only about grouping jobs for display. Proposal: a tag.
+   - Variables shared by several jobs: tags, built 2026-10-15 (decision 3).
+   - A way to see several jobs as one piece of work. The file trace already follows a file from job to job, so this is only about grouping jobs for display. A tag, and Job Search's Tag box, now do this; still open is whether a page showing such a group together is wanted.
 
 2. **How the runner gets its payload.** The design says agents pull over HTTPS from `/api/v1/jobs/init` and never connect to the database. The runner currently connects to the database directly. Options: switch the runner to the API now; support both; or leave direct access until the API has authentication.
 
-3. **Tag rules.** Decided 2026-10-14 unless marked open:
+3. **Tag rules.** Decided 2026-10-14 and built 2026-10-15, unless marked open:
    - **What can be tagged:** any master object.
    - **What a tag gives:** its variables act as if they were on the tagged object, just below that object's own. A job's tags feed the job; an application's or entity's tags feed wherever that object's variables reach (an endpoint's path and pattern); an endpoint's tags feed the endpoint.
    - **Hierarchy:** a tag can have a parent, nested to any depth, and inherits its ancestors' variables. A tag's own variable overrides one of the same name from its ancestors.
@@ -51,18 +51,13 @@ Every page of the web interface is built. See [UI_VISION.md](UI_VISION.md) for w
    - REST call
    - Send email
 
-### Then: tags
+### Then: the scheduler conversation
 
-2. **Tags.** The rules are in decision 3. Tags are master objects already (`Tags`, with `TagAssignments` linking a tag to any master object); what is missing is the editing, the pages, and the `TAG` level in the variable cascade.
-   - A job can share variables with other jobs through a tag, which replaces what the old process level gave.
-   - Jobs, endpoints and the rest can be grouped and searched by tag.
+2. **Scheduler integration.** Decision 7. The questions still open: which values matter (an order date and the like), which direction first, and which scheduler first.
 
 ### Then: breadth
 
-
 3. **Runner controls.** Depends on decision 6.
-
-4. **Scheduler integration.** Depends on decision 7.
 
 ### Later
 

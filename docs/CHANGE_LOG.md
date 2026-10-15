@@ -4,6 +4,22 @@ Notable structural, schema and design changes to AutoApp, newest first. Line-by-
 
 ---
 
+## 2026-10-15
+
+### Tags
+
+- **Changed:** `Tags` has a parent (`Parent_MasterObject_id`), nested to any depth, and `Name` in place of `TagName`. Names are unique under one parent, so a tag is named by its path, `Finance/Reporting`. `Category` is dropped.
+- **Added:** tag variables in the variable lookup (`engine/tag_vars.py`, `engine/scope_engine.py`). A tag's variables act as if they were on whatever carries it, just below its own; a tag inherits its parents'. A job's tags feed the job; an application's, entity's or endpoint's tags feed that endpoint's path and pattern.
+- **Added:** conflicts. Two tags on one object giving one variable different values: an error if the variable is used (and nothing higher settles it), a warning in the job editor if not. Messages name the tags, not the values.
+- **Added:** `${TAG:Finance/Reporting.Var}`, limited to the job's tags and their parents.
+- **Added:** the `Settings` table and `engine/settings.py`; the first setting is `VariablePrecedence`, by default `SYS, ENTITY, APP, ENDPOINT, TAG, JOB`.
+- **Added:** tags in the API: `/api/v1/tags` (search, view, register, change, move, delete), a `tags` list on every other kind and on jobs, a `tag` criterion on every search, `GET /api/v1/tag-variables`, and `/api/v1/settings`. Renaming or moving a tag rewrites the `${TAG:...}` references to it.
+- **Added:** Tag Search and Tag Detail pages; a Tags panel on every other detail page and the job editor, which shows a tag's variables and any conflict before it is added; a Tag box and a Tags column on every search page; the Settings page.
+- **Changed:** the sample data's tags: `Environment / DEV`, `Legal`, and `Finance / Reporting`, whose parent's `ReportRetentionDays` the finance job now uses.
+- **Migration:** `autoapp_dev` was changed in place (backup in `demo/output/autoapp_dev_before_tags.sql`). Another database needs the `Tags` columns changed and the `Settings` table added, or rebuilding.
+
+---
+
 ## 2026-10-14
 
 ### More step types: Delete, Check, Zip, Unzip and Run SQL

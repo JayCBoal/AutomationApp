@@ -50,6 +50,7 @@ class EndpointCreate(BaseModel):
     path: str = Field(..., max_length=256, description="The folder. May contain placeholders such as ${APP.Root}")
     filename_pattern: str = Field("*", max_length=128, description="Which files a step collects from here")
     description: Optional[str] = Field(None, max_length=256)
+    tags: Optional[List[str]] = Field(None, description="Paths of the tags it carries, e.g. Finance/Reporting")
 
 
 # --- Step Catalog Schemas ---
@@ -95,6 +96,7 @@ class JobSummary(BaseModel):
     ready: bool = Field(..., description="True if the pre-run check finds no problems, so the job would run")
     problem_count: int = Field(..., description="How many problems the pre-run check finds")
     last_run: Optional[LastRun] = Field(None, description="The most recent run AutoApp has a record of")
+    tags: List[str] = Field(default_factory=list, description="Paths of the tags the job carries")
     modified: Optional[datetime] = None
     modified_by: Optional[str] = None
 
@@ -104,6 +106,16 @@ class VariableOut(BaseModel):
     value: Optional[str] = Field(None, description="Always null for a secret variable: a secret can be set, never read back")
     secret: bool = False
     description: Optional[str] = None
+
+
+class InheritedVariableOut(BaseModel):
+    """A variable an object gets from its tags."""
+    name: str
+    value: Optional[str] = Field(None, description="******** for a secret")
+    secret: bool = False
+    source: str = Field(..., description="Path of the tag that defines it: one the object carries, or its parent")
+    description: Optional[str] = None
+    overridden: bool = Field(False, description="The object's own variable of this name wins over it")
 
 
 class VariableSave(BaseModel):
@@ -136,6 +148,9 @@ class JobDetail(BaseModel):
     modified_by: Optional[str] = None
     steps: List[JobStepOut]
     variables: List[VariableOut] = Field(default_factory=list, description="The job's own variables, in name order")
+    tags: List[str] = Field(default_factory=list, description="Paths of the tags the job carries")
+    inherited_variables: List[InheritedVariableOut] = Field(
+        default_factory=list, description="What the job's tags give it, in name order")
 
 
 class JobStepSave(BaseModel):
@@ -155,6 +170,8 @@ class JobSave(BaseModel):
     steps: List[JobStepSave] = Field(default_factory=list)
     variables: Optional[List[VariableSave]] = Field(
         None, description="The job's own variables. Leave out to keep them as they are; send a list to replace them")
+    tags: Optional[List[str]] = Field(
+        None, description="Paths of the tags the job carries. Leave out to keep them as they are")
 
 
 class JobSaveResult(BaseModel):
@@ -174,6 +191,10 @@ class JobPreview(BaseModel):
     """What a job, as submitted but not saved, would resolve to and whether it would run."""
     valid: bool
     problems: List[str]
+    warnings: List[str] = Field(default_factory=list, description=(
+        "Things worth knowing that do not stop the job, such as two tags disagreeing about a variable it does not use"))
+    tags: List[str] = Field(default_factory=list, description="Paths of the tags as submitted")
+    inherited_variables: List[InheritedVariableOut] = Field(default_factory=list)
     steps: List[Dict[str, FieldPreview]] = Field(
         ..., description="For each step submitted, in order: each parameter by name. "
                          "A location appears under its parameter name however the step gave it")

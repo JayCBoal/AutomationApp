@@ -97,6 +97,10 @@
                 <ul class="problems" id="job-problems" x-show="problems.length > 0">
                     <template x-for="problem in problems"><li x-text="problem"></li></template>
                 </ul>
+                <!-- Worth knowing, but they do not stop the job: tags disagreeing about a variable it does not use -->
+                <ul class="warnings" id="job-warnings" x-show="warnings.length > 0">
+                    <template x-for="warning in warnings"><li class="message warning small" x-text="warning"></li></template>
+                </ul>
             </section>
 
             <!-- Its variables: values of the job's own, written ${Name} in any step value -->
@@ -142,6 +146,9 @@
                     <code>${FILE:STEM}</code> and <code>${FILE:EXT}</code>.
                 </p>
             </section>
+
+            <!-- Its tags, and the variables they give it -->
+            <div data-tags-panel></div>
 
             <!-- Its steps, in the order they run -->
             <section class="panel" aria-label="Steps">
@@ -308,5 +315,6 @@
     </template>
 
 </main>
+<script>AutoApp.fillTagPanels()</script>
 </body>
 </html>

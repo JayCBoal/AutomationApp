@@ -97,7 +97,8 @@ class AuditOut(BaseModel):
 
 # Which key in an audit row's details names what was changed, by the start of its action
 _SUBJECTS = {"JOB": ("jobs", "job_key"), "ENDPOINT": ("endpoints", "endpoint"),
-             "APPLICATION": ("applications", "application"), "ENTITY": ("entities", "entity"), "SITE": ("sites", "site")}
+             "APPLICATION": ("applications", "application"), "ENTITY": ("entities", "entity"), "SITE": ("sites", "site"),
+             "TAG": ("tags", "tag"), "SETTING": ("settings", "setting")}
 
 
 @router.get("/api/v1/audits", response_model=List[AuditOut])

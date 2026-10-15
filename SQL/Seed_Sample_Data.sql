@@ -66,7 +66,10 @@ INSERT INTO MasterObjects (id, ObjectType) VALUES
 (12, 'APPLICATION'),
 (13, 'JOB'),
 (14, 'ENDPOINT'),
-(15, 'JOB');
+(15, 'JOB'),
+(16, 'TAG'),
+(17, 'TAG'),
+(18, 'TAG');
 
 INSERT INTO Applications (MasterObject_id, Name, Abbr, Description) VALUES
 (1, 'LEGAL_APP',   'LGL', 'Legal case management system'),
@@ -173,7 +176,7 @@ ORDER BY p.payment_date, p.reference'),
 (12, 'Dest',          'archive'),
 (12, 'Move',          'True'),
 (13, 'Source',        'archive/*.zip'),
-(13, 'OlderThanDays', '30'),
+(13, 'OlderThanDays', '${ReportRetentionDays}'),
 (13, 'AllowNoFiles',  'True');
 
 -- ----------------------------------------------------------------------------
@@ -192,15 +195,31 @@ INSERT INTO Variables (MasterObject_id, VarName, VarValue, IsSecret, Description
 (2, 'SalesDbUrl',  'sqlite:////tmp/autoapp_sample/sales.db', 1, 'The billing application''s sales database');
 
 -- ----------------------------------------------------------------------------
--- 6. Tags. Stored and assigned here; nothing reads them yet.
+-- 6. Tags. A tag can sit under a parent; names need only be unique under one
+--    parent. A tag's variables act as if they were on whatever carries it, and a
+--    tag inherits its parent's. Parents come before their children here.
+--
+--      Environment            (a parent that only makes its children's names clear)
+--        DEV                  on the four DEV- jobs
+--      Legal                  on LEGAL_APP and the job that collects from it
+--      Finance                ReportRetentionDays = 30
+--        Reporting            on DEV-FINANCE-LOAD_REPORTS, which uses ${ReportRetentionDays}
 -- ----------------------------------------------------------------------------
-INSERT INTO Tags (MasterObject_id, TagName, Category, Description) VALUES
-(7, 'Environment:DEV', 'Environment', 'Development jobs'),
-(8, 'Dept:Legal',      'Department',  'Legal department automation');
+INSERT INTO Tags (MasterObject_id, Parent_MasterObject_id, Name, Description) VALUES
+(16, NULL, 'Environment', 'Which environment a job belongs to'),
+(7,  16,   'DEV',         'Development jobs'),
+(8,  NULL, 'Legal',       'Legal department automation'),
+(17, NULL, 'Finance',     'Finance department automation'),
+(18, 17,   'Reporting',   'Finance reporting');
+
+INSERT INTO Variables (MasterObject_id, VarName, VarValue, Description) VALUES
+(17, 'ReportRetentionDays', '30', 'How many days of report archives finance keeps');
 
 INSERT INTO TagAssignments (Tag_MasterObject_id, Target_MasterObject_id) VALUES
 (7, 5),
 (7, 6),
 (7, 13),
 (7, 15),
-(8, 5);
+(8, 1),
+(8, 5),
+(18, 15);

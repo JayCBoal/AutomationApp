@@ -40,7 +40,7 @@ CREATE_TABLES_SCRIPT = AUTOAPP_DIR.parent / "SQL" / "Create_Tables.sql"
 SERVER_DATABASE_URL = os.getenv("AUTOAPP_TEST_DATABASE_URL")
 
 from app.models import (
-    Application, Base, Endpoint, Entity, Job, JobStep, JobStepParameter, Site, StepType, Variable
+    Application, Base, Endpoint, Entity, Job, JobStep, JobStepParameter, Site, StepType, Tag, TagAssignment, Variable
 )
 
 
@@ -132,6 +132,16 @@ class Seeder:
             Application_MasterObject_id=application.MasterObject_id if application else None,
             Site_MasterObject_id=site.MasterObject_id if site else None,
         ))
+
+    def tag(self, name, parent=None, **variables):
+        tag = self._add(Tag(Name=name, Parent_MasterObject_id=parent.MasterObject_id if parent else None))
+        self.set_vars(tag, **variables)
+        return tag
+
+    def attach(self, tag, *targets):
+        for target in targets:
+            self._add(TagAssignment(Tag_MasterObject_id=tag.MasterObject_id,
+                                    Target_MasterObject_id=target.MasterObject_id))
 
     def step_type(self, code="COPY_FILES", name="Copy Files"):
         existing = self.db.query(StepType).filter(StepType.HandlerClass == code).first()

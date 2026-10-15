@@ -1,5 +1,5 @@
 """
-Searching, viewing, changing and removing applications, entities, sites and endpoints.
+Searching, viewing, changing and removing applications, entities, sites, endpoints and tags.
 
 The four work the same way, so they share one implementation, driven by a short
 description of each kind: its fields, which of them name another kind, and
@@ -10,7 +10,10 @@ Rules:
   - A name can be changed. An endpoint is referred to by name from job steps, so
     renaming one updates those steps too.
   - Something still in use cannot be deleted: an application or site that an
-    endpoint belongs to, an entity that owns a site, an endpoint that a job step names.
+    endpoint belongs to, an entity that owns a site, an endpoint that a job step names,
+    a tag with child tags or that something carries.
+  - Everything but a tag can carry tags (see app/tag_store.py). A tag is named by
+    its path, "Finance/Reporting", wherever this module takes or gives a name.
 """
 import json
 import re
@@ -20,9 +23,11 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app import tag_store
 from app.job_store import JobStoreError, apply_variables
-from app.models import Application, Audit, Endpoint, Entity, JobStep, JobStepParameter, Site, utcnow
+from app.models import Application, Audit, Endpoint, Entity, JobStep, JobStepParameter, MasterObject, Site, Tag, utcnow
 from engine.step_catalog import ENDPOINT_SUFFIX
+from engine.tag_vars import find_by_path, shown, tag_path
 
 NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 MAX_RESULTS = 500
@@ -84,7 +89,21 @@ KINDS: Dict[str, Kind] = {
         Field("filename_pattern", "FilenamePattern", required=True),
         Field("description", "Description"),
     ]),
+    "tags": Kind("tags", "tag", Tag, [
+        Field("name", "Name", required=True),
+        Field("parent", refers_to="tags", ref_column="Parent_MasterObject_id"),
+        Field("description", "Description"),
+    ], variables=True),
 }
+
+
+def carries_tags(kind: Kind) -> bool:
+    return kind.key != "tags"
+
+
+def label(obj) -> str:
+    """How an object is named: a tag by its path, anything else by its name."""
+    return tag_path(obj) if isinstance(obj, Tag) else obj.Name
 
 
 def kind_of(key: str) -> Kind:
@@ -99,6 +118,8 @@ def _key_of(obj):
 
 
 def _ref(db: Session, kind_key: str, name: str):
+    if kind_key == "tags":
+        return find_by_path(db, tag_store.normal_path(name))
     kind = KINDS[kind_key]
     return db.query(kind.model).filter(kind.model.Name == name).first()
 
@@ -115,10 +136,14 @@ def describe(kind: Kind, obj, db: Optional[Session] = None) -> Dict[str, Any]:
             linked = db.get(KINDS[f.refers_to].model, linked_id) if (db is not None and linked_id) else None
             if linked is None and linked_id:
                 linked = getattr(obj, f.name, None)
-            out[f.name] = linked.Name if linked is not None else None
+            out[f.name] = label(linked) if linked is not None else None
         else:
             value = getattr(obj, f.column)
             out[f.name] = bool(value) if f.kind == "bool" else value
+    if kind.key == "tags":
+        out["path"] = tag_path(obj)
+    if carries_tags(kind):
+        out["tags"] = tag_store.paths_on(obj)
     out["modified"] = getattr(obj, "ModifiedDateTime", None) or getattr(obj, "CreatedDateTime", None)
     out["modified_by"] = getattr(obj, "ModifiedBy", None) or getattr(obj, "CreatedBy", None)
     if db is not None:
@@ -128,12 +153,17 @@ def describe(kind: Kind, obj, db: Optional[Session] = None) -> Dict[str, Any]:
                  "description": v.Description}
                 for v in sorted(obj.variables, key=lambda v: (v.VarName.lower(), v.VarName))
             ]
+        if kind.key == "tags":
+            out["inherited_variables"] = tag_store.inherited_by_tag(obj)
         out["used_by"] = used_by(db, kind, obj)
     return out
 
 
 def used_by(db: Session, kind: Kind, obj) -> List[Dict[str, str]]:
     """What refers to this object: [{"kind": "endpoints", "name": "LEGAL_EXTRACTS"}, ...], in name order."""
+    if kind.key == "tags":
+        children = sorted((tag_path(t) for t in obj.children), key=str.lower)
+        return [{"kind": "tags", "name": path} for path in children] + tag_store.carriers(db, obj)
     if kind.key == "endpoints":
         rows = (
             db.query(JobStep.job_id).join(JobStepParameter, JobStepParameter.job_step_id == JobStep.id)
@@ -154,6 +184,8 @@ def used_by(db: Session, kind: Kind, obj) -> List[Dict[str, str]]:
 
 
 def find(db: Session, kind: Kind, name: str):
+    if kind.key == "tags":
+        return tag_store.find(db, name)
     obj = db.query(kind.model).filter(kind.model.Name == name).first()
     if obj is None:
         raise JobStoreError(f"No {kind.singular} named '{name}' exists.", status=404)
@@ -161,9 +193,15 @@ def find(db: Session, kind: Kind, name: str):
 
 
 def search(db: Session, kind: Kind, criteria: Dict[str, str], limit: int = MAX_RESULTS) -> List[Dict[str, Any]]:
-    """Text criteria ignore case and match anywhere; 'active' is true or false."""
+    """
+    Text criteria ignore case and match anywhere; 'active' is true or false. 'tag'
+    finds what carries a tag whose path contains the text, or a tag under it.
+    """
     model = kind.model
     query = db.query(model)
+    tag = (criteria.get("tag") or "").strip()
+    if tag and carries_tags(kind):
+        query = query.filter(tag_store.carrying(db, tag))
     for f in kind.fields:
         value = (criteria.get(f.name) or "").strip()
         if not value:
@@ -184,7 +222,9 @@ def search(db: Session, kind: Kind, criteria: Dict[str, str], limit: int = MAX_R
         else:
             query = query.filter(getattr(model, f.column).ilike(f"%{value}%"))
     rows = query.order_by(func.lower(model.Name), model.Name).limit(max(1, min(limit, MAX_RESULTS))).all()
-    return [describe(kind, obj, None) | {"used_by_count": len(used_by(db, kind, obj))} for obj in rows]
+    if kind.key == "tags":
+        rows.sort(key=lambda t: (tag_path(t).lower(), tag_path(t)))
+    return [describe(kind, obj, db=None) | {"used_by_count": len(used_by(db, kind, obj))} for obj in rows]
 
 
 def _audit(db: Session, kind: Kind, obj, action: str, who: str, name: str, changes: List[str]) -> None:
@@ -193,14 +233,39 @@ def _audit(db: Session, kind: Kind, obj, action: str, who: str, name: str, chang
                  Details=json.dumps({kind.singular: name, "changes": changes})))
 
 
+def _place_tag(db: Session, tag: Tag, payload: Dict[str, Any]) -> List[str]:
+    """A tag's name and parent, which together make its path. Returns what changed."""
+    changes = []
+    parent = tag.parent
+    if "parent" in payload:
+        text = tag_store.normal_path(payload["parent"] or "")
+        parent = tag_store.find(db, text) if text else None
+        tag_store.check_parent(tag, parent)
+    new_parent_id = parent.MasterObject_id if parent else None
+    name = (payload.get("name") or "").strip() if "name" in payload else tag.Name
+    if name != tag.Name or new_parent_id != tag.Parent_MasterObject_id:
+        name = tag_store.check_name(db, tag, name, parent)      # usable, and free under the parent it ends up under
+    if name != tag.Name:
+        changes.append(f"Renamed from '{tag.Name}' to '{name}'.")
+        tag.Name = name
+    if new_parent_id != tag.Parent_MasterObject_id:
+        tag.Parent_MasterObject_id = new_parent_id
+        tag.parent = parent
+        changes.append(f"Moved under {shown(tag_path(parent))}." if parent else "Moved to the top level.")
+    return changes
+
+
 def update(db: Session, kind: Kind, name: str, payload: Dict[str, Any], who: str):
     """Changes an object: its fields, its name and its variables. Returns (object, changes)."""
     obj = find(db, kind, name)
     changes: List[str] = []
-    old_name = obj.Name
+    old_name = label(obj)
+
+    if kind.key == "tags":
+        changes += _place_tag(db, obj, payload)
 
     for f in kind.fields:
-        if f.derived or f.name not in payload:
+        if f.derived or f.name not in payload or (kind.key == "tags" and f.name in ("name", "parent")):
             continue
         value = payload[f.name]
         if f.kind == "bool":
@@ -263,6 +328,16 @@ def update(db: Session, kind: Kind, name: str, payload: Dict[str, Any], who: str
         if steps:
             changes.append(f"Updated {len(steps)} job step{'' if len(steps) == 1 else 's'} that named it.")
 
+    # A ${TAG:path.Var} names a tag by its path, so a tag renamed or moved takes those references with it
+    if kind.key == "tags" and label(obj) != old_name:
+        db.flush()
+        updated = tag_store.rename_references(db, old_name, label(obj))
+        if updated:
+            changes.append(f"Updated {updated} value{'' if updated == 1 else 's'} that named it.")
+
+    if carries_tags(kind):
+        changes += tag_store.apply_tags(db, obj, payload.get("tags"))
+
     if kind.variables and payload.get("variables") is not None:
         from app.schemas import VariableSave
         changes += apply_variables(obj, [VariableSave(**v) for v in payload["variables"]], creating=False)
@@ -271,7 +346,7 @@ def update(db: Session, kind: Kind, name: str, payload: Dict[str, Any], who: str
         if hasattr(obj, "ModifiedDateTime"):
             obj.ModifiedDateTime = utcnow()
             obj.ModifiedBy = who
-        _audit(db, kind, obj, "UPDATED", who, obj.Name, changes)
+        _audit(db, kind, obj, "UPDATED", who, label(obj), changes)
     db.commit()
     db.refresh(obj)
     return obj, changes
@@ -282,11 +357,19 @@ def delete(db: Session, kind: Kind, name: str, who: str) -> None:
     users = used_by(db, kind, obj)
     if users:
         listed = ", ".join(u["name"] for u in users[:5]) + (" and others" if len(users) > 5 else "")
+        if kind.key == "tags":
+            raise JobStoreError(
+                f"Tag '{shown(label(obj))}' cannot be deleted while {len(users)} "
+                f"thing{'' if len(users) == 1 else 's'} use{'s' if len(users) == 1 else ''} it: "
+                + ", ".join(shown(u["name"]) if u["kind"] == "tags" else u["name"] for u in users[:5])
+                + (" and others" if len(users) > 5 else "")
+                + ". Move its child tags and take it off what carries it first.", status=409)
         what = {"jobs": "job", "endpoints": "endpoint", "sites": "site"}[users[0]["kind"]]
         raise JobStoreError(
             f"{kind.singular.capitalize()} '{name}' cannot be deleted while {len(users)} "
             f"{what}{'' if len(users) == 1 else 's'} use{'s' if len(users) == 1 else ''} it: {listed}. "
             f"Change {'it' if len(users) == 1 else 'them'} first.", status=409)
+    name = label(obj)
     _audit(db, kind, None, "DELETED", who, name, [f"Deleted {kind.singular} '{name}'."])
     db.delete(obj)
     db.commit()

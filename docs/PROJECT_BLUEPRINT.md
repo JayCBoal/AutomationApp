@@ -60,9 +60,33 @@ Defined in `autoapp/app/models.py`. Diagrams: [DB_SCHEMA.md](DB_SCHEMA.md) and [
 | Site | A technical location (host, port, protocol) belonging to an Entity |
 | Credential | A secret used to reach a site or system |
 | Job | The unit a scheduler runs; an ordered list of steps |
-| Tag | A label, with its own variables, that can be attached to any object |
+| Tag | A label, with its own variables, that can be attached to any object. A tag can sit under a parent tag |
 
-Jobs are deliberately **not** linked to an Application or Entity. A job may touch several of each. The relationship is expressed through the endpoints its steps use, and (planned) through tags.
+Jobs are deliberately **not** linked to an Application or Entity. A job may touch several of each. The relationship is expressed through the endpoints its steps use, and through tags.
+
+### Tags
+
+**Built**
+
+- `Tags`: a name, a description and an optional parent (`Parent_MasterObject_id`), nested to any depth. Names are unique under one parent, not across all tags, so a tag is named by its path: `Finance/Reporting`, shown as `Finance / Reporting`. A name holds letters, digits, `-` and `_`; not `/` or `.`, which the path and `${TAG:...}` use.
+- `TagAssignments`: a tag carried by any master object except another tag (a tag's place is its parent).
+- A tag cannot be its own ancestor. A tag with child tags, or that something carries, cannot be deleted; the database refuses it too.
+- Renaming or moving a tag rewrites the `${TAG:path.Var}` references to it, and to the tags under it, in step values and variable values.
+- A parent tag is worth having when it carries variables its children share, or simply to make a child's name clear: `Environment / TEST` and `Purpose / TEST` are different tags.
+- The `Category` column of the earlier design was dropped: nothing used it, and parent tags do the same job.
+
+**Planned**
+
+- An optional per-job setting saying which tag wins a conflict.
+- A parent marked "pick one", so that nothing carries two of its children.
+
+### Settings
+
+**Built**
+
+- System-wide settings are declared in `engine/settings.py`: a name, a type, a default, the allowed values and a description. The `Settings` table holds only the values changed from the default. Every change is audited.
+- `VariablePrecedence` is the one setting so far (section 3).
+- Settings are not variables: nothing reads them through `${...}`.
 
 ### Jobs and JobKey
 
@@ -169,18 +193,23 @@ Step parameters, endpoint paths and variable values may contain `${...}` placeho
 | `${Name}` | The variable `Name`, searched through the cascade below |
 | `${JOB.Name}` | The variable on the job, specifically |
 | `${APP.Name}`, `${ENTITY.Name}` | Inside an endpoint only: the variable on that endpoint's Application, or its Site's Entity |
-| `${APP:LEGAL_APP.Name}`, `${ENTITY:JAYCO.Name}` | The variable on a named Application or Entity, from anywhere |
+| `${APP:LEGAL_APP.Name}`, `${ENTITY:JAYCO.Name}` | The variable on a named Application or Entity, from anywhere, including what its tags give it |
+| `${TAG:Finance/Reporting.Name}` | The variable as that tag gives it. Only a tag the job carries, or a parent of one. This also picks one side of a conflict |
 | `${DATE:yyyyMMdd}`, `${DATE:yyyy-MM-dd_HHmmss}`, ... | The moment the run started, in the format the mask gives. See "Date masks" below |
 | `${SYS:INSTANCE_ID}`, `${SYS:TIMESTAMP}`, `${SYS:WORKING_FOLDER}` | Values supplied by the runner. `${SYS:YYYYMMDD}` also still works; `${DATE:yyyyMMdd}` is the form to use |
 | `${FILE:NAME}`, `${FILE:STEM}`, `${FILE:EXT}` | Parts of a file's own name. Only in a rename mask; see section 5 |
 
-- Cascade order, lowest priority first: `SYS`, `ENTITY`, `APP`, `TAG`, `JOB`. A higher level overrides a lower one of the same name.
+- Cascade order, lowest priority first, by default: `SYS`, `ENTITY`, `APP`, `ENDPOINT`, `TAG`, `JOB`. A higher level overrides a lower one of the same name. The order is the `VariablePrecedence` setting, changed on the Settings page.
+  - `ENTITY`, `APP` and `ENDPOINT` apply only while an endpoint's path and pattern are being filled in.
+  - `TAG` is what the job's tags give it; `ENDPOINT` is what the endpoint's tags give it.
+- **Tags.** A tag's variables act as if they were on whatever carries it, just below that object's own. So a job's tags feed the job; an application's or entity's tags feed wherever that object's variables reach. A tag inherits its parents' variables, and its own override theirs.
+- **Conflicts.** When two of an object's tags give one variable different values, nothing is chosen. Using that variable is an error, unless the object gives it a value of its own or a higher level does; a conflict does not fall back to a lower level's value. A conflict on a variable the job does not use is a warning in the job editor. The same value from two tags is not a conflict, nor is one parent reached through two tags. Error messages name the tags, never the values.
 - A variable's value may contain placeholders; they are resolved too, up to 10 levels deep. A circular reference is an error.
 - A placeholder that cannot be resolved is an error naming the placeholder. Nothing runs with a literal `${...}` in a path.
 
 **Planned**
 
-- `TAG` scope: variables inherited from tags attached to a job, including tag hierarchies. This is also how related jobs will share variables. The models do not yet expose tag assignments to the engine.
+- Naming a tag the job does not carry in `${TAG:...}`, perhaps as a system-wide setting. Decided against for now: the dependency would be hidden from the tag's "used by" list (see TO-DO decision 3).
 - `STEP` scope: variables set on an individual step.
 
 ### How a preview is made
@@ -340,7 +369,10 @@ FastAPI application in `autoapp/app/`. The interactive description of every rout
 | `POST /api/v1/jobs/preview` | What an unsaved job would resolve to, and whether it would run. Saves nothing. Built; tested over HTTP |
 | `GET /api/v1/endpoints`, `POST /api/v1/endpoints` | List the registered endpoints; register a new one. Built; tested over HTTP |
 | `GET /api/v1/lookups` | The names offered in drop-downs. Built; tested over HTTP |
-| `GET`, `PUT`, `DELETE /api/v1/{applications,entities,sites,endpoints}[/{name}]` | Search, view, change and remove them. Built; tested over HTTP |
+| `GET`, `PUT`, `DELETE /api/v1/{applications,entities,sites,endpoints,tags}[/{name}]` | Search, view, change and remove them, and the tags they carry. A tag's name is its path: `/api/v1/tags/Finance/Reporting`. Every search takes `tag`, which includes child tags. Built; tested over HTTP |
+| `POST /api/v1/tags` | Register a tag, under a parent if wanted. Built; tested over HTTP |
+| `GET /api/v1/tag-variables?tag=...&tag=...&own=...` | What a set of tags gives together and where each variable comes from, and their conflicts; secrets masked. The pages ask it before a tag is added. Built; tested over HTTP |
+| `GET /api/v1/settings`, `PUT /api/v1/settings/{key}` | The system-wide settings. Built; tested over HTTP |
 | `GET /api/v1/runs`, `GET /api/v1/audits` | Job History and the Audit Log. Built; tested over HTTP |
 | `POST /api/v1/applications`, `/entities`, `/sites` | Register an application, entity or site. Built; tested over HTTP |
 | `GET /api/v1/jobs/{job_key}/check` | Built; tested over HTTP |
@@ -397,16 +429,20 @@ Nothing in this section is built in the rewrite. The 2024 prototype tracked exte
   - **Variables panel:** the job's own variables, each with a name, value, secret flag and description. They are saved with the job. A secret's value is never sent to the page: its box is blank, and leaving it blank keeps the value it has.
   - **Live preview:** as the form is edited, each file location shows where it really is, and any value with a placeholder shows what it resolves to, or why it cannot be. "Would it run?" follows the form too, before anything is saved. Secret values are masked.
   - A placeholder naming a variable the job does not have offers **Add variable ...**, which adds it to the panel ready for its value.
-  - That window's Application and Site boxes have a **New...** of their own, and the New site window has one for its Entity. All four windows are one mechanism in `common.js` (`createInPlace`), driven by a short description of each form, so a later page gets them by asking.
-- **Application, Entity, Site and Endpoint** pages: one search page and one detail page serve all four (`search.html?kind=sites`, `detail.html?kind=sites&name=...`), drawn from a short description of each kind in `definitions.js`.
-  - Search by any field; each row says how much uses it.
+  - That window's Application and Site boxes have a **New...** of their own, and the New site window has one for its Entity. All five windows (endpoint, application, site, entity, tag) are one mechanism in `common.js` (`createInPlace`), driven by a short description of each form, so a later page gets them by asking.
+  - **Tags panel**, as on the detail pages below. Its "What its tags give" table also stops **Add variable ...** being offered for a variable a tag provides. A conflict among the job's tags on a variable it does not use is shown as a warning under "Would it run?"; one it uses is a problem.
+- **Application, Entity, Site, Endpoint and Tag** pages: one search page and one detail page serve all five (`search.html?kind=sites`, `detail.html?kind=sites&name=...`; a tag is named by its path, `detail.html?kind=tags&name=Finance/Reporting`), drawn from a short description of each kind in `definitions.js`.
+  - Search by any field; each row says how much uses it. Every search page except the tags' own has a **Tag** box, which finds what carries a tag whose path contains the text, or any tag under it, and a Tags column.
   - **New** opens the detail page blank and unlocked, so a new one is created with its variables and its active flag in one go. The small "New..." windows remain for registering something from inside another form.
   - The detail page arrives locked; Edit, Submit and Cancel work as on the job editor. Fields that name another kind have its drop-down and a **New...** link.
   - **Used by** lists what refers to it, as links. Something still in use cannot be deleted, and the page says what uses it.
   - Applications, entities and sites have a Variables panel. An application's `Root`, which its endpoints' paths use, is set here.
   - An endpoint links to the files taken from it and delivered to it on the Operations Log. Renaming an endpoint renames it in every job step that names it.
+  - **Tags panel** (everything but a tag): the tags it carries, as links, and a table of what they give it and from which tag, with secrets masked and a struck-out value where its own variable wins. While editing, a tag is chosen from a drop-down (or made with **New...**); before it is added, the panel shows the variables it would give and any conflict it would bring with the tags already there. The panel is one piece of markup and code in `common.js` (`fillTagPanels`, `tagEditing`), shared with the job editor.
+  - A tag's page shows its parent, the variables it inherits from its parents and from which one, and, under Used by, its child tags and what carries it.
 - **Job History** page: every run, newest first, with its status, error, timing, the scheduler's identifiers, and a link to the files it handled.
-- **Audit Log** page: every change to a definition, newest first, saying in words what changed, with a link to the thing changed if it still exists.
+- **Audit Log** page: every change to a definition or a setting, newest first, saying in words what changed, with a link to the thing changed if it still exists.
+- **Settings** page: each system-wide setting with what it means, drawn from the declarations in `engine/settings.py`. The variable precedence is a list put in order with arrows. Each setting is saved on its own, can be undone, or put back to its default.
 - **Main Index** page, linking to every page.
 
 **Planned**
@@ -416,7 +452,7 @@ Nothing in this section is built in the rewrite. The 2024 prototype tracked exte
 
 ## 12. Testing
 
-- Tests are in `autoapp/tests/` and run with `python3 -m pytest` (592 tests: about six minutes on SQLite, eight on MariaDB).
+- Tests are in `autoapp/tests/` and run with `python3 -m pytest` (about 700 tests: about six minutes on SQLite, eight on MariaDB). On the development machine, `autoapp_tests` (from `dev_env.sh`) runs both at once, in about eight minutes; each run has its own temporary folder.
 - Each test builds its own temporary SQLite database and temporary folders. No test touches the working directory or a shared database.
 - The same suite runs against MariaDB when `AUTOAPP_TEST_DATABASE_URL` names a test database. Its tables are built once per run from `SQL/Create_Tables.sql`, the script an installation would use, and emptied before each test.
 - Tests run the real code. AutoApp's own components are not mocked. The runner tests launch the runner as a separate process, as a scheduler would.

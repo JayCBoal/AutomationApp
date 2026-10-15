@@ -8,7 +8,7 @@
  */
 function jobSearch() {
     const search = AutoApp.searchPage({
-        criteria: ["job_key", "description", "active", "endpoint"],
+        criteria: ["job_key", "description", "active", "endpoint", "tag"],
         path: "/jobs",
         noun: "job",
         order: "in name order",
@@ -48,6 +48,7 @@ function jobSearch() {
                 ["Enabled", j => j.active ? "Yes" : "No"],
                 ["Enabled steps", j => j.step_count], ["Disabled steps", j => j.disabled_step_count],
                 ["Endpoints", j => j.endpoints.join("; ")],
+                ["Tags", j => j.tags.join("; ")],
                 ["Ready to run", j => j.ready ? "Yes" : "No"], ["Problems", j => j.problem_count],
                 ["Last run status", j => j.last_run ? j.last_run.status : ""],
                 ["Last run started (UTC)", j => j.last_run ? j.last_run.started : ""],

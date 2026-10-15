@@ -4,7 +4,8 @@ from sqlalchemy.orm import Session
 from typing import Dict, Any, List, Optional
 
 from app.database import get_db
-from app.job_store import JobStoreError, apply_job, delete_job, describe_job, save_job
+from app import tag_store
+from app.job_store import JobStoreError, apply_job, delete_job, describe_job, inherited_variables, save_job
 from app.models import Job, JobRun, JobStep, JobStepParameter, Variable
 from app.schemas import (
     FieldPreview, JobCheckResult, JobDetail, JobInitRequest, JobInitResponse, JobPreview, JobSave, JobSaveResult,
@@ -40,6 +41,7 @@ def list_jobs(
     description: Optional[str] = Query(None, description="Part of the description"),
     active: Optional[bool] = Query(None, description="true for enabled jobs only, false for disabled only"),
     endpoint: Optional[str] = Query(None, description="Part of the name of an endpoint one of the job's steps uses"),
+    tag: Optional[str] = Query(None, description="Part of a tag's path: jobs carrying that tag, or one under it"),
     limit: int = Query(MAX_RESULTS, ge=1, le=MAX_RESULTS),
     db: Session = Depends(get_db),
 ):
@@ -65,6 +67,8 @@ def list_jobs(
                     JobStepParameter.ParamValue.ilike(f"%{endpoint}%"))
         )
         query = query.filter(uses_endpoint.exists())
+    if tag and tag.strip():
+        query = query.filter(tag_store.carrying(db, tag))
     jobs = query.order_by(func.lower(Job.JobKey), Job.JobKey).limit(limit).all()
     if not jobs:
         return []
@@ -117,6 +121,7 @@ def list_jobs(
             ready=problem_counts[job.MasterObject_id] == 0,
             problem_count=problem_counts[job.MasterObject_id],
             last_run=last_runs.get(job.JobKey),
+            tags=tag_store.paths_on(job),
             modified=job.ModifiedDateTime or job.CreatedDateTime,
             modified_by=job.ModifiedBy or job.CreatedBy,
         )
@@ -241,7 +246,10 @@ def preview_job(payload: JobSave, existing_key: Optional[str] = Query(
                 handler_cls = None
             steps.append({name: FieldPreview(resolved=safe(None if resolved is None else str(resolved)), error=safe(error))
                           for name, (resolved, error) in preview_step(step, handler_cls, engine, db).items()})
-        return JobPreview(valid=not problems, problems=problems, steps=steps)
+        # Tags that disagree about a variable the job does not use: worth saying, but nothing stops
+        warnings = [w for w in tag_store.job_tag_warnings(db, job) if not any(w in problem for problem in problems)]
+        return JobPreview(valid=not problems, problems=problems, warnings=warnings, steps=steps,
+                          tags=tag_store.paths_on(job), inherited_variables=inherited_variables(db, job))
     except JobStoreError as e:
         raise HTTPException(status_code=e.status, detail=str(e))
     finally:

@@ -41,6 +41,11 @@
                                 </template>
                             </label>
                         </template>
+                        <label x-show="spec.carriesTags">
+                            <span>Tag</span>
+                            <input type="text" x-model="criteria.tag" name="tag" list="lookup-tags" autocomplete="off"
+                                   title="Finds what carries a tag whose path contains this, or a tag under it">
+                        </label>
                     </fieldset>
                 </div>
                 <div class="actions">
@@ -69,12 +74,12 @@
                             </tr>
                         </thead>
                         <tbody>
-                            <template x-for="row in rows" :key="row.name">
+                            <template x-for="row in rows" :key="kind === 'tags' ? row.path : row.name">
                                 <tr>
                                     <template x-for="column in columns" :key="column.label">
                                         <td :data-column="column.label">
                                             <template x-if="column.link">
-                                                <a class="item-name" :href="link(row.name)" x-text="row.name"></a>
+                                                <a class="item-name" :href="link(row)" x-text="column.main(row)"></a>
                                             </template>
                                             <template x-if="!column.link">
                                                 <div class="main" :class="{ status: column.status, Enabled: column.status && row.active,
@@ -90,7 +95,7 @@
                                         <div x-text="time(row.modified) || '—'"></div>
                                         <div class="muted small" x-show="row.modified_by" x-text="'by ' + row.modified_by"></div>
                                     </td>
-                                    <td><a :href="link(row.name) + '&edit'">Edit</a></td>
+                                    <td><a :href="link(row) + '&edit'">Edit</a></td>
                                 </tr>
                             </template>
                         </tbody>

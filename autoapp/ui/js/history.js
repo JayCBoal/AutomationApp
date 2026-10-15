@@ -53,9 +53,9 @@ function auditLog() {
         /** Where the thing changed can be seen now, if it still exists */
         link(audit) {
             if (!audit.name || audit.action.endsWith("_DELETED")) return null;
-            return audit.kind === "jobs"
-                ? "job.html?" + new URLSearchParams({ key: audit.name })
-                : "detail.html?" + new URLSearchParams({ kind: audit.kind, name: audit.name });
+            if (audit.kind === "jobs") return "job.html?" + new URLSearchParams({ key: audit.name });
+            if (audit.kind === "settings") return "settings.html";
+            return "detail.html?" + new URLSearchParams({ kind: audit.kind, name: audit.name });
         },
         exportCsv() {
             AutoApp.download("autoapp_audit_log.csv", AutoApp.toCsv(this.rows, [

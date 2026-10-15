@@ -23,6 +23,7 @@ erDiagram
     MasterObjects ||--o| Jobs : "MasterObject_id"
     StepTypes ||--o{ StepDefinitions : "StepType_id"
     MasterObjects ||--o| Tags : "MasterObject_id"
+    Tags |o--o{ Tags : "Parent_MasterObject_id"
     MasterObjects ||--o{ Variables : "MasterObject_id"
     Jobs |o--o{ JobRuns : "Job_MasterObject_id"
     Jobs ||--o{ JobSteps : "Job_MasterObject_id"
@@ -86,8 +87,8 @@ erDiagram
     }
     Tags {
         int MasterObject_id PK, FK
-        string(100) TagName UK "required"
-        string(50) Category
+        int Parent_MasterObject_id FK
+        string(100) Name "required"
         text Description
     }
     Variables {
@@ -107,6 +108,7 @@ erDiagram
     MasterObjects ||--o| Credentials : "MasterObject_id"
     MasterObjects ||--o| Entities : "MasterObject_id"
     MasterObjects ||--o| Tags : "MasterObject_id"
+    Tags |o--o{ Tags : "Parent_MasterObject_id"
     MasterObjects ||--o{ Variables : "MasterObject_id"
     MasterObjects ||--o| Sites : "MasterObject_id"
     Entities |o--o{ Sites : "Entity_MasterObject_id"
@@ -164,7 +166,7 @@ erDiagram
     JobSteps ||--o{ JobStepParameters : "JobStep_id"
 ```
 
-## Endpoints, runs, operations and audits
+## Endpoints, runs, operations, audits and settings
 
 ```mermaid
 erDiagram
@@ -221,6 +223,12 @@ erDiagram
         text Details
         datetime CreatedDateTime
     }
+    Settings {
+        string(100) SettingKey PK
+        text SettingValue "required"
+        datetime UpdatedDateTime
+        string(100) UpdatedBy
+    }
     MasterObjects |o--o{ Audits : "MasterObject_id"
     Jobs |o--o{ JobRuns : "Job_MasterObject_id"
     MasterObjects ||--o| Endpoints : "MasterObject_id"
@@ -236,6 +244,7 @@ erDiagram
 
 | Table | Columns that must be unique together |
 | :--- | :--- |
+| `Tags` | `Parent_MasterObject_id`, `Name` |
 | `Variables` | `MasterObject_id`, `VarName` |
 | `TagAssignments` | `Tag_MasterObject_id`, `Target_MasterObject_id` |
 | `Operations` | `JobRun_id`, `Seq` |

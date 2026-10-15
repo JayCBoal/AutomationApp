@@ -125,15 +125,32 @@ class Credential(MasterObject):
 
 
 class Tag(MasterObject):
+    """
+    A label any master object can carry. A tag's variables act as if they were on
+    what carries it, and a tag can sit under a parent, nested to any depth,
+    inheriting its parent's variables. Names are unique under one parent, so a tag
+    is named by its path: Environment/TEST (see engine/tag_vars.py).
+    """
     __tablename__ = 'Tags'
+    __table_args__ = (
+        UniqueConstraint('Parent_MasterObject_id', 'Name', name='uq_tag_parent_name'),
+    )
+
+    # No full stop or slash: a tag is named as ${TAG:Parent/Child.Variable}
+    NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
 
     MasterObject_id = Column(Integer, ForeignKey('MasterObjects.id', ondelete='CASCADE'), primary_key=True)
-    TagName = Column(String(100), nullable=False, unique=True)
-    Category = Column(String(50), nullable=True)
+    # A tag with children cannot be deleted, so the database refuses it too
+    Parent_MasterObject_id = Column(Integer, ForeignKey('Tags.MasterObject_id', ondelete='RESTRICT'), nullable=True)
+    Name = Column(String(100), nullable=False)
     Description = Column(Text, nullable=True)
+
+    parent = relationship("Tag", remote_side=[MasterObject_id], foreign_keys=[Parent_MasterObject_id],
+                          backref="children")
 
     __mapper_args__ = {
         'polymorphic_identity': 'TAG',
+        'inherit_condition': MasterObject_id == MasterObject.id,
     }
 
 
@@ -188,8 +205,24 @@ class TagAssignment(Base):
     )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    Tag_MasterObject_id = Column(Integer, ForeignKey('Tags.MasterObject_id', ondelete='CASCADE'), nullable=False)
+    # A tag still attached to something cannot be deleted
+    Tag_MasterObject_id = Column(Integer, ForeignKey('Tags.MasterObject_id', ondelete='RESTRICT'), nullable=False)
     Target_MasterObject_id = Column(Integer, ForeignKey('MasterObjects.id', ondelete='CASCADE'), nullable=False)
+
+    tag = relationship("Tag", foreign_keys=[Tag_MasterObject_id])
+
+
+class SettingValue(Base):
+    """
+    A system-wide setting changed from its default. The settings themselves, their
+    defaults and what they mean, are declared in engine/settings.py.
+    """
+    __tablename__ = 'Settings'
+
+    SettingKey = Column(String(100), primary_key=True)
+    SettingValue = Column(Text, nullable=False)
+    UpdatedDateTime = Column(DateTime, default=utcnow, onupdate=utcnow)
+    UpdatedBy = Column(String(100), nullable=True)
 
 
 # ============================================================================

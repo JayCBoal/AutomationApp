@@ -23,7 +23,7 @@ TABLE_GROUPS = {
     "Domain registry": ["MasterObjects", "Applications", "Entities", "Sites", "Credentials", "Tags",
                         "Variables", "TagAssignments"],
     "Jobs and steps": ["Jobs", "JobSteps", "JobStepParameters", "StepTypes", "StepDefinitions"],
-    "Endpoints, runs, operations and audits": ["Endpoints", "JobRuns", "Operations", "Audits"],
+    "Endpoints, runs, operations, audits and settings": ["Endpoints", "JobRuns", "Operations", "Audits", "Settings"],
 }
 
 TYPE_NAMES = {"Integer": "int", "String": "string", "Text": "text", "Boolean": "bool",

@@ -73,8 +73,8 @@ classDiagram
     MasterObject <|-- Site
     class Tag {
         +int MasterObject_id
-        +string(100) TagName
-        +string(50) Category
+        +int Parent_MasterObject_id
+        +string(100) Name
         +text Description
     }
     MasterObject <|-- Tag
@@ -145,6 +145,12 @@ classDiagram
         +datetime StartedDateTime
         +datetime EndedDateTime
     }
+    class SettingValue {
+        +string(100) SettingKey
+        +text SettingValue
+        +datetime UpdatedDateTime
+        +string(100) UpdatedBy
+    }
     class StepDefinition {
         +int id
         +int StepType_id
@@ -190,6 +196,8 @@ classDiagram
     Operation "*" --> "0..1" Endpoint : source_endpoint
     Operation "*" --> "0..1" Endpoint : dest_endpoint
     StepType "1" --> "*" StepDefinition : definitions
+    Tag "1" --> "*" Tag : children
+    TagAssignment "*" --> "0..1" Tag : tag
 ```
 
 Relationships created in the other direction (for example `job_step.job`) exist too but are not drawn.

@@ -16,7 +16,7 @@ import json
 import re
 from typing import List, Optional
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, object_session
 
 from app.models import Audit, Job, JobRun, JobStep, JobStepParameter, StepType, Variable, utcnow
 from app.schemas import JobDetail, JobSave, JobStepOut, VariableOut
@@ -32,7 +32,16 @@ class JobStoreError(Exception):
         self.status = status
 
 
+def inherited_variables(db: Session, job: Job) -> list:
+    """What a job's tags give it, secrets masked, marking those its own variables override."""
+    from app import tag_store
+    view = tag_store.variables_view(db, tag_store.paths_on(job), [v.VarName for v in job.variables])
+    return view["variables"]
+
+
 def describe_job(job: Job) -> JobDetail:
+    from app import tag_store
+    db = object_session(job)
     return JobDetail(
         job_key=job.JobKey,
         description=job.Description,
@@ -59,6 +68,8 @@ def describe_job(job: Job) -> JobDetail:
                         description=v.Description)
             for v in sorted(job.variables, key=lambda v: (v.VarName.lower(), v.VarName))
         ],
+        tags=tag_store.paths_on(job),
+        inherited_variables=inherited_variables(db, job) if db is not None else [],
     )
 
 
@@ -238,6 +249,12 @@ def apply_job(db: Session, payload: JobSave, existing_key: Optional[str], who: s
 
     if payload.variables is not None:
         changes += apply_variables(job, payload.variables, creating)
+
+    if payload.tags is not None:
+        from app import tag_store
+        tag_changes = tag_store.apply_tags(db, job, payload.tags)
+        if not creating:
+            changes += tag_changes
 
     if changes and not creating:
         job.ModifiedDateTime = utcnow()

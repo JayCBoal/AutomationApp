@@ -7,6 +7,8 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app import tag_store
+from app.job_store import JobStoreError
 from app.models import Application, Audit, Endpoint, Site
 from app.schemas import EndpointCreate, EndpointOut
 
@@ -67,6 +69,12 @@ def create_endpoint(payload: EndpointCreate, db: Session = Depends(get_db)):
     )
     db.add(endpoint)
     db.flush()
+    if payload.tags:
+        try:
+            tag_store.apply_tags(db, endpoint, payload.tags)
+        except JobStoreError as e:
+            db.rollback()
+            raise HTTPException(e.status, str(e))
     db.add(Audit(MasterObject_id=endpoint.MasterObject_id, Action="ENDPOINT_CREATED", PerformedBy=EDITOR_NAME,
                  Details=json.dumps({"endpoint": name, "changes": [f"Registered endpoint '{name}'."]})))
     db.commit()

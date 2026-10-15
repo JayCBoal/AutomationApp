@@ -22,7 +22,7 @@ A header with the AutoApp name and the page title, and a navigation bar on every
 
 | Left | Centre | Right |
 | :--- | :--- | :--- |
-| Main Index | Applications, Entities, Sites, Jobs, Endpoints | Operations Log, Job History, Audit Log |
+| Main Index | Applications, Entities, Sites, Jobs, Endpoints, Tags | Operations Log, Job History, Audit Log, Settings |
 
 - The mockups show Processes, Sources and Deliveries. Processes is now Jobs, and Sources and Deliveries are the single Endpoints section.
 - **Proposed:** an Admin group for Step Types, Tags and Credentials.
@@ -62,7 +62,8 @@ A header with the AutoApp name and the page title, and a navigation bar on every
 | Audit Log | search | Mockup | **Built.** Read-only. Changes to definitions: who changed what, and when |
 | Async Parent Process Search / Detail | search, detail | Mockup | Deferred until asynchronous processes are rebuilt |
 | Step Type Detail | detail | Mentioned in the design document, no mockup | **Not planned.** Step types are seen where they matter, in the job editor |
-| Tag Search / Detail | search, detail | **Proposed** | Waits on the tag design |
+| Tag Search / Detail | search, detail | Not in the mockup | **Built.** The shared search and detail pages. Every other detail page, and the job editor, has a Tags panel; every search page has a Tag box |
+| Settings | settings | Not in the mockup | **Built.** System-wide settings, such as the variable precedence |
 | Credential Search / Detail | search, detail | **Proposed** | Secret values are write-only: they can be set, never displayed |
 
 ## The job editor (Job Detail)
@@ -157,7 +158,7 @@ The catalog that drives the job editor. For administrators.
 | Placeholders written `<WorkingFolder>`, `<yyyyMMdd>` | Written `${...}` |
 | Step Type and Step Function | Step type only |
 | Operations show Entity and Site looked up from the path | Taken from the endpoints recorded on the operation |
-| No pages for variables, tags, credentials or step types | Proposed above |
+| No pages for variables, tags, credentials or step types | Tag pages built; the others proposed above |
 
 ## Open questions
 

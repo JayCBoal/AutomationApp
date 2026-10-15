@@ -1,9 +1,10 @@
 /*
- * Search and detail pages for applications, entities, sites and endpoints.
+ * Search and detail pages for applications, entities, sites, endpoints and tags.
  *
- * The four work the same way, so one search page (search.html?kind=sites) and one
+ * They work the same way, so one search page (search.html?kind=sites) and one
  * detail page (detail.html?kind=sites&name=ACME_SFTP) serve them all, drawn from
- * the description of each kind below.
+ * the description of each kind below. A tag is named by its path:
+ * detail.html?kind=tags&name=Finance/Reporting. Everything but a tag carries tags.
  *
  * API routes used, for each kind:
  *     GET    /api/v1/{kind}           search
@@ -60,7 +61,19 @@ const DEFINITIONS = {
             { name: "description", label: "Description", max: 256 },
         ],
     },
+    tags: {
+        title: "Tag", plural: "Tags", creates: "tag", variables: true, carriesTags: false,
+        usedByLabel: "Uses",
+        fields: [
+            { name: "name", label: "Name", required: true, max: 100,
+              help: "Unique under its parent. Letters, digits, hyphens and underscores." },
+            { name: "parent", label: "Parent", lookup: "tags", create: "tag",
+              help: "The tag it sits under. It inherits that tag's variables." },
+            { name: "description", label: "Description" },
+        ],
+    },
 };
+for (const spec of Object.values(DEFINITIONS)) if (spec.carriesTags === undefined) spec.carriesTags = true;
 
 const KIND = new URLSearchParams(location.search).get("kind") || "";
 const SPEC = DEFINITIONS[KIND];
@@ -109,7 +122,17 @@ const COLUMNS = {
         { label: "Site", main: r => r.site, sub: r => r.entity },
         { label: "Path", main: r => r.path, sub: r => r.filename_pattern, code: true },
     ],
+    tags: [
+        { label: "Tag", main: r => AutoApp.showPath(r.path), sub: r => r.description, link: true },
+    ],
 };
+// Whatever carries tags shows them in its own column
+for (const [kind, columns] of Object.entries(COLUMNS)) {
+    if (DEFINITIONS[kind].carriesTags) columns.push({ label: "Tags", main: r => (r.tags || []).map(AutoApp.showPath).join(", ") });
+}
+
+/** How an item is named in an address and in the API: a tag by its path (an endpoint's "path" is its folder). */
+const keyOf = item => (item && (KIND === "tags" ? item.path : item.name)) || "";
 
 // What a new one starts with, before anything is typed
 const STARTING_VALUES = {
@@ -117,6 +140,7 @@ const STARTING_VALUES = {
     entities: { active: true },
     sites: { port: "22", protocol: "SFTP", active: true },
     endpoints: { filename_pattern: "*" },
+    tags: {},
 };
 
 function detailLink(kind, name) {
@@ -128,9 +152,11 @@ function detailLink(kind, name) {
 
 function definitionSearch() {
     if (!SPEC) return { spec: null, unknown: KIND };
-    const criteria = SPEC.fields.map(field => field.name);
+    // Whatever carries tags can be searched by tag: a parent finds what carries its children too
+    const criteria = SPEC.fields.map(field => field.name).concat(SPEC.carriesTags ? ["tag"] : []);
     const search = AutoApp.searchPage({
-        criteria, path: "/" + KIND, noun: SPEC.title.toLowerCase(), order: "in name order",
+        criteria, path: "/" + KIND, noun: SPEC.title.toLowerCase(),
+        order: KIND === "tags" ? "each under its parent" : "in name order",
         inAddress: () => ({ kind: KIND }),          // the page needs to know which kind it is showing
     });
 
@@ -145,7 +171,7 @@ function definitionSearch() {
             this.startSearch();
         },
 
-        link(name) { return detailLink(KIND, name); },
+        link(row) { return detailLink(KIND, keyOf(row)); },
         columns: COLUMNS[KIND],
         time: AutoApp.formatTime,
         text(row, field) {
@@ -162,6 +188,8 @@ function definitionSearch() {
 
         exportCsv() {
             const columns = SPEC.fields.map(field => [field.label, row => this.text(row, field)]);
+            if (KIND === "tags") columns.unshift(["Path", row => row.path]);
+            if (SPEC.carriesTags) columns.push(["Tags", row => (row.tags || []).join("; ")]);
             columns.push([`Used by (${SPEC.usedByLabel.toLowerCase()})`, row => row.used_by_count]);
             columns.push(["Last changed (UTC)", row => row.modified], ["Changed by", row => row.modified_by]);
             AutoApp.download(`autoapp_${KIND}.csv`, AutoApp.toCsv(this.rows, columns));
@@ -174,7 +202,9 @@ function definitionSearch() {
 function definitionDetail() {
     if (!SPEC) return { spec: null, unknown: KIND };
     let uid = 1;
+    const ownVariables = function () { return this.form ? this.form.variables.map(v => v.name.trim()).filter(Boolean) : []; };
     return {
+        ...AutoApp.tagEditing(ownVariables),
         spec: SPEC,
         kind: KIND,
         unknown: "",
@@ -195,7 +225,8 @@ function definitionDetail() {
             window.addEventListener("beforeunload", event => { if (this.changed) event.preventDefault(); });
             await AutoApp.ensureLookups();
             if (this.isNew) {
-                this.show({ name: "", ...STARTING_VALUES[KIND], variables: [] });
+                const parent = KIND === "tags" ? new URLSearchParams(location.search).get("parent") || "" : "";
+                this.show({ name: "", ...STARTING_VALUES[KIND], ...(parent ? { parent } : {}), variables: [], tags: [] });
                 this.saved = JSON.stringify(this.blank());
                 this.editing = true;
                 setTitle(`New ${SPEC.title.toLowerCase()}`);
@@ -208,7 +239,7 @@ function definitionDetail() {
         async load() {
             this.busy = true;
             try {
-                this.item = await AutoApp.get(`/${KIND}/${encodeURIComponent(this.name)}`);
+                this.item = await AutoApp.get(`/${KIND}/${encodeURI(this.name)}`);
                 this.show(this.item);
             } catch (e) {
                 this.item = this.form = null;
@@ -226,9 +257,13 @@ function definitionDetail() {
                 uid: uid++, name: v.name, value: v.value ?? "", secret: v.secret, description: v.description || "",
                 savedSecret: v.secret,
             }));
+            form.tags = [...(item.tags || [])];
             this.form = form;
             this.saved = JSON.stringify(this.payload());
-            if (item.name) setTitle(`${SPEC.title}: ${item.name}`);
+            this.tagCandidate = "";
+            this.tagPreview = null;
+            if (SPEC.carriesTags) this.refreshTags();
+            if (keyOf(item)) setTitle(`${SPEC.title}: ${KIND === "tags" ? AutoApp.showPath(keyOf(item)) : item.name}`);
         },
 
         /** A new one counts as changed once anything differs from what it started with. */
@@ -249,6 +284,7 @@ function definitionDetail() {
                     description: v.description.trim() || null,
                 }));
             }
+            if (SPEC.carriesTags) body.tags = [...this.form.tags];
             return body;
         },
 
@@ -265,6 +301,10 @@ function definitionDetail() {
             const made = await AutoApp.createInPlace(field.create, { name: String(this.form[field.name] || "").trim() });
             if (made) this.form[field.name] = made.name;
         },
+
+        /** A tag's variables inherited from its parents, which its own override. */
+        get inherited() { return (this.item && this.item.inherited_variables) || []; },
+        showPath: AutoApp.showPath,
 
         newLink() { return newLink(KIND); },
 
@@ -294,18 +334,18 @@ function definitionDetail() {
                     if (!SPEC.variables) delete body.variables;
                     const created = await AutoApp.send("POST", `/${KIND}`, body);
                     this.isNew = false;
-                    this.name = this.chosen = created.name;
+                    this.name = this.chosen = keyOf(created);
                     this.editing = false;
                     this.saved = "";                // nothing left unsaved
-                    history.replaceState(null, "", detailLink(KIND, created.name));
+                    history.replaceState(null, "", detailLink(KIND, keyOf(created)));
                     await this.load();
-                    this.notice = `Saved. Created ${SPEC.title.toLowerCase()} '${created.name}'.`;
+                    this.notice = `Saved. Created ${SPEC.title.toLowerCase()} '${KIND === "tags" ? AutoApp.showPath(keyOf(created)) : created.name}'.`;
                     this.busy = false;
                     return;
                 }
-                const result = await AutoApp.send("PUT", `/${KIND}/${encodeURIComponent(this.item.name)}`, this.payload());
+                const result = await AutoApp.send("PUT", `/${KIND}/${encodeURI(keyOf(this.item))}`, this.payload());
                 this.item = result.item;
-                this.name = this.chosen = result.item.name;
+                this.name = this.chosen = keyOf(result.item);
                 this.editing = false;
                 this.show(result.item);
                 this.notice = result.changes.length ? "Saved. " + result.changes.join(" ") : "Nothing had changed.";
@@ -317,11 +357,11 @@ function definitionDetail() {
         },
 
         async remove() {
-            if (!confirm(`Delete ${SPEC.title.toLowerCase()} '${this.item.name}'? This cannot be undone.`)) return;
+            if (!confirm(`Delete ${SPEC.title.toLowerCase()} '${KIND === "tags" ? AutoApp.showPath(keyOf(this.item)) : this.item.name}'? This cannot be undone.`)) return;
             this.busy = true;
             this.error = "";
             try {
-                await AutoApp.send("DELETE", `/${KIND}/${encodeURIComponent(this.item.name)}`);
+                await AutoApp.send("DELETE", `/${KIND}/${encodeURI(keyOf(this.item))}`);
                 this.saved = JSON.stringify(this.payload());
                 location.href = "search.html?" + new URLSearchParams({ kind: KIND });
             } catch (e) {

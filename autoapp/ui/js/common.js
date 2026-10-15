@@ -6,7 +6,8 @@
  *   - formatting times and sizes, and exporting a table as CSV
  *   - drop-downs for boxes that refer to something registered elsewhere (data-lookup)
  *   - registering something new at the moment it is first needed (createInPlace)
- *   - what every search page does (searchPage, at the end)
+ *   - what every search page does (searchPage)
+ *   - the Tags panel of the detail pages and the job editor (tagPanel, tagEditing, at the end)
  *
  * The pages never read the database. Everything they show comes from the API.
  */
@@ -22,9 +23,11 @@ const AutoApp = (() => {
         { group: "centre", name: "Sites", href: "search.html?kind=sites", about: "An entity's servers" },
         { group: "centre", name: "Jobs", href: "jobs.html", about: "Job definitions, steps and parameters" },
         { group: "centre", name: "Endpoints", href: "search.html?kind=endpoints", about: "The registered places files come from and go to" },
+        { group: "centre", name: "Tags", href: "search.html?kind=tags", about: "Labels anything can carry, and the variables they give" },
         { group: "right", name: "Operations Log", href: "operations.html", about: "Every file handled, and each file's trace" },
         { group: "right", name: "Job History", href: "history.html", about: "Every run of every job" },
         { group: "right", name: "Audit Log", href: "audit.html", about: "Who changed which definition, and when" },
+        { group: "right", name: "Settings", href: "settings.html", about: "System-wide settings, such as the order variables are looked for in" },
     ];
 
     // ---------- Theme ----------
@@ -120,11 +123,13 @@ const AutoApp = (() => {
         return response.status === 204 ? null : response.json();
     }
 
-    /** GET from the API. Empty criteria are left out. */
+    /** GET from the API. Empty criteria are left out; a list is sent as the same name once for each item. */
     function get(path, params = {}) {
         const query = new URLSearchParams();
         for (const [name, value] of Object.entries(params)) {
-            if (value !== null && value !== undefined && String(value).trim() !== "") query.set(name, String(value).trim());
+            for (const item of Array.isArray(value) ? value : [value]) {
+                if (item !== null && item !== undefined && String(item).trim() !== "") query.append(name, String(item).trim());
+            }
         }
         return request("GET", API + path + (query.toString() ? "?" + query : ""));
     }
@@ -295,6 +300,17 @@ const AutoApp = (() => {
                 { name: "description", label: "Description", max: 256 },
             ],
         },
+        tag: {
+            title: "New tag", route: "/tags", lookup: "tags",
+            note: "A tag is a label anything can carry. Its variables, and its parent's, act as if they were on whatever carries it.",
+            fields: [
+                { name: "name", label: "Name", required: true, max: 100, placeholder: "For example Reporting",
+                  help: "Letters, digits, hyphens and underscores. Unique under its parent." },
+                { name: "parent", label: "Parent", lookup: "tags", create: "tag",
+                  help: "The tag it sits under, if any." },
+                { name: "description", label: "Description" },
+            ],
+        },
         entity: {
             title: "New entity", route: "/entities", lookup: "entities",
             note: "An entity is an outside party: a vendor, client or partner.",
@@ -387,6 +403,8 @@ const AutoApp = (() => {
                 create.disabled = true;
                 try {
                     created = await send("POST", spec.route, body);
+                    // A tag is named by its path elsewhere, so that is the name the caller gets back
+                    if (kind === "tag") created = { ...created, name: created.path };
                     addLookupOption(spec.lookup, created.name, created.description || "");
                     dialog.close();
                 } catch (e) {
@@ -481,5 +499,162 @@ const AutoApp = (() => {
         return page;
     }
 
-    return { PAGES, get, send, createInPlace, ensureLookups, parseUtc, formatTime, localInputToUtc, timeZoneName, formatSize, toCsv, download, searchPage };
+    // ---------- Tags ----------
+
+    /** "Finance/Reporting" as it is shown: "Finance / Reporting". */
+    const showPath = path => String(path || "").split("/").join(" / ");
+    const normalPath = text => String(text || "").split("/").map(part => part.trim()).filter(Boolean).join("/");
+
+    const TAG_PANEL = `
+        <section class="panel tags-panel" aria-label="Tags">
+            <div class="steps-head">
+                <h2 class="section">Tags</h2>
+                <span class="muted small">A tag's variables, and its parent's, act as if they were here, just below
+                    the ones of its own.</span>
+            </div>
+            <p class="message" id="no-tags" x-show="form.tags.length === 0">None.</p>
+            <ul class="tag-list" id="tag-list" x-show="form.tags.length > 0">
+                <template x-for="(path, index) in form.tags" :key="path">
+                    <li class="tag-chip"><a :href="'detail.html?' + new URLSearchParams({ kind: 'tags', name: path })"
+                           x-text="showPath(path)"></a>
+                        <button type="button" class="link remove-tag" x-show="editing" @click="removeTag(index)"
+                                :aria-label="'Remove tag ' + showPath(path)">&times;</button></li>
+                </template>
+            </ul>
+
+            <div class="tag-add" x-show="editing">
+                <input type="text" id="tag-candidate" list="lookup-tags" x-model="tagCandidate" autocomplete="off" :disabled="!editing"
+                       placeholder="Type to find a tag" @input.debounce.250ms="considerTag()" @change="considerTag()"
+                       aria-label="Tag to add">
+                <button type="button" class="secondary" id="add-tag" :disabled="!tagKnown()" @click="addTag()">Add tag</button>
+                <button type="button" class="link create-new" data-creates="tag" @click="createTag()">New...</button>
+            </div>
+
+            <!-- What the tag being considered would give, before it is added -->
+            <div class="tag-preview" id="tag-preview" x-show="editing && tagPreview" x-cloak>
+                <p class="small"><strong x-text="tagPreview ? showPath(tagPreview.path) : ''"></strong>
+                    <span x-show="tagPreview && tagPreview.variables.length === 0">gives no variables.</span>
+                    <span x-show="tagPreview && tagPreview.variables.length > 0">would give:</span></p>
+                <table class="results tag-variables compact" x-show="tagPreview && tagPreview.variables.length > 0">
+                    <thead><tr><th>Name</th><th>Value</th><th>From</th></tr></thead>
+                    <tbody>
+                        <template x-for="variable in (tagPreview ? tagPreview.variables : [])" :key="variable.name">
+                            <tr :class="{ overridden: variable.overridden }">
+                                <td><code x-text="variable.name"></code></td>
+                                <td><code x-text="variable.value ?? ''"></code></td>
+                                <td class="small"><span x-text="showPath(variable.source)"></span>
+                                    <span class="muted" x-show="variable.overridden">(its own value wins)</span></td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+                <template x-for="conflict in (tagPreview ? tagPreview.conflicts : [])" :key="conflict.name">
+                    <p class="message warning small tag-conflict" x-text="conflict.message"></p>
+                </template>
+            </div>
+
+            <!-- What the tags it carries give it -->
+            <div id="tags-give" x-show="tagsView && (tagsView.variables.length > 0 || tagsView.conflicts.length > 0)" x-cloak>
+                <h3 class="small">What its tags give</h3>
+                <table class="results tag-variables compact" x-show="tagsView && tagsView.variables.length > 0">
+                    <thead><tr><th>Name</th><th>Value</th><th>From tag</th></tr></thead>
+                    <tbody>
+                        <template x-for="variable in (tagsView ? tagsView.variables : [])" :key="variable.name">
+                            <tr :class="{ overridden: variable.overridden }">
+                                <td><code x-text="variable.name"></code></td>
+                                <td><code x-text="variable.value ?? ''"></code></td>
+                                <td class="small"><span x-text="showPath(variable.source)"></span>
+                                    <span class="muted" x-show="variable.overridden">(its own value wins)</span></td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+                <template x-for="conflict in (tagsView ? tagsView.conflicts : [])" :key="conflict.name">
+                    <p class="message warning small tag-conflict" x-text="conflict.message"></p>
+                </template>
+            </div>
+        </section>`;
+
+    /**
+     * Puts the Tags panel wherever a page has <div data-tags-panel></div>, including
+     * inside an Alpine <template>. The page calls it from a script at the end of its
+     * body, which runs before Alpine starts:
+     *
+     *     <script>AutoApp.fillTagPanels()</script>
+     *
+     * The page's component must include AutoApp.tagEditing(...), and keep the tags in form.tags.
+     */
+    function fillTagPanels(root = document) {
+        for (const slot of root.querySelectorAll("[data-tags-panel]")) {
+            const holder = document.createElement("template");
+            holder.innerHTML = TAG_PANEL;
+            slot.replaceWith(holder.content.cloneNode(true));
+        }
+        for (const template of root.querySelectorAll("template")) fillTagPanels(template.content);
+    }
+
+    /**
+     * The Tags panel's part of a page's component. ownVariables returns the names of
+     * the object's own variables, which win over anything its tags give.
+     * Call this.refreshTags() whenever form.tags or the variables change.
+     */
+    function tagEditing(ownVariables) {
+        return {
+            tagCandidate: "",
+            tagPreview: null,       // what the tag being considered would give
+            tagsView: null,         // what the tags it carries give
+            showPath,
+
+            tagKnown() {
+                const path = normalPath(this.tagCandidate);
+                return Boolean(path) && !this.form.tags.includes(path) &&
+                    [...document.querySelectorAll("#lookup-tags option")].some(o => o.value === path);
+            },
+
+            async considerTag() {
+                if (!this.tagKnown()) { this.tagPreview = null; return; }
+                const path = normalPath(this.tagCandidate);
+                try {
+                    const own = ownVariables.call(this);
+                    const alone = await get("/tag-variables", { tag: [path], own });
+                    const together = await get("/tag-variables", { tag: [...this.form.tags, path], own });
+                    // its own variables, and any disagreement it would bring with the tags already here
+                    const brought = together.conflicts.filter(c => c.tags.includes(path));
+                    if (normalPath(this.tagCandidate) === path) this.tagPreview = { path, variables: alone.variables, conflicts: brought };
+                } catch (e) {
+                    this.tagPreview = null;
+                }
+            },
+
+            addTag() {
+                if (!this.tagKnown()) return;
+                this.form.tags = [...this.form.tags, normalPath(this.tagCandidate)].sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+                this.tagCandidate = "";
+                this.tagPreview = null;
+                this.refreshTags();
+            },
+
+            removeTag(index) {
+                this.form.tags = this.form.tags.filter((_, i) => i !== index);
+                this.refreshTags();
+            },
+
+            async createTag() {
+                const made = await createInPlace("tag", { name: normalPath(this.tagCandidate).split("/").pop() || "" });
+                if (made) { this.tagCandidate = made.name; await this.considerTag(); }
+            },
+
+            async refreshTags() {
+                if (!this.form || this.form.tags.length === 0) { this.tagsView = null; return; }
+                try {
+                    this.tagsView = await get("/tag-variables", { tag: this.form.tags, own: ownVariables.call(this) });
+                } catch (e) {
+                    this.tagsView = null;
+                }
+            },
+        };
+    }
+
+    return { PAGES, get, send, createInPlace, ensureLookups, parseUtc, formatTime, localInputToUtc, timeZoneName, formatSize, toCsv, download, searchPage,
+             showPath, normalPath, fillTagPanels, tagEditing };
 })();

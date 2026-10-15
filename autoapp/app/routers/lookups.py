@@ -6,7 +6,8 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import Application, Endpoint, Entity, Job, JobRun, Site
+from app.models import Application, Endpoint, Entity, Job, JobRun, Site, Tag
+from engine.tag_vars import tag_path
 
 router = APIRouter(prefix="/api/v1/lookups", tags=["Lookups"])
 
@@ -21,7 +22,7 @@ def get_lookups(db: Session = Depends(get_db)):
     """
     The names a page offers in its drop-downs, wherever a box refers to something
     registered elsewhere: an endpoint, an application, an entity, a site, a job, a
-    scheduler. Each list is in name order.
+    scheduler, a tag. Each list is in name order.
     """
     def in_order(query, name_column):
         return query.order_by(func.lower(name_column), name_column).all()
@@ -46,4 +47,7 @@ def get_lookups(db: Session = Depends(get_db)):
                   for s in in_order(db.query(Site), Site.Name)],
         "jobs": [LookupEntry(value=j.JobKey, label=j.Description) for j in in_order(db.query(Job), Job.JobKey)],
         "schedulers": [LookupEntry(value=name) for (name,) in schedulers],
+        # A tag is named by its path; listed in path order, so each sits under its parent
+        "tags": [LookupEntry(value=path, label=tag.Description)
+                 for path, tag in sorted(((tag_path(t), t) for t in db.query(Tag)), key=lambda pt: (pt[0].lower(), pt[0]))],
     }

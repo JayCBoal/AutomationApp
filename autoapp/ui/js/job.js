@@ -32,8 +32,10 @@ function jobDetail() {
     let previewTimer = null;
     let previewRequest = 0;
     let previewAsked = "";      // the form contents most recently sent, or waiting to be sent
+    const ownVariables = function () { return this.form ? this.form.variables.map(v => v.name.trim()).filter(Boolean) : []; };
 
     return {
+        ...AutoApp.tagEditing(ownVariables),
         key: address.get("key") || "",
         isNew: address.has("new"),
         job: null,              // the job as last loaded or saved; null for one not yet saved
@@ -55,7 +57,7 @@ function jobDetail() {
             window.addEventListener("beforeunload", event => { if (this.changed) event.preventDefault(); });
             try {
                 const [catalog, jobs, endpoints] = await Promise.all(
-                    [AutoApp.get("/step-types"), AutoApp.get("/jobs"), AutoApp.get("/endpoints")]);
+                    [AutoApp.get("/step-types"), AutoApp.get("/jobs"), AutoApp.get("/endpoints"), AutoApp.ensureLookups()]);
                 this.catalog = Object.fromEntries(catalog.map(type => [type.code, type]));
                 this.allKeys = jobs.map(job => job.job_key);
                 this.endpoints = endpoints;
@@ -64,7 +66,7 @@ function jobDetail() {
                 return;
             }
             if (this.isNew) {
-                this.show({ job_key: "", description: "", active: true, steps: [], variables: [] });
+                this.show({ job_key: "", description: "", active: true, steps: [], variables: [], tags: [] });
                 this.editing = true;
             } else if (this.key) {
                 await this.load();
@@ -105,8 +107,12 @@ function jobDetail() {
                     // A saved secret's value is never sent to the page. Left blank, it is kept as it is.
                     savedSecret: variable.secret,
                 })),
+                tags: [...(job.tags || [])],
             };
             this.saved = JSON.stringify(this.payload());
+            this.tagCandidate = "";
+            this.tagPreview = null;
+            this.refreshTags();
             document.title = `${job.job_key || "New job"} - AutoApp`;
         },
 
@@ -244,6 +250,7 @@ function jobDetail() {
                     secret: variable.secret,
                     description: variable.description.trim() || null,
                 })),
+                tags: [...this.form.tags],
             };
         },
 
@@ -286,7 +293,9 @@ function jobDetail() {
          * "${ArchiveFolder}/in". Each is offered as "Add variable ..." beside the value.
          */
         missingVariables(text) {
-            const have = new Set(this.form.variables.map(variable => variable.name.trim()));
+            // its own variables, and those its tags give it
+            const have = new Set(this.form.variables.map(variable => variable.name.trim())
+                .concat(this.tagsView ? this.tagsView.variables.map(variable => variable.name) : []));
             const mentioned = [...String(text || "").matchAll(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g)].map(match => match[1]);
             return [...new Set(mentioned)].filter(name => !have.has(name));
         },
@@ -412,6 +421,9 @@ function jobDetail() {
 
         /** Whether the job would run: as it is on screen once that has been worked out, else as saved. */
         get verdict() { return this.preview || this.check; },
+
+        /** What does not stop the job but is worth knowing, as of the latest preview. */
+        get warnings() { return (this.preview && this.preview.warnings) || []; },
 
         /** What stops the job running, other than its being disabled, which is shown separately. */
         get problems() {

@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Settings - AutoApp</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="css/autoapp.css">
+    <script src="js/common.js"></script>
+    <script src="js/settings.js"></script>
+    <script defer src="vendor/alpine-3.17.4.min.js"></script>
+</head>
+<body>
+<div id="app-chrome" data-title="Settings"></div>
+
+<!-- System-wide settings. Each is declared in engine/settings.py; what is changed is kept in the Settings table. -->
+<main x-data="settingsPage()">
+    <p class="message error" id="page-error" x-show="error" x-text="error" role="alert" x-cloak></p>
+    <p class="message saved" id="save-notice" x-show="notice" x-text="notice" role="status" x-cloak></p>
+
+    <template x-for="setting in settings" :key="setting.key">
+        <section class="panel setting" :data-setting="setting.key" :aria-label="setting.title">
+            <div class="steps-head">
+                <h2 class="section" x-text="setting.title"></h2>
+                <span class="muted small" x-text="setting.changed ? 'Changed from the default' : 'The default'"></span>
+            </div>
+            <p class="small" x-text="setting.description"></p>
+            <p class="muted small" x-show="setting.kind === 'ORDER'">Highest priority at the top: the first one that has a
+                variable of that name wins.</p>
+
+            <!-- An order: each choice once, moved up or down -->
+            <template x-if="setting.kind === 'ORDER'">
+                <div>
+                    <ol class="setting-order">
+                        <template x-for="(choice, index) in draft[setting.key]" :key="choice">
+                            <li :data-choice="choice">
+                                <code x-text="choice"></code>
+                                <span x-text="setting.labels[choice] || ''"></span>
+                                <span class="spacer"></span>
+                                <button type="button" class="secondary arrow-button move-up" :disabled="index === 0"
+                                        @click="move(setting, index, -1)" :aria-label="'Move ' + choice + ' up'"
+                                        title="Higher priority">&#9650;</button>
+                                <button type="button" class="secondary arrow-button move-down" :disabled="index === draft[setting.key].length - 1"
+                                        @click="move(setting, index, 1)" :aria-label="'Move ' + choice + ' down'"
+                                        title="Lower priority">&#9660;</button>
+                            </li>
+                        </template>
+                    </ol>
+                </div>
+            </template>
+
+            <div class="actions">
+                <button type="button" class="primary save-setting" :disabled="busy || !changed(setting)" @click="save(setting)">Save</button>
+                <button type="button" class="secondary undo-setting" :disabled="busy || !changed(setting)" @click="undo(setting)">Undo</button>
+                <button type="button" class="secondary default-setting" :disabled="busy || isDefault(setting)"
+                        @click="useDefault(setting)">Use the default</button>
+            </div>
+        </section>
+    </template>
+</main>
+</body>
+</html>

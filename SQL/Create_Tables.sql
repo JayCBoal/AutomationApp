@@ -31,6 +31,7 @@ DROP TABLE IF EXISTS Credentials;
 DROP TABLE IF EXISTS Audits;
 DROP TABLE IF EXISTS Applications;
 DROP TABLE IF EXISTS StepTypes;
+DROP TABLE IF EXISTS Settings;
 DROP TABLE IF EXISTS MasterObjects;
 
 SET FOREIGN_KEY_CHECKS = 1;
@@ -43,6 +44,14 @@ CREATE TABLE `MasterObjects` (
 	`ModifiedDateTime` DATETIME, 
 	`ModifiedBy` VARCHAR(100), 
 	PRIMARY KEY (id)
+)ENGINE=InnoDB CHARSET=utf8mb4 COLLATE utf8mb4_bin;
+
+CREATE TABLE `Settings` (
+	`SettingKey` VARCHAR(100) NOT NULL, 
+	`SettingValue` TEXT NOT NULL, 
+	`UpdatedDateTime` DATETIME, 
+	`UpdatedBy` VARCHAR(100), 
+	PRIMARY KEY (`SettingKey`)
 )ENGINE=InnoDB CHARSET=utf8mb4 COLLATE utf8mb4_bin;
 
 CREATE TABLE `StepTypes` (
@@ -127,12 +136,13 @@ CREATE TABLE `StepDefinitions` (
 
 CREATE TABLE `Tags` (
 	`MasterObject_id` INTEGER NOT NULL, 
-	`TagName` VARCHAR(100) NOT NULL, 
-	`Category` VARCHAR(50), 
+	`Parent_MasterObject_id` INTEGER, 
+	`Name` VARCHAR(100) NOT NULL, 
 	`Description` TEXT, 
 	PRIMARY KEY (`MasterObject_id`), 
+	CONSTRAINT uq_tag_parent_name UNIQUE (`Parent_MasterObject_id`, `Name`), 
 	FOREIGN KEY(`MasterObject_id`) REFERENCES `MasterObjects` (id) ON DELETE CASCADE, 
-	UNIQUE (`TagName`)
+	FOREIGN KEY(`Parent_MasterObject_id`) REFERENCES `Tags` (`MasterObject_id`) ON DELETE RESTRICT
 )ENGINE=InnoDB CHARSET=utf8mb4 COLLATE utf8mb4_bin;
 
 CREATE TABLE `Variables` (
@@ -202,7 +212,7 @@ CREATE TABLE `TagAssignments` (
 	`Target_MasterObject_id` INTEGER NOT NULL, 
 	PRIMARY KEY (id), 
 	CONSTRAINT uq_tag_target UNIQUE (`Tag_MasterObject_id`, `Target_MasterObject_id`), 
-	FOREIGN KEY(`Tag_MasterObject_id`) REFERENCES `Tags` (`MasterObject_id`) ON DELETE CASCADE, 
+	FOREIGN KEY(`Tag_MasterObject_id`) REFERENCES `Tags` (`MasterObject_id`) ON DELETE RESTRICT, 
 	FOREIGN KEY(`Target_MasterObject_id`) REFERENCES `MasterObjects` (id) ON DELETE CASCADE
 )ENGINE=InnoDB CHARSET=utf8mb4 COLLATE utf8mb4_bin;
 

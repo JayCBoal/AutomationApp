@@ -46,11 +46,11 @@ def api(client, db, load_spool):
 
 
 def route(trace):
-    """A trace as readable text: one 'from -> to' line per hop."""
+    """A trace as readable text: one 'from -> to' line per hop ('from' alone for a check or a delete)."""
     def place(location):
-        return location["endpoint"] or location["path"].rsplit("/", 1)[-1]
-    return [f'{hop["job_key"]} {hop["op_type"]} {place(hop["source"])}/{hop["source"]["filename"]}'
-            f' -> {place(hop["dest"])}/{hop["dest"]["filename"]}' for hop in trace["hops"]]
+        return f'{location["endpoint"] or location["path"].rsplit("/", 1)[-1]}/{location["filename"]}'
+    return [f'{hop["job_key"]} {hop["op_type"]} {place(hop["source"])}'
+            + (f' -> {place(hop["dest"])}' if hop["dest"]["filename"] else '') for hop in trace["hops"]]
 
 
 # --- Operations log -------------------------------------------------------------------------
@@ -244,6 +244,66 @@ def test_trace_follows_a_file_through_a_rename(seed, endpoints, run_runner, api)
     ]
     # a filename search finds the operation that gave the file its new name, as well as the one that read it
     assert len(api.operations(filename="for_billing")) == 2
+
+
+def test_trace_follows_a_file_into_an_archive_and_out_again(seed, endpoints, run_runner, api, tmp_path):
+    seed.endpoint("BILLING_ARCHIVES", tmp_path / "app_inbox", "*.zip")
+    send = seed.job("DEV-SEND")
+    seed.step(send, 1, SourceEndpoint="LEGAL_EXTRACTS", Dest="incoming")
+    seed.step(send, 2, code="CHECK_FILES", Source="incoming/*.csv", MinCount="2")
+    seed.step(send, 3, code="ZIP_FILES", Source="incoming/*.csv", DestEndpoint="BILLING_ARCHIVES",
+              ArchiveName="batch.zip", Move="True")
+    receive = seed.job("DEV-RECEIVE")
+    seed.step(receive, 1, SourceEndpoint="BILLING_ARCHIVES", Dest="incoming", Move="True")
+    seed.step(receive, 2, code="UNZIP_FILES", Source="incoming/*.zip", Dest="loaded")
+    seed.step(receive, 3, code="DELETE_FILES", Source="incoming/*.zip")
+    assert run_runner("DEV-SEND", "88421").returncode == 0
+    assert run_runner("DEV-RECEIVE", "88430").returncode == 0
+
+    trace = api.trace_of(filename=FILE_1, job_key="DEV-RECEIVE")
+
+    # the archive's own journey belongs to both files; each file comes out the other end on its own
+    assert route(trace) == [
+        f"DEV-SEND COPY LEGAL_EXTRACTS/{FILE_1} -> incoming/{FILE_1}",
+        f"DEV-SEND CHECK incoming/{FILE_1}",
+        f"DEV-SEND ZIP_MOVE incoming/{FILE_1} -> BILLING_ARCHIVES/batch.zip",
+        "DEV-RECEIVE MOVE BILLING_ARCHIVES/batch.zip -> incoming/batch.zip",
+        f"DEV-RECEIVE UNZIP incoming/batch.zip -> loaded/{FILE_1}",
+        "DEV-RECEIVE DELETE incoming/batch.zip",
+    ]
+    copy, check, zipped, move, unzip, delete = trace["hops"]
+    assert (check["follows"], zipped["follows"], move["follows"]) == (copy["id"], copy["id"], zipped["id"])
+    assert (unzip["follows"], delete["follows"]) == (move["id"], move["id"])
+
+    other = api.trace_of(filename="Legal_Batch_2.csv", job_key="DEV-RECEIVE")
+    assert route(other)[0] == "DEV-SEND COPY LEGAL_EXTRACTS/Legal_Batch_2.csv -> incoming/Legal_Batch_2.csv"
+    assert route(other)[4] == "DEV-RECEIVE UNZIP incoming/batch.zip -> loaded/Legal_Batch_2.csv"
+
+    # from the archive itself there is no one file to follow back, so the trace starts with the archive
+    archive = api.trace(move["id"])
+    assert route(archive) == [
+        "DEV-RECEIVE MOVE BILLING_ARCHIVES/batch.zip -> incoming/batch.zip",
+        f"DEV-RECEIVE UNZIP incoming/batch.zip -> loaded/{FILE_1}",
+        "DEV-RECEIVE UNZIP incoming/batch.zip -> loaded/Legal_Batch_2.csv",
+        "DEV-RECEIVE DELETE incoming/batch.zip",
+    ]
+
+
+def test_a_deleted_file_is_the_end_of_its_route(seed, endpoints, run_runner, api, tmp_path):
+    job = seed.job("DEV-CLEAN")
+    collect = seed.step(job, 1, SourceEndpoint="LEGAL_EXTRACTS", Dest="incoming")
+    seed.step(job, 2, code="DELETE_FILES", Source="incoming/*.csv")
+    run_runner("DEV-CLEAN", "88421")
+
+    (tmp_path / "work" / "DEV-CLEAN" / "incoming" / FILE_1).write_text("put here by hand")
+    collect.IsActive = False
+    run_runner("DEV-CLEAN", "88500")
+
+    original = api.trace_of(filename=FILE_1, instance_id="88421", op_type="COPY")
+    assert route(original) == [
+        f"DEV-CLEAN COPY LEGAL_EXTRACTS/{FILE_1} -> incoming/{FILE_1}",
+        f"DEV-CLEAN DELETE incoming/{FILE_1}",
+    ]
 
 
 def test_same_filename_on_another_day_is_a_separate_trace(collect_and_deliver, run_runner, api):

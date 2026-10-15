@@ -55,7 +55,7 @@ class EndpointCreate(BaseModel):
 # --- Step Catalog Schemas ---
 class StepParameterOut(BaseModel):
     name: str
-    data_type: str = Field(..., description="STRING, BOOLEAN, INTEGER, CHOICE or LOCATION")
+    data_type: str = Field(..., description="STRING, TEXT (several lines), BOOLEAN, INTEGER, CHOICE or LOCATION")
     required: bool
     default: Optional[str] = None
     description: Optional[str] = None

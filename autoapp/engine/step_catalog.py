@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 STRING, BOOLEAN, INTEGER, CHOICE, LOCATION = "STRING", "BOOLEAN", "INTEGER", "CHOICE", "LOCATION"
+TEXT = "TEXT"       # a STRING that may run to several lines, such as a SQL statement
 SOURCE, DEST = "SOURCE", "DEST"
 ENDPOINT_SUFFIX = "Endpoint"
 

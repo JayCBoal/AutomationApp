@@ -551,9 +551,22 @@ def test_the_step_type_list_shows_each_types_name(page, job):
 
     chooser = steps.nth(0).locator("select.step-type")
 
-    assert [option.inner_text() for option in chooser.locator("option").all()] == ["Copy Files"]
+    assert [option.inner_text() for option in chooser.locator("option").all()] == [
+        "Check Files", "Copy Files", "Delete Files", "Run SQL", "Unzip Files", "Zip Files"]
     assert chooser.evaluate("e => e.options[e.selectedIndex].text") == "Copy Files"
     assert chooser.input_value() == "COPY_FILES"
+
+
+def test_a_sql_statement_gets_a_box_of_several_lines(page, job):
+    steps = open_job(page)
+    edit(page)
+
+    expand(steps.nth(0))
+    steps.nth(0).locator("select.step-type").select_option("RUN_SQL")
+
+    statement = steps.nth(0).locator('.field-row[data-parameter="Statement"] textarea')
+    statement.fill("SELECT invoice_no\nFROM invoices\nWHERE status = 'OPEN'")
+    assert statement.get_attribute("rows") == "4"
 
 
 def test_a_step_is_removed_after_confirming(page, job):

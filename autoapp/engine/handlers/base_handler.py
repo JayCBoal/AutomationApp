@@ -106,29 +106,34 @@ class BaseHandler(ABC):
         self,
         op_type: str,
         status: str,
-        source: str,
-        dest: str,
+        source: Optional[str],
+        dest: Optional[str],
         source_size: Optional[int] = None,
         dest_size: Optional[int] = None,
         checksum: Optional[str] = None,
         error: Optional[str] = None,
         started_at: Optional[str] = None,
+        details: Optional[Dict[str, Any]] = None,
     ) -> None:
-        """Records one file this step handled, given its full source and destination paths."""
+        """
+        Records one file this step handled, given its full source and destination paths.
+        A step that only reads a file (a check) or removes it (a delete) gives no destination.
+        """
         self.telemetry.log_operation(
             op_type=op_type,
             status=status,
             step_id=self.step_id,
             step_order=self.step_config.get("StepOrder"),
-            source_path=os.path.dirname(source),
-            source_filename=os.path.basename(source),
+            source_path=os.path.dirname(source) if source else None,
+            source_filename=os.path.basename(source) if source else None,
             source_size=source_size,
-            source_endpoint_id=self.step_config.get("SourceEndpointID"),
-            dest_path=os.path.dirname(dest),
-            dest_filename=os.path.basename(dest),
+            source_endpoint_id=self.step_config.get("SourceEndpointID") if source else None,
+            dest_path=os.path.dirname(dest) if dest else None,
+            dest_filename=os.path.basename(dest) if dest else None,
             dest_size=dest_size,
-            dest_endpoint_id=self.step_config.get("DestEndpointID"),
+            dest_endpoint_id=self.step_config.get("DestEndpointID") if dest else None,
             checksum=checksum,
+            details=details,
             error=error,
             started_at=started_at,
         )

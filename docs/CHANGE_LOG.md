@@ -6,6 +6,20 @@ Notable structural, schema and design changes to AutoApp, newest first. Line-by-
 
 ## 2026-10-14
 
+### More step types: Delete, Check, Zip, Unzip and Run SQL
+
+- **Added:** step types `DELETE_FILES`, `CHECK_FILES`, `ZIP_FILES`, `UNZIP_FILES` (`engine/handlers/file_tools.py`) and `RUN_SQL` (`engine/handlers/sql_handler.py`). See the blueprint, section 5.
+- **Added:** operation types `DELETE`, `CHECK`, `ZIP`, `ZIP_MOVE`, `UNZIP`, `SQL` and `SQL_EXPORT`. A check or a delete has no destination side; the operations log says "Left where it was" or "Deleted" there, and the source of a query's CSV is shown as the database, without its password.
+- **Changed:** the file trace ends a route at a delete, treats the files one step zipped into one archive as one write of it, and follows each file out of the archive through its own unzip.
+- **Added:** parameter type `TEXT`, a string of several lines, shown in the job editor as a growing box.
+- **Decided:** Delete Files, like the other file steps, fails when nothing matches unless `AllowNoFiles=True`. This settles the open "delete step default" item.
+- **Decided:** Run SQL rolls back unless `Commit=True`, and the database's password is hidden everywhere it could appear. A Connections table is left for later; for the demo a database is a URL in a secret variable.
+- **Added:** `SQL/Sample_Sales_Data.sql`, a portable sample sales database (customers, invoices, invoice lines, payments). `create_dev_db.py` builds it as SQLite at `/tmp/autoapp_sample/sales.db`. On MariaDB it is `autoapp_sales`.
+- **Added to the sample data:** application `FINANCE_APP`, endpoint `FINANCE_APP_INBOX`, a secret variable `SalesDbUrl` on `BILLING_APP`, and two jobs:
+  - `DEV-BILLING-INVOICE_EXPORT`: exports open invoices and payments to CSV, checks there are two, and zips them to finance.
+  - `DEV-FINANCE-LOAD_REPORTS`: picks up the archive, unpacks it, checks the reports, keeps the archive and removes archives over 30 days old.
+- **Migration:** none for the schema. `autoapp_dev` was given the new sample rows in place, with `SalesDbUrl` pointing at `autoapp_sales`.
+
 ### Endpoints are master objects
 
 - **Changed:** `Endpoints` is a subtype of `MasterObjects`, like applications, entities, sites, credentials, tags and jobs. Its key is `MasterObject_id`; `Operations.SourceEndpoint_id` and `DestEndpoint_id` refer to it.

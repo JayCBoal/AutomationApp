@@ -33,7 +33,7 @@ def list_operations(
     job_key: Optional[str] = Query(None, description="Part of a JobKey"),
     instance_id: Optional[str] = Query(None, description="The scheduler's instance ID, exact"),
     scheduler: Optional[str] = Query(None, description="Part of the name of the scheduler that started the run"),
-    op_type: Optional[str] = Query(None, description="Operation type, exact: COPY, MOVE, ..."),
+    op_type: Optional[str] = Query(None, description="Operation type, exact: COPY, MOVE, CHECK, DELETE, ZIP, ZIP_MOVE, UNZIP, SQL or SQL_EXPORT"),
     status: Optional[str] = Query(None, description="SUCCESS or FAILED"),
     date_from: Optional[datetime] = Query(None, description="Operations that ended at or after this time (UTC)"),
     date_to: Optional[datetime] = Query(None, description="Operations that ended at or before this time (UTC)"),

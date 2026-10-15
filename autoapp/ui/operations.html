@@ -27,6 +27,13 @@
                         <option value="">Any</option>
                         <option>COPY</option>
                         <option>MOVE</option>
+                        <option>CHECK</option>
+                        <option>DELETE</option>
+                        <option>ZIP</option>
+                        <option>ZIP_MOVE</option>
+                        <option>UNZIP</option>
+                        <option>SQL</option>
+                        <option>SQL_EXPORT</option>
                     </select>
                 </label>
                 <label>Status
@@ -105,13 +112,13 @@
                             <!-- The source block and the destination block have the same layout -->
                             <template x-for="side in [row.source, row.dest]">
                                 <td class="location">
-                                    <div class="place" :class="{ working: !side.endpoint }" x-text="place(side)"></div>
+                                    <div class="place" :class="{ working: !side.endpoint }" x-text="place(side, row)"></div>
                                     <div class="owners" x-show="owners(side)" x-text="owners(side)"></div>
                                     <div class="file" x-show="side.filename">
                                         <span x-text="side.filename"></span>
                                         <span class="muted small" x-show="side.size !== null" x-text="'(' + size(side.size) + ')'"></span>
                                     </div>
-                                    <div class="path" x-text="side.path"></div>
+                                    <div class="path" x-text="pathOf(side, row)"></div>
                                 </td>
                             </template>
 
@@ -172,13 +179,13 @@
                             <div class="hop-sides">
                                 <template x-for="(side, index) in [hop.source, hop.dest]">
                                     <div class="location" :style="index === 1 ? 'grid-column: 3' : ''">
-                                        <div class="place" :class="{ working: !side.endpoint }" x-text="place(side)"></div>
+                                        <div class="place" :class="{ working: !side.endpoint }" x-text="place(side, hop)"></div>
                                         <div class="owners" x-show="owners(side)" x-text="owners(side)"></div>
                                         <div class="file" x-show="side.filename">
                                             <span x-text="side.filename"></span>
                                             <span class="muted small" x-show="side.size !== null" x-text="'(' + size(side.size) + ')'"></span>
                                         </div>
-                                        <div class="path" x-text="side.path"></div>
+                                        <div class="path" x-text="pathOf(side, hop)"></div>
                                     </div>
                                 </template>
                                 <div class="arrow" style="grid-column: 2; grid-row: 1" aria-hidden="true">&rarr;</div>

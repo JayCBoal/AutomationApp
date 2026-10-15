@@ -10,10 +10,19 @@ Updated 2026-10-13. The order under "Work queue" is a proposal; the items under 
 
 2. **How the runner gets its payload.** The design says agents pull over HTTPS from `/api/v1/jobs/init` and never connect to the database. The runner currently connects to the database directly. Options: switch the runner to the API now; support both; or leave direct access until the API has authentication.
 
-3. **Tag rules.** Partly decided 2026-10-14:
-   - **Hierarchy: decided.** A tag can have a parent, nested to any depth, and inherits its ancestors' variables. To confirm when building: a tag's own variable overrides one of the same name from its ancestors, as a job's overrides the cascade.
-   - **Conflicts: decided for now.** When two tags on the same job (or two separate branches of tags) define the same variable, the pre-run check reports it as an error. No precedence rule.
-   - **Open:** possibly later an optional setting on the job saying which tag wins. To come back to.
+3. **Tag rules.** Decided 2026-10-14 unless marked open:
+   - **What can be tagged:** any master object.
+   - **What a tag gives:** its variables act as if they were on the tagged object, just below that object's own. A job's tags feed the job; an application's or entity's tags feed wherever that object's variables reach (an endpoint's path and pattern); an endpoint's tags feed the endpoint.
+   - **Hierarchy:** a tag can have a parent, nested to any depth, and inherits its ancestors' variables. A tag's own variable overrides one of the same name from its ancestors.
+   - **Names:** unique under one parent, not across all tags. A tag is always shown with its path, e.g. `Environment / TEST`. A parent tag earns its place by carrying variables its children share, or simply by making a child's name clear (`Environment / TEST` and `Purpose / TEST` are different tags). Names cannot contain `/`.
+   - **Category column:** dropped. Nothing used it; parent tags do the same job.
+   - **Precedence:** by default system values, then application and entity, then tags, then the job's own variables. The order is a system-wide setting (see the Settings table, below).
+   - **Conflicts:** when two tags give the same variable different values, and the object does not define it itself, it is an error before the job runs if the job uses the variable, and a warning in the editor if it does not. The same value from two tags is not a conflict, nor is one tag reached through two paths.
+   - **Explicit references:** `${TAG:path.Var}` may name only a tag the job carries, or an ancestor of one. *To reconsider later:* allowing any tag, as a system-wide setting, with the tag's "used by" list showing jobs that name it.
+   - **Changes:** a tag cannot be made its own ancestor; a tag with child tags or assignments cannot be deleted; adding or removing a tag is audited on the object.
+   - **Pages:** tag search and detail pages; a tags box on every detail page whose picker shows the tag's own and inherited variables (secrets masked) and warns of conflicts before it is added; a Tag filter on every search page that includes child tags; inherited variables shown in a job's variables panel with where each comes from.
+   - **Open:** an optional setting on the job saying which tag wins. Later: a parent marked "pick one", so a job cannot carry two of its children (e.g. both `Environment / DEV` and `Environment / PROD`).
+   - **Settings table:** settings are declared in the code (name, type, default, allowed values, description), like the step catalog; the `Settings` table holds only the values changed from the default (`SettingKey`, `SettingValue`, when and by whom), and every change is audited. A Settings page is drawn from the declarations. Settings are not variables and cannot be read with `${...}`.
 
 4. **Working folder.** Currently `<working root>/<JobKey>`, private to the job and reused by every run of it. Confirm, or make it per run. Also decide whether archive folders live inside it or are registered endpoints.
 
@@ -37,9 +46,7 @@ Ordered toward a demonstration: a job built in the job editor, run by a schedule
 
 Every page of the web interface is built. See [UI_VISION.md](UI_VISION.md) for what remains proposed.
 
-1. **More step handlers.** Each one also adds a catalog entry, so it appears in the editor.
-   - Delete files
-   - SQL execution
+1. **More step handlers.** Each one also adds a catalog entry, so it appears in the editor. Delete, Check, Zip, Unzip and Run SQL are built; still to come:
    - SFTP transfer (this is what makes endpoints on remote sites usable)
    - REST call
    - Send email
@@ -75,7 +82,8 @@ Every page of the web interface is built. See [UI_VISION.md](UI_VISION.md) for w
 
 - **Trace across machines.** The trace compares paths as text. Add the site or host to the comparison once steps reach remote sites or agents on more than one machine.
 - **Skip the rest when nothing was collected.** If a job's first step is allowed to find nothing, every later step that reads the same folder needs `AllowNoFiles` too. A step option to end the job successfully at that point would be tidier.
-- **Delete step default.** When the delete step type is built, decide whether finding nothing to delete should succeed by default.
+- **Connections.** A table of registered databases and servers (type, host, port, database, a credential), named by a step instead of a connection URL in a secret variable. Needed for a production-ready application; for the demo, Run SQL's `Database` is a URL in a secret variable.
+- **Run SQL: more than one statement, and bound values.** One statement per step for now, with values put in by `${...}` placeholders. A script of several statements, or values passed safely as bound parameters, would come with the Connections work.
 - **Retention.** A purge rule for `Operations`, which grows by one row per file.
 - **Killed runs.** Pick up spool files left as `.jsonl.tmp` by a run that did not end normally, and mark the run accordingly.
 

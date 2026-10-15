@@ -41,9 +41,16 @@ function operationsLog() {
 
         // ---------- Showing one side of an operation ----------
 
-        place(side) {
+        place(side, op) {
             if (side.endpoint) return side.endpoint;
-            return side.path ? "Working folder" : "";
+            if (side.path) return "Working folder";
+            // A file made by a query came from a database; a check or a delete has no destination
+            if (side === op.source && op.details && op.details.Database) return "Database query";
+            return { DELETE: "Deleted", CHECK: "Left where it was" }[op.op_type] || "";
+        },
+        pathOf(side, op) {
+            if (side.path || side !== op.source) return side.path;
+            return op.details ? op.details.Database || "" : "";
         },
         owners(side) {
             return [side.application, side.entity, side.site].filter(Boolean).join(" · ");

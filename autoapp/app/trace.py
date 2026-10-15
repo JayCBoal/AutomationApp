@@ -15,6 +15,7 @@ read belongs to the most recent write before it, and a write's readers end at
 the next write to the same place, or at the operation that moved the file away.
 """
 import json
+import os
 from datetime import datetime
 from typing import Dict, List, Optional
 
@@ -167,12 +168,42 @@ def _writes_to(db: Session, path, filename) -> List[Operation]:
     ).all()
 
 
-def _readers(db: Session, write: Operation) -> List[Operation]:
-    """The operations that picked up the file this operation wrote, in order."""
+# Operations after which the file is no longer where it was read from
+CONSUMING = {"MOVE", "DELETE", "ZIP_MOVE"}
+
+
+def _same_step(a: Operation, b: Operation) -> bool:
+    """Operations of one step in one run. Several files zipped into one archive are one write of it."""
+    return a.JobRun_id == b.JobRun_id and a.StepOrder == b.StepOrder
+
+
+def _is_zip(op: Operation) -> bool:
+    return op.OpType in ("ZIP", "ZIP_MOVE")
+
+
+def _carried(op: Operation, member: Optional[str]) -> Optional[str]:
+    """
+    Which file inside an archive the trace is following once it reaches this operation.
+    A zip starts it (the file it put in); an unzip ends it; anything else passes it on.
+    """
+    if _is_zip(op):
+        return op.SourceFilename
+    if op.OpType == "UNZIP":
+        return None
+    return member
+
+
+def _readers(db: Session, write: Operation, member: Optional[str] = None) -> List[Operation]:
+    """
+    The operations that picked up the file this operation wrote, in order. When the
+    file is an archive and the trace is following one file inside it (member), only
+    the unzip that took that file out counts.
+    """
     if write.OpStatus != "SUCCESS" or not write.DestFilename:
         return []
     path, filename = write.DestPath, write.DestFilename
-    later_writes = [w for w in _writes_to(db, path, filename) if _when(w) > _when(write)]
+    member = _carried(write, member)
+    later_writes = [w for w in _writes_to(db, path, filename) if _when(w) > _when(write) and not _same_step(w, write)]
     replaced_at = min((_when(w) for w in later_writes), default=None)
 
     reads = db.query(Operation).filter(
@@ -184,21 +215,35 @@ def _readers(db: Session, write: Operation) -> List[Operation]:
             continue
         if replaced_at and _when(read) > replaced_at:
             break
+        if read.OpType == "UNZIP" and member and os.path.basename(read.DestFilename or "") != member:
+            continue    # another file out of the same archive
         readers.append(read)
-        if read.OpType == "MOVE" and read.OpStatus == "SUCCESS":
+        if read.OpType in CONSUMING and read.OpStatus == "SUCCESS":
             break   # the file is no longer there for anything later to read
     return readers
 
 
-def _predecessor(db: Session, op: Operation) -> Optional[Operation]:
-    """The operation that put the file where this one found it, if AutoApp recorded one."""
+def _predecessor(db: Session, op: Operation, member: Optional[str] = None) -> Optional[Operation]:
+    """
+    The operation that put the file where this one found it, if AutoApp recorded one.
+    Where several files were zipped into one archive, the one followed is the member
+    the trace came out with; with none to go on, the trace starts at the archive.
+    """
     if not op.SourceFilename:
         return None     # not a file operation, so there is no file to follow
+    if op.OpType == "UNZIP":
+        member = os.path.basename(op.DestFilename or "") or None
     earlier_writes = [w for w in _writes_to(db, op.SourcePath, op.SourceFilename) if _when(w) < _when(op)]
     if not earlier_writes:
         return None
     latest = max(earlier_writes, key=_when)
-    return latest if any(r.id == op.id for r in _readers(db, latest)) else None
+    siblings = [w for w in earlier_writes if _same_step(w, latest)]
+    if len(siblings) > 1:
+        matching = [w for w in siblings if member and w.SourceFilename == member]
+        if not matching:
+            return None
+        latest = max(matching, key=_when)
+    return latest if any(r.id == op.id for r in _readers(db, latest, member)) else None
 
 
 def trace_operation(db: Session, operation_id: int) -> Optional[FileTrace]:
@@ -206,30 +251,35 @@ def trace_operation(db: Session, operation_id: int) -> Optional[FileTrace]:
     The whole route of the file an operation handled: back to where it first
     entered, then forward through every operation that carried it on. A file
     copied to two places has two branches; each hop names the hop it follows.
+    A file zipped with others shares the archive's hops, and only its own unzip.
     Returns None if there is no such operation.
     """
     start = db.get(Operation, operation_id)
     if not start:
         return None
 
-    root, seen = start, {start.id}
+    root, seen, member = start, {start.id}, None
     while True:
-        previous = _predecessor(db, root)
+        previous = _predecessor(db, root, member)
         if not previous or previous.id in seen:
             break
+        if root.OpType == "UNZIP":
+            member = os.path.basename(root.DestFilename or "") or None
+        elif _is_zip(previous):
+            member = None
         root = previous
         seen.add(root.id)
 
     follows: Dict[int, Optional[int]] = {root.id: None}
     found: Dict[int, Operation] = {root.id: root}
-    queue = [root]
+    queue = [(root, None)]
     while queue:
-        current = queue.pop(0)
-        for reader in _readers(db, current):
+        current, member = queue.pop(0)
+        for reader in _readers(db, current, member):
             if reader.id not in found:
                 found[reader.id] = reader
                 follows[reader.id] = current.id
-                queue.append(reader)
+                queue.append((reader, _carried(current, member)))
 
     hops = [TraceHop(**describe(op), follows=follows[op.id]) for op in sorted(found.values(), key=_when)]
     return FileTrace(filename=start.DestFilename or start.SourceFilename, hops=hops)

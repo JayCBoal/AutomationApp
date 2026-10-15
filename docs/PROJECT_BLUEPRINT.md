@@ -121,7 +121,8 @@ An endpoint has no direction. The same folder can be a destination for one job a
   - `JobKey`, start and end time, status and the error message.
 - `Operations`: a register of what steps actually did. It points at its `JobRuns` row.
   - For a file step, one row per file: a source side and a destination side (endpoint if registered, path, filename, size), the operation type, status, error, times, and an optional SHA-256 checksum.
-  - For a step that handles no files (SQL, REST call, email, once those step types exist), one row per action, with the file columns empty and what was done in `Details` (JSON). The handler call for this exists; no step type uses it yet.
+  - A step that only looks at a file (`CHECK`) or removes it (`DELETE`) fills in the source side only.
+  - For a step that handles no files (a SQL statement now; a REST call or an email later), one row per action, with the file columns empty and what was done in `Details` (JSON). A query that wrote a CSV is one row, `SQL_EXPORT`, with the file as its destination and the statement in `Details`.
   - A step that finds nothing to do writes no row. By default it fails, so the run's error message records what it looked for.
 
 ### Audits
@@ -247,11 +248,24 @@ This is what makes a file trace possible: an operation that reads from an endpoi
   - `Dest` may name a new filename only when one file is taken. Several files aimed at one filename fail the step before anything is copied.
   - `RenameMask` gives each file a new name on the way: `${FILE:STEM}_${DATE:yyyyMMdd}${FILE:EXT}` turns `Legal_Batch_1.csv` into `Legal_Batch_1_20261013.csv`. `${FILE:NAME}` is the file's own name, `${FILE:STEM}` its name without the extension, `${FILE:EXT}` its extension with the full stop. It works whether the destination is a folder or an endpoint. A mask that would give two files the same name fails the step before anything is copied, and a mistake in a mask is found before the job starts.
   - A step parameter can be declared as holding per-file placeholders. Those are left for the handler to fill in for each file; anywhere else, `${FILE:...}` is an unresolved placeholder.
+- `engine/handlers/file_tools.py`: four more file steps. Each records every file it handles, and each fails when it finds nothing unless `AllowNoFiles=True` (Check Files counts instead).
+  - `DELETE_FILES` (Delete Files): removes the matching files, or with `OlderThanDays` only those last changed more than that many days ago. Operation type `DELETE`.
+  - `CHECK_FILES` (Check Files): fails the job unless the files look right: at least `MinCount` (default 1) and at most `MaxCount`, none empty unless `AllowEmpty`, none older than `MaxAgeHours`. It lists every problem at once and touches nothing. Operation type `CHECK`.
+  - `ZIP_FILES` (Zip Files): packs the matching files into one archive. `Dest` is the archive's name, or a folder or endpoint with `ArchiveName`. The archive is written under a temporary name, checked, then renamed, so nothing sees half of one; an archive of the same name is replaced only with `Overwrite`. `Move` removes the originals once they are safely in it. Operation type `ZIP`, or `ZIP_MOVE`, one row per file with the archive as its destination.
+  - `UNZIP_FILES` (Unzip Files): takes every file out of the matching archives into the `Dest` folder, keeping their folders. Every name is checked before anything is taken out: one that would land outside the folder (`../`, or a full path) refuses the whole archive. A file already there is replaced only with `Overwrite`. Operation type `UNZIP`, one row per file taken out, with the archive as its source.
+- `engine/handlers/sql_handler.py`: step type `RUN_SQL` (Run SQL). Runs one statement against the database a connection URL names (`Database`), normally kept in a secret variable.
+  - A query's rows can be written to `ResultFile` as CSV, with a line of column names unless `IncludeHeader=False`. The file is written under a temporary name and renamed when complete.
+  - Changes are rolled back unless `Commit=True`, so a statement can be tried safely; the job log says so when it rolled back changes.
+  - The statement is sent as written, so `:` and `%` in it mean nothing to AutoApp; `${...}` placeholders are filled in first.
+  - The database's password never appears in the job log, the operation record or an error message, whether or not the URL came from a secret.
+  - Any database SQLAlchemy has a driver for will do. The project installs the MariaDB/MySQL driver; SQLite needs none.
+- A parameter of type `TEXT` is a string that may run to several lines. The job editor shows it as a box that grows to fit, in a fixed-width font. Run SQL's `Statement` is one.
 - `engine/handlers/__init__.py`: the list of handlers. Adding one there adds its step type to the catalog.
 
 **Planned**
 
-- Delete files, SQL execution, SFTP transfer, REST call, send email. The prototype had most of these as plain functions.
+- SFTP transfer, REST call, send email. The prototype had these as plain functions.
+- A Connections table for databases and servers (see TO-DO). Until then a database is a URL in a secret variable.
 
 ## 6. The job log
 
@@ -296,6 +310,9 @@ What the runner prints while a job runs, for the scheduler to capture against th
   - branches when a file is copied to two places;
   - keeps a recurring filename apart by time: a read belongs to the most recent write before it, and stops at the next write to the same place or at the operation that moved the file away;
   - shows a failed operation as the last hop, with its error;
+  - follows a file into an archive and out again. The archive's own journey is part of the route of every file in it, and each file's route carries on from the unzip that took that file out. A trace started from the archive itself shows it from where it was made, with every file taken out of it;
+  - ends at a delete;
+  - starts a CSV made by a query at the query (`SQL_EXPORT`);
   - leaves out operations that have no file: they are in the log, and each one's trace is only itself.
 
 **Planned**

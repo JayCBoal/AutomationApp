@@ -8,6 +8,7 @@ import pytest
 
 from app.catalog import sync_catalog
 from app.models import JobStepParameter, StepDefinition, StepType
+from engine.handlers import HANDLERS
 from engine.handlers.file_handler import FileOpHandler
 from engine.step_catalog import (
     BOOLEAN, CHOICE, DEST, INTEGER, LOCATION, SOURCE, Param, check_parameters, normalize_parameters
@@ -179,14 +180,15 @@ def test_a_disabled_step_is_not_checked(seed, endpoints, run_runner):
 def test_sync_writes_each_step_type_and_its_parameters_in_order(db):
     counts = sync_catalog(db)
 
-    [step_type] = db.query(StepType).all()
+    assert sorted(t.HandlerClass for t in db.query(StepType)) == sorted(h.CODE for h in HANDLERS)
+    step_type = db.query(StepType).filter_by(HandlerClass="COPY_FILES").one()
     assert (step_type.HandlerClass, step_type.TypeName, step_type.Description) == (
         "COPY_FILES", "Copy Files", FileOpHandler.DESCRIPTION)
     assert [(d.DisplayOrder, d.ParamName) for d in step_type.definitions] == [
         (1, "Source"), (2, "Dest"), (3, "RenameMask"), (4, "Move"), (5, "CreateFolder"), (6, "Checksum"),
         (7, "AllowNoFiles"), (8, "LogLevel"),
     ]
-    assert counts == {"step_types": 1, "parameters": 8}
+    assert counts == {"step_types": len(HANDLERS), "parameters": db.query(StepDefinition).count()}
 
     by_name = {d.ParamName: d for d in step_type.definitions}
     assert (by_name["Source"].DataType, by_name["Source"].LocationRole, by_name["Source"].IsRequired) == (
@@ -205,23 +207,24 @@ def test_sync_can_be_repeated_without_adding_anything(db):
 
     sync_catalog(db)
 
-    assert db.query(StepType).count() == 1
+    assert db.query(StepType).count() == len(HANDLERS)
     assert sorted(d.id for d in db.query(StepDefinition)) == ids
 
 
 def test_sync_corrects_what_has_drifted_and_removes_what_no_handler_declares(db):
     sync_catalog(db)
-    step_type = db.query(StepType).one()
+    step_type = db.query(StepType).filter_by(HandlerClass="COPY_FILES").one()
     step_type.TypeName = "Renamed by hand"
-    db.query(StepDefinition).filter(StepDefinition.ParamName == "Move").one().DefaultValue = "True"
+    move = db.query(StepDefinition).filter_by(StepType_id=step_type.id, ParamName="Move").one()
+    move.DefaultValue = "True"
     db.add(StepDefinition(StepType_id=step_type.id, ParamName="RenamePattern", DisplayOrder=99))
     db.commit()
 
     sync_catalog(db)
 
     db.expire_all()
-    assert db.query(StepType).one().TypeName == "Copy Files"
-    assert db.query(StepDefinition).filter(StepDefinition.ParamName == "Move").one().DefaultValue == "False"
+    assert db.get(StepType, step_type.id).TypeName == "Copy Files"
+    assert db.get(StepDefinition, move.id).DefaultValue == "False"
     assert db.query(StepDefinition).filter(StepDefinition.ParamName == "RenamePattern").count() == 0
 
 
@@ -233,17 +236,19 @@ def test_sync_adopts_a_step_type_row_that_already_exists_and_keeps_the_steps_tha
 
     sync_catalog(db)
 
-    assert [t.id for t in db.query(StepType)] == [type_id]
-    assert db.query(StepType).one().TypeName == "Copy Files"
+    assert db.query(StepType).filter_by(HandlerClass="COPY_FILES").one().id == type_id
+    assert db.get(StepType, type_id).TypeName == "Copy Files"
 
 
 def test_sync_leaves_a_step_type_with_no_handler_alone(db):
-    db.add(StepType(TypeName="Run SQL", HandlerClass="SQL_EXEC", Description="Planned"))
+    db.add(StepType(TypeName="Send Email", HandlerClass="SEND_EMAIL", Description="Planned"))
     db.commit()
 
     sync_catalog(db)
 
-    assert {t.HandlerClass: t.TypeName for t in db.query(StepType)} == {"COPY_FILES": "Copy Files", "SQL_EXEC": "Run SQL"}
+    by_code = {t.HandlerClass: t for t in db.query(StepType)}
+    assert set(by_code) == {h.CODE for h in HANDLERS} | {"SEND_EMAIL"}
+    assert (by_code["SEND_EMAIL"].TypeName, by_code["SEND_EMAIL"].Description) == ("Send Email", "Planned")
 
 
 # --- The catalog and the job check, over the API ----------------------------------------------
@@ -253,7 +258,9 @@ def test_the_server_publishes_the_catalog_when_it_starts(client):
     response = client.get("/api/v1/step-types")
 
     assert response.status_code == 200
-    [copy_files] = response.json()
+    by_code = {t["code"]: t for t in response.json()}
+    assert set(by_code) == {h.CODE for h in HANDLERS}
+    copy_files = by_code["COPY_FILES"]
     assert (copy_files["code"], copy_files["name"], copy_files["active"], copy_files["has_handler"]) == (
         "COPY_FILES", "Copy Files", True, True)
     assert [p["name"] for p in copy_files["parameters"]] == [
@@ -276,12 +283,12 @@ def test_catalog_describes_each_parameter_for_a_form(client):
 
 
 def test_a_step_type_with_no_handler_is_listed_as_such(client, db):
-    db.add(StepType(TypeName="Run SQL", HandlerClass="SQL_EXEC"))
+    db.add(StepType(TypeName="Send Email", HandlerClass="SEND_EMAIL"))
     db.commit()
 
     by_code = {t["code"]: t for t in client.get("/api/v1/step-types").json()}
 
-    assert (by_code["SQL_EXEC"]["has_handler"], by_code["SQL_EXEC"]["parameters"]) == (False, [])
+    assert (by_code["SEND_EMAIL"]["has_handler"], by_code["SEND_EMAIL"]["parameters"]) == (False, [])
     assert by_code["COPY_FILES"]["has_handler"] is True
 
 

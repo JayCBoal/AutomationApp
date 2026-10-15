@@ -9,10 +9,12 @@ The database is the one DATABASE_URL names (default: autoapp.db in this folder).
 It must be empty or not exist yet: this script never deletes anything. To start
 again, delete autoapp.db and run it once more.
 
-It also creates the sample input files the first job collects, and prints the
-commands to run next.
+It also creates the sample input files the first job collects and the sample
+sales database the export jobs query (SQL/Sample_Sales_Data.sql, as SQLite, at
+/tmp/autoapp_sample/sales.db), and prints the commands to run next.
 """
 import re
+import sqlite3
 import sys
 from pathlib import Path
 
@@ -23,6 +25,8 @@ from app.database import DATABASE_URL, SessionLocal, engine
 from app.models import Application, Base, Variable
 
 SEED_FILE = Path(__file__).resolve().parents[1] / "SQL" / "Seed_Sample_Data.sql"
+SALES_FILE = Path(__file__).resolve().parents[1] / "SQL" / "Sample_Sales_Data.sql"
+SALES_DB = Path("/tmp/autoapp_sample/sales.db")      # where the seed's SalesDbUrl variable points
 
 
 def sql_statements(script: str) -> list:
@@ -55,6 +59,16 @@ def create_sample_files(db) -> Path:
     return outbox
 
 
+def create_sales_db(path: Path = SALES_DB) -> bool:
+    """Builds the sample sales database as SQLite. Leaves one that is already there alone."""
+    if path.exists():
+        return False
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(path) as connection:
+        connection.executescript(SALES_FILE.read_text())
+    return True
+
+
 def main():
     existing = inspect(engine).get_table_names()
     if existing:
@@ -69,14 +83,18 @@ def main():
         outbox = create_sample_files(db)
     finally:
         db.close()
+    made_sales_db = create_sales_db()
 
     print(f"Created {DATABASE_URL} with the sample data.")
     print(f"Sample input files are in {outbox}")
+    print(f"{'Created' if made_sales_db else 'Kept the existing'} sample sales database {SALES_DB}")
     print("""
 Try it (from this folder):
 
   python3 -m engine.runner --job-key DEV-LEGAL-COLLECT_AND_DELIVER --instance-id 1001 --working-root /tmp/autoapp_sample/work
   python3 -m engine.runner --job-key DEV-BILLING-LOAD --instance-id 1002 --working-root /tmp/autoapp_sample/work
+  python3 -m engine.runner --job-key DEV-BILLING-INVOICE_EXPORT --instance-id 1003 --working-root /tmp/autoapp_sample/work
+  python3 -m engine.runner --job-key DEV-FINANCE-LOAD_REPORTS --instance-id 1004 --working-root /tmp/autoapp_sample/work
   python3 -m engine.spool_delivery
 
   AUTOAPP_WORKING_ROOT=/tmp/autoapp_sample/work python3 -m uvicorn app.main:app --port 8000

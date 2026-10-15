@@ -189,6 +189,12 @@ function jobDetail() {
             field.endpoint = created.name;
         },
 
+        // A several-line box tall enough for what is in it (a long line wraps at about 55 characters)
+        textRows(text) {
+            const lines = String(text || "").split("\n");
+            const rows = lines.reduce((total, line) => total + Math.max(1, Math.ceil(line.length / 55)), 0);
+            return Math.min(16, Math.max(3, rows + 1));
+        },
         isDefault(field) { return TRUE_WORDS.includes(String(field.default).trim().toLowerCase()); },
 
         /** Puts a true/false parameter back to "not set", so the step type's default applies. */
@@ -324,7 +330,8 @@ function jobDetail() {
         },
 
         addStep() {
-            const type = Object.values(this.catalog)[0];
+            // Most steps move files, so a new one starts as Copy Files; the list is alphabetical
+            const type = this.catalog.COPY_FILES || Object.values(this.catalog)[0];
             const step = this.stepForm({ title: "", active: true, step_type: type.code, step_type_name: type.name, parameters: {} });
             step.open = true;
             this.form.steps.push(step);

@@ -253,6 +253,12 @@
                                             </div>
                                         </template>
 
+                                        <template x-if="field.data_type === 'TEXT'">
+                                            <div class="text-field">
+                                                <textarea class="code" :rows="textRows(field.text)" x-model="field.text" :disabled="!editing" :placeholder="field.default || ''"></textarea>
+                                            </div>
+                                        </template>
+
                                         <template x-if="['STRING', 'INTEGER'].includes(field.data_type) || field.asText">
                                             <div class="text-field">
                                                 <input type="text" x-model="field.text" :disabled="!editing" :placeholder="field.default || ''">

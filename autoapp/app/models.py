@@ -244,7 +244,7 @@ class StepDefinition(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     StepType_id = Column(Integer, ForeignKey('StepTypes.id', ondelete='CASCADE'), nullable=False)
     ParamName = Column("ParameterName", String(100), nullable=False) # <--- Python attribute is ParamName
-    # STRING, BOOLEAN, INTEGER, CHOICE or LOCATION (see engine/step_catalog.py)
+    # STRING, TEXT, BOOLEAN, INTEGER, CHOICE or LOCATION (see engine/step_catalog.py)
     DataType = Column(String(20), default='STRING', server_default='STRING')
     IsRequired = Column(Boolean, default=True, server_default=true())
     DefaultValue = Column(Text, nullable=True)

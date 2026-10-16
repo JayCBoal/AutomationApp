@@ -1,15 +1,15 @@
 // Source of the Extension Point AutoApp_JobTab (RedwoodScript), a DRAFT. See ../README.md.
 //
-// An "AutoApp" tab on a job definition's edit page. The tab holds AutoApp's job editor
-// for the AutoApp job this job definition runs (its AutoAppJobKey parameter), embedded,
+// A "RunMyFiles" tab on a job definition's edit page. The tab holds RunMyFiles' job editor
+// for the RunMyFiles job this job definition runs (its AutoAppJobKey parameter), embedded,
 // and passes on what the editor tells it (docs/INTEGRATION.md, "Messages to the WLA"):
 //
 //   ready    -> the tab is shown (redwood.epl.showDone)
 //   saved    -> AutoAppJobKey is set if the job is new or renamed, the definition is
-//               marked as changed (redwood.epl.setChanged) and AutoApp's verdict is shown
+//               marked as changed (redwood.epl.setChanged) and RunMyFiles' verdict is shown
 //               (redwood.epl.showMessage)
 //
-// Before RunMyJobs saves the definition (Persist), it asks AutoApp whether the job would
+// Before RunMyJobs saves the definition (Persist), it asks RunMyFiles whether the job would
 // run, and warns if not.
 //
 // What is DOCUMENTED ("Extending Edit Pages with ObjectPageExtensionPoint", RunMyJobs 2025.4):
@@ -35,7 +35,7 @@ import com.redwood.scheduler.api.model.*;
 public class Action
 extends ActionStub
 {
-  // Where AutoApp is, and what AutoApp calls this RunMyJobs (its Schedulers page).
+  // Where RunMyFiles is, and what RunMyFiles calls this RunMyJobs (its Schedulers page).
   // These could live in a library or a registry key instead.
   private static final String AUTOAPP_URL = "https://autoapp.example.com";
   private static final String SCHEDULER_NAME = "RMJ_PROD";
@@ -63,7 +63,7 @@ extends ActionStub
       // Messages only: everything but the OutputStream is ignored on Init
       if (keyOf(definition) == null)
       {
-        writeMessages(message("This job definition has no AutoApp job yet. Open the AutoApp tab to make one.", null, 2));
+        writeMessages(message("This job definition has no RunMyFiles job yet. Open the RunMyFiles tab to make one.", null, 2));
       }
       else
       {
@@ -91,7 +91,7 @@ extends ActionStub
     return shared.getJobDefinitionByName(businessKey);
   }
 
-  /** The AutoApp job key the definition holds, or null. TO CONFIRM: the parameter API's method names. */
+  /** The RunMyFiles job key the definition holds, or null. TO CONFIRM: the parameter API's method names. */
   private String keyOf(JobDefinition definition)
   {
     JobDefinitionParameter p = definition.getJobDefinitionParameterByName(KEY_PARAMETER);
@@ -113,7 +113,7 @@ extends ActionStub
     p.setDefaultExpression(key);
   }
 
-  /** The tab: AutoApp's job editor, embedded, and a few lines passing on what it says. */
+  /** The tab: RunMyFiles' job editor, embedded, and a few lines passing on what it says. */
   private String page(JobDefinition definition, String invocationId)
   throws Exception
   {
@@ -132,7 +132,7 @@ extends ActionStub
 
     return "<!DOCTYPE html><html><head><meta charset='utf-8'>"
       + "<style>html,body{margin:0;height:100%} iframe{border:0;width:100%;height:100%}</style></head><body>"
-      + "<iframe id='autoapp' src='" + attr(address) + "' title='AutoApp'></iframe>"
+      + "<iframe id='autoapp' src='" + attr(address) + "' title='RunMyFiles'></iframe>"
       + "<script>"
       + "var AUTOAPP=" + js(AUTOAPP_URL) + ", INVOCATION=" + js(invocationId) + ", SELF=" + js(self) + ", KEY=" + js(key) + ";"
       + "var epl=window.parent.redwood.epl;"
@@ -144,26 +144,26 @@ extends ActionStub
       +   "var m=e.data;"
       +   "if(m.event==='ready'){epl.showDone(INVOCATION);}"
       +   "else if(m.event==='saved'){"
-      +     "var verdict={message:m.valid?'Saved in AutoApp: ready to run.':'Saved in AutoApp, with problems to fix before it can run.',"
+      +     "var verdict={message:m.valid?'Saved in RunMyFiles: ready to run.':'Saved in RunMyFiles, with problems to fix before it can run.',"
       +       "additional:(m.problems||[]).join('\\n'),severity:m.valid?1:2};"
       +     "if(m.job_key!==KEY){"
       +       "fetch(SELF+'?action=setKey&key='+encodeURIComponent(m.job_key)+'&InvocationId='+encodeURIComponent(INVOCATION),{credentials:'same-origin'})"
       +       ".then(function(){KEY=m.job_key;epl.setChanged(true);epl.showMessage(verdict);});"
       +     "}else{epl.showMessage(verdict);}"
       +   "}"
-      +   "else if(m.event==='deleted'){epl.showMessage({message:'The AutoApp job was deleted. This job definition cannot run until it has another.',severity:3});}"
+      +   "else if(m.event==='deleted'){epl.showMessage({message:'The RunMyFiles job was deleted. This job definition cannot run until it has another.',severity:3});}"
       + "});"
       + "</script></body></html>";
   }
 
-  /** Before the save: warn if the AutoApp job would not run. Throwing ExtensionPointValidationException would refuse the save. */
+  /** Before the save: warn if the RunMyFiles job would not run. Throwing ExtensionPointValidationException would refuse the save. */
   private void persist(JobDefinition definition)
   throws Exception
   {
     String key = keyOf(definition);
     if (key == null)
     {
-      writeMessages(message("This job definition has no AutoApp job yet, so it cannot run.", null, 2));
+      writeMessages(message("This job definition has no RunMyFiles job yet, so it cannot run.", null, 2));
       return;
     }
     String businessKey = definition.getPartition().getName() + "." + definition.getName();
@@ -176,12 +176,12 @@ extends ActionStub
           HttpResponse.BodyHandlers.ofString());
       if (answer.statusCode() == 404)
       {
-        writeMessages(message("AutoApp has no job '" + key + "'.", null, 2));
+        writeMessages(message("RunMyFiles has no job '" + key + "'.", null, 2));
       }
       else if (answer.body().contains("\"ready\":false") || answer.body().contains("\"ready\": false"))
       {
         // A JSON library would be better here; any the server has will do
-        writeMessages(message("The AutoApp job '" + key + "' would not run yet. Open the AutoApp tab to see why.", null, 2));
+        writeMessages(message("The RunMyFiles job '" + key + "' would not run yet. Open the RunMyFiles tab to see why.", null, 2));
       }
       else
       {
@@ -190,7 +190,7 @@ extends ActionStub
     }
     catch (Exception e)
     {
-      writeMessages(message("Could not reach AutoApp to check its job: " + e.getMessage(), null, 2));
+      writeMessages(message("Could not reach RunMyFiles to check its job: " + e.getMessage(), null, 2));
     }
   }
 

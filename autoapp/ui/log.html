@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Job Log - AutoApp</title>
+    <title>Job Log - RunMyFiles</title>
     <link rel="icon" href="data:,">
     <link rel="stylesheet" href="css/autoapp.css">
     <script src="js/common.js"></script>
@@ -16,7 +16,7 @@
 
 <main x-data="runLogPage()">
     <p class="message error" id="page-error" x-show="error" x-text="error" role="alert" x-cloak></p>
-    <p class="message" x-show="runMissing" x-cloak>AutoApp has no record of this run.</p>
+    <p class="message" x-show="runMissing" x-cloak>RunMyFiles has no record of this run.</p>
 
     <template x-if="run">
         <section class="panel run-panel" aria-label="The run">
@@ -42,7 +42,7 @@
             <pre class="job-log" id="job-log" x-ref="log" @scroll="logScrolled($event)" x-show="run.log.length"><template
                  x-for="(line, index) in run.log" :key="index"><span :class="lineClass(line)" x-text="line + '\n'"></span></template></pre>
             <p class="message" id="no-log" x-show="run.log.length === 0 && run.status !== 'RUNNING'">No job log was recorded
-                for this run. Runs from before AutoApp kept job logs have none.</p>
+                for this run. Runs from before RunMyFiles kept job logs have none.</p>
             <p class="muted small" x-show="run.status === 'RUNNING'">Still running; the log fills in as each step ends.</p>
         </section>
     </template>

@@ -1,8 +1,8 @@
 /*
  * The Stand-in Scheduler's page. It does what a WLA's job editor and run list would:
- * keeps job definitions with their parameters, opens AutoApp's job editor embedded
- * for an AutoApp job (listening for its messages), submits jobs, and shows their runs,
- * with a way into AutoApp's Operations Log for each. See docs/INTEGRATION.md.
+ * keeps job definitions with their parameters, opens RunMyFiles' job editor embedded
+ * for a RunMyFiles job (listening for its messages), submits jobs, and shows their runs,
+ * with a way into RunMyFiles' Operations Log for each. See docs/INTEGRATION.md.
  */
 async function call(method, path, body) {
     const options = { method, headers: { Accept: "application/json" } };
@@ -29,7 +29,7 @@ function standin() {
         form: null,             // the job on screen
         saved: "",              // the job as last loaded or saved, to tell whether anything changed
         runs: [],
-        autoapp: null,          // what AutoApp says about the AutoApp job: { summary, error }
+        autoapp: null,          // what RunMyFiles says about the RunMyFiles job: { summary, error }
         outputs: {},            // run id -> its output, for the runs whose output is open
         busy: false,
         error: "",
@@ -44,7 +44,7 @@ function standin() {
             } catch (e) {
                 this.error = e.message;
             }
-            // What AutoApp's embedded pages tell us
+            // What RunMyFiles' embedded pages tell us
             window.addEventListener("message", event => this.fromAutoApp(event));
             const wanted = new URLSearchParams(location.search).get("job");
             if (wanted) this.choose(wanted);
@@ -118,7 +118,7 @@ function standin() {
         },
 
         async remove() {
-            if (!confirm(`Delete job '${this.chosen}'? Its AutoApp job is not deleted.`)) return;
+            if (!confirm(`Delete job '${this.chosen}'? Its RunMyFiles job is not deleted.`)) return;
             try {
                 await call("DELETE", "/api/jobs/" + encodeURIComponent(this.chosen));
                 this.form = null;
@@ -129,9 +129,9 @@ function standin() {
             }
         },
 
-        // ---------- AutoApp's pages, embedded ----------
+        // ---------- RunMyFiles' pages, embedded ----------
 
-        /** An address of AutoApp's, embedded, matching our look, and telling only us what happens. */
+        /** An address of RunMyFiles', embedded, matching our look, and telling only us what happens. */
         autoAppAddress(page, params) {
             const query = new URLSearchParams({ ...params, embed: "1", theme: "light", host: location.origin });
             return `${this.config.autoapp_url}/ui/${page}?${query}`;
@@ -147,12 +147,12 @@ function standin() {
         windowClosed() { this.$refs.frame.src = "about:blank"; this.loadAutoApp(); },
 
         editInAutoApp() {
-            // The AutoApp job this one runs, or a new one named after it; and this job's parameters, for AutoApp to read
+            // The RunMyFiles job this one runs, or a new one named after it; and this job's parameters, for RunMyFiles to read
             const params = this.form.autoapp_job_key
                 ? { key: this.form.autoapp_job_key }
                 : { new: "", key: this.form.name.toUpperCase() };
             Object.assign(params, { scheduler: this.config.scheduler_name, wla_job: this.form.name });
-            this.openWindow(`AutoApp job for ${this.form.name}`, this.autoAppAddress("job.html", params));
+            this.openWindow(`RunMyFiles job for ${this.form.name}`, this.autoAppAddress("job.html", params));
         },
 
         operationsInAutoApp(run) {
@@ -165,14 +165,14 @@ function standin() {
             const message = event.data || {};
             if (message.source !== "AutoApp") return;
             if (message.event === "saved") {
-                this.windowMessage = message.valid ? "Saved in AutoApp: ready to run." : "Saved in AutoApp, with problems to fix before it can run.";
+                this.windowMessage = message.valid ? "Saved in RunMyFiles: ready to run." : "Saved in RunMyFiles, with problems to fix before it can run.";
                 if (message.job_key !== this.form.autoapp_job_key) {
-                    // A new AutoApp job, or a renamed one: this job now runs it
+                    // A new RunMyFiles job, or a renamed one: this job now runs it
                     this.form.autoapp_job_key = message.job_key;
                     await this.save();
                 }
             } else if (message.event === "deleted") {
-                this.windowMessage = "Deleted in AutoApp.";
+                this.windowMessage = "Deleted in RunMyFiles.";
                 this.form.autoapp_job_key = null;
                 await this.save();
             } else if (message.event === "cancelled") {
@@ -193,7 +193,7 @@ function standin() {
             }
         },
 
-        /** What AutoApp says about the AutoApp job this one runs, asked through our own server. */
+        /** What RunMyFiles says about the RunMyFiles job this one runs, asked through our own server. */
         async loadAutoApp() {
             if (!this.chosen) { this.autoapp = null; return; }
             try {
@@ -203,7 +203,7 @@ function standin() {
             }
         },
 
-        /** One of AutoApp's pages from the summary, in our window, embedded. */
+        /** One of RunMyFiles' pages from the summary, in our window, embedded. */
         openFromSummary(title, url) {
             const target = new URL(url);
             target.searchParams.set("embed", "1");
@@ -218,7 +218,7 @@ function standin() {
             this.runs = await call("GET", "/api/runs?" + new URLSearchParams({ job: this.chosen }));
             for (const id of Object.keys(this.outputs)) this.outputs[id] = (await call("GET", "/api/runs/" + id)).output;
             if (this.runs.some(run => run.status === "RUNNING")) pollTimer = setTimeout(() => this.loadRuns(), 1000);
-            else this.loadAutoApp();            // a run that has just ended changes AutoApp's "last run"
+            else this.loadAutoApp();            // a run that has just ended changes RunMyFiles' "last run"
         },
 
         async toggleOutput(run) {

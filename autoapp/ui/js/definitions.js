@@ -69,7 +69,7 @@ const DEFINITIONS = {
               help: "What the runner's --scheduler calls it, e.g. RMJ_PROD." },
             { name: "technology", label: "Technology", required: true, choices: ["RUNMYJOBS", "ACTIVEBATCH", "CONTROL_M", "TIDAL", "CRON", "STANDIN", "OTHER"] },
             { name: "api_url", label: "API address", max: 512,
-              help: "Where AutoApp reaches it, to read its jobs' parameters." },
+              help: "Where RunMyFiles reaches it, to read its jobs' parameters." },
             { name: "description", label: "Description" },
             { name: "active", label: "Active", type: "checkbox" },
         ],
@@ -93,7 +93,7 @@ const SPEC = DEFINITIONS[KIND];
 
 function setTitle(text) {
     window.AUTOAPP_PAGE_TITLE = text;
-    document.title = `${text} - AutoApp`;
+    document.title = `${text} - RunMyFiles`;
     const shown = document.querySelector(".page-title");
     if (shown) shown.textContent = text;
 }

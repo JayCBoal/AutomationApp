@@ -1,5 +1,5 @@
 """
-Compares the database's tables with the ones this version of AutoApp expects.
+Compares the database's tables with the ones this version of RunMyFiles expects.
 
 A database built by an earlier version lacks whatever has been added since.
 Without this check that shows up as an unexplained "Internal Server Error" on
@@ -29,7 +29,7 @@ def schema_problems(connection: Connection) -> List[str]:
 
 def out_of_date_message(problems: List[str]) -> str:
     return (
-        "The database is out of date for this version of AutoApp. It is missing: "
+        "The database is out of date for this version of RunMyFiles. It is missing: "
         + ", ".join(problems)
         + ". Rebuild it (see 'A development database' in the README), or add what is missing."
     )

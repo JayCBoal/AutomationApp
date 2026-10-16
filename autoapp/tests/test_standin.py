@@ -1,7 +1,7 @@
 """
-The Stand-in Scheduler (demo/scheduler_standin) and AutoApp's connector for it:
-a real stand-in server beside a real AutoApp server (live_api), each in its own
-process, talking to each other only as a WLA and AutoApp would.
+The Stand-in Scheduler (demo/scheduler_standin) and RunMyFiles' connector for it:
+a real stand-in server beside a real RunMyFiles server (live_api), each in its own
+process, talking to each other only as a WLA and RunMyFiles would.
 """
 import json
 import socket
@@ -37,7 +37,7 @@ def call(method, url, body=None, token=None):
 
 @pytest.fixture
 def standin(live_api, db_url, tmp_path):
-    """The stand-in, on a free port, with its own database, running AutoApp jobs against live_api. Yields its address."""
+    """The stand-in, on a free port, with its own database, running RunMyFiles jobs against live_api. Yields its address."""
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
         port = s.getsockname()[1]
@@ -63,7 +63,7 @@ def standin(live_api, db_url, tmp_path):
 
 @pytest.fixture
 def registered(db, standin):
-    """The stand-in registered in AutoApp, with the token its API wants."""
+    """The stand-in registered in RunMyFiles, with the token its API wants."""
     scheduler = Scheduler(Name="STANDIN", Technology="STANDIN", ApiUrl=standin)
     db.add(scheduler)
     db.flush()
@@ -84,7 +84,7 @@ def wla_job(standin):
 
 @pytest.fixture
 def regional(seed, endpoints, db):
-    """An AutoApp job that needs the scheduler's Region parameter."""
+    """A RunMyFiles job that needs the scheduler's Region parameter."""
     job = seed.job("DEV-REGIONAL")
     seed.step(job, 1, SourceEndpoint="LEGAL_EXTRACTS", Dest="in_${Region}_${BUSINESS_DATE:yyyyMMdd}")
     seed.step(job, 2, Source="in_${Region}_${BUSINESS_DATE:yyyyMMdd}/*.csv", Dest="pw_${ENV:ExportPassword}")
@@ -109,7 +109,7 @@ def test_the_standin_never_gives_out_a_secret(standin, wla_job):
     assert "hunter2" not in json.dumps(job)
 
 
-# --- AutoApp reading it ------------------------------------------------------------------------
+# --- RunMyFiles reading it ------------------------------------------------------------------------
 
 def test_autoapp_reads_a_wla_jobs_parameters_through_the_connector(live_api, registered, wla_job):
     status, job = call("GET", f"{live_api}/api/v1/schedulers/STANDIN/jobs/BILLING_EXPORT")
@@ -126,7 +126,7 @@ def test_the_connector_says_what_went_wrong(live_api, db, registered, wla_job):
     db.query(Variable).filter(Variable.VarName == "ApiToken").one().VarValue = "wrong"
     db.commit()
     status, answer = call("GET", f"{live_api}/api/v1/schedulers/STANDIN/jobs/BILLING_EXPORT")
-    assert status == 502 and "refused AutoApp's credential" in answer["detail"]
+    assert status == 502 and "refused RunMyFiles' credential" in answer["detail"]
 
     assert call("GET", f"{live_api}/api/v1/schedulers/NOPE/jobs/X")[0] == 404
 
@@ -138,7 +138,7 @@ def test_a_technology_without_a_connector_says_so(live_api, db):
     status, answer = call("GET", f"{live_api}/api/v1/schedulers/TIDAL_PROD/jobs/X")
 
     assert status == 502
-    assert "AutoApp cannot read TIDAL schedulers yet. It can read: RUNMYJOBS, STANDIN." in answer["detail"]
+    assert "RunMyFiles cannot read TIDAL schedulers yet. It can read: RUNMYJOBS, STANDIN." in answer["detail"]
 
 
 def test_the_pre_run_check_uses_the_wla_jobs_parameters(live_api, registered, wla_job, regional):
@@ -156,7 +156,7 @@ def test_a_check_that_cannot_reach_the_scheduler_warns_and_carries_on(live_api, 
     assert "could not be read" in check["warnings"][0] and "has no job 'NOT_THERE'" in check["warnings"][0]
 
 
-# --- The stand-in running AutoApp jobs ---------------------------------------------------------
+# --- The stand-in running RunMyFiles jobs ---------------------------------------------------------
 
 def submit_and_wait(standin, name="BILLING_EXPORT"):
     status, run = call("POST", f"{standin}/api/jobs/{name}/submit", token=TOKEN)
@@ -177,7 +177,7 @@ def test_the_standin_runs_an_autoapp_job_with_its_parameters(live_api, registere
     today = time.strftime("%Y%m%d")
     assert (tmp_path / "work" / "DEV-REGIONAL" / f"in_EU_{today}").is_dir()
     assert f"--instance-id SIS-1 --scheduler STANDIN" in run["command"] and "--business-date" in run["command"]
-    # AutoApp has the run, from the stand-in, with its business date
+    # RunMyFiles has the run, from the stand-in, with its business date
     [recorded] = call("GET", f"{live_api}/api/v1/runs?instance_id=SIS-1")[1]
     assert (recorded["scheduler"], recorded["business_date"]) == ("STANDIN", time.strftime("%Y-%m-%d"))
 
@@ -197,7 +197,7 @@ def test_a_job_with_no_autoapp_job_cannot_be_submitted(standin):
 
     status, answer = call("POST", f"{standin}/api/jobs/LONELY/submit", token=TOKEN)
 
-    assert status == 422 and "has no AutoApp job yet" in answer["detail"]
+    assert status == 422 and "has no RunMyFiles job yet" in answer["detail"]
 
 
 # --- In the browser ----------------------------------------------------------------------------

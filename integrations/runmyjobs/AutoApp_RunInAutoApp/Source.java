@@ -1,9 +1,9 @@
 // Source of the Extension Point AutoApp_RunInAutoApp (RedwoodScript), a DRAFT. See ../README.md.
 //
-// For a run of an AutoApp job definition, shows one of AutoApp's pages for that run in the
+// For a run of a RunMyFiles job definition, shows one of RunMyFiles' pages for that run in the
 // pop-up: the files it handled (Operations Log, each file's trace a click away) or its job
 // log. The runner was given the job's ID as --instance-id (job_definition/AUTOAPP_RunJob.bash),
-// so that is how AutoApp knows the run.
+// so that is how RunMyFiles knows the run.
 //
 // DOCUMENTED: the pattern of writing an HTML page with jcsResponse, and jcsParameters giving
 // the selected objects (the CountObjects example uses jcsParameters.getObjectCount()).
@@ -41,7 +41,7 @@ extends ActionStub
     jcsResponse.setContentType("text/html");
     jcsResponse.getWriter().write("<!DOCTYPE html><html><head><meta charset='utf-8'>"
         + "<style>html,body{margin:0;height:100%} iframe{border:0;width:100%;height:100%;min-height:600px}</style>"
-        + "</head><body><iframe src='" + address.replace("&", "&amp;").replace("'", "&#39;") + "' title='AutoApp'></iframe>"
+        + "</head><body><iframe src='" + address.replace("&", "&amp;").replace("'", "&#39;") + "' title='RunMyFiles'></iframe>"
         + "</body></html>");
   }
 

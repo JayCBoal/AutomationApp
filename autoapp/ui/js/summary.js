@@ -17,7 +17,7 @@ function jobSummary() {
             for (const name of ["scheduler", "wla_job", "instance_id"]) if (address.get(name)) params[name] = address.get(name);
             try {
                 this.summary = await AutoApp.get("/jobs/" + encodeURIComponent(key) + "/summary", params);
-                document.title = `${key} - AutoApp`;
+                document.title = `${key} - RunMyFiles`;
             } catch (e) {
                 this.error = e.message;
             }

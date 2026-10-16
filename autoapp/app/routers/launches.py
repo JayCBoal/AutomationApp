@@ -35,7 +35,7 @@ from engine import job_log
 router = APIRouter(prefix="/api/v1/launches", tags=["Runs"])
 
 AUTOAPP_DIR = Path(__file__).resolve().parents[2]
-SCHEDULER_NAME = "AutoApp UI"
+SCHEDULER_NAME = "RunMyFiles UI"
 OUTPUT_KEPT = 200           # lines of the runner's own output kept, for a runner that never got going
 
 

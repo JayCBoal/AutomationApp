@@ -1,6 +1,6 @@
-# AutoApp Blueprint
+# RunMyFiles Blueprint
 
-How AutoApp works. Each section says what is **built** (in the code and covered by tests) and what is **planned** (designed but not implemented). Last reviewed 2026-10-12.
+How RunMyFiles works. Each section says what is **built** (in the code and covered by tests) and what is **planned** (designed but not implemented). Last reviewed 2026-10-12.
 
 ## 1. Execution flow
 
@@ -14,7 +14,7 @@ How AutoApp works. Each section says what is **built** (in the code and covered 
                                |         [--run-number N] [--scheduler S]
                                v
 +--------------------------------------------------------------+
-|  AutoApp runner (engine/runner.py)                           |
+|  RunMyFiles runner (engine/runner.py)                           |
 |  1. Finds the job by JobKey.                                 |
 |  2. Builds the variable scope for the job.                   |
 |  3. For each active step, in StepOrder:                      |
@@ -27,7 +27,7 @@ How AutoApp works. Each section says what is **built** (in the code and covered 
                 | reads                        | writes, then posts
                 v                              v
 +-------------------------------+   +--------------------------+
-|  AutoApp database             |   |  Telemetry spool         |
+|  RunMyFiles database             |   |  Telemetry spool         |
 |  jobs, steps, variables,      |<--|  one .jsonl file per run |
 |  endpoints, runs, operations  |   |  delivered via the API   |
 +-------------------------------+   +--------------------------+
@@ -68,9 +68,9 @@ Jobs are deliberately **not** linked to an Application or Entity. A job may touc
 
 **Built**
 
-- `Schedulers`: a workload automation product that runs AutoApp jobs. One AutoApp can serve several: each run records the scheduler that started it (the runner's `--scheduler`) and the business date it gave, if any (`JobRuns.BusinessDate`).
-- A scheduler has a name, a technology (`RUNMYJOBS`, `ACTIVEBATCH`, `CONTROL_M`, `TIDAL`, `CRON`, `STANDIN`, `OTHER`), an API address, a description and an active flag. The credential AutoApp would use for its API is kept as a secret variable on it.
-- The sample data registers `AutoApp UI`, the name the Run Job page runs jobs under.
+- `Schedulers`: a workload automation product that runs RunMyFiles jobs. One RunMyFiles can serve several: each run records the scheduler that started it (the runner's `--scheduler`) and the business date it gave, if any (`JobRuns.BusinessDate`).
+- A scheduler has a name, a technology (`RUNMYJOBS`, `ACTIVEBATCH`, `CONTROL_M`, `TIDAL`, `CRON`, `STANDIN`, `OTHER`), an API address, a description and an active flag. The credential RunMyFiles would use for its API is kept as a secret variable on it.
+- The sample data registers `RunMyFiles UI`, the name the Run Job page runs jobs under.
 
 - **Connectors** (`app/connectors/`), one per technology, read from the scheduler through its own API, with its `ApiToken`. So far they read a WLA job's parameters, for the job editor and the pre-run check. The first is for the Stand-in Scheduler ([demo/scheduler_standin](../demo/scheduler_standin/README.md)); see [INTEGRATION.md](INTEGRATION.md).
 
@@ -104,7 +104,7 @@ Jobs are deliberately **not** linked to an Application or Entity. A job may touc
 
 The job is the core unit, as it is in every scheduler: the set of steps that run together in one place. There is no level above it. Grouping related jobs, and deciding the order they run in, is the scheduler's business. (A `Processes` level existed until 2026-10-11; see the change log.)
 
-`Jobs.JobKey` is the job's unique name. It is human-readable, independent of environment, and what the scheduler passes. The numeric primary key differs between databases and is never used outside AutoApp. Because the key also names the job's working folder, it is limited to letters, digits, `-`, `_` and `.`.
+`Jobs.JobKey` is the job's unique name. It is human-readable, independent of environment, and what the scheduler passes. The numeric primary key differs between databases and is never used outside RunMyFiles. Because the key also names the job's working folder, it is limited to letters, digits, `-`, `_` and `.`.
 
 ### Steps
 
@@ -136,7 +136,7 @@ The job is the core unit, as it is in every scheduler: the set of steps that run
 
 ### Endpoints
 
-`Endpoints` is the register of places where files enter or leave AutoApp's control. It replaced the prototype's `Sources` and `Deliveries` tables. Each endpoint has:
+`Endpoints` is the register of places where files enter or leave RunMyFiles' control. It replaced the prototype's `Sources` and `Deliveries` tables. Each endpoint has:
 
 - `Name`: unique; job steps reference it by this name.
 - `Application`: the internal system it belongs to, if any.
@@ -149,7 +149,7 @@ An endpoint has no direction. The same folder can be a destination for one job a
 
 **Built**
 
-- `JobRuns`: one row per execution of a job. The scheduler stays the authority on scheduling; this is AutoApp's side of the run. It holds:
+- `JobRuns`: one row per execution of a job. The scheduler stays the authority on scheduling; this is RunMyFiles' side of the run. It holds:
   - `RunID`, generated by the runner each time it starts, so every execution is distinct.
   - `SchedulerInstanceID`, the ID the scheduler passed.
   - `RunNumber`, for schedulers that keep one instance ID across restarts or cyclic runs (Control-M's run count, ActiveBatch's restart count). Defaults to 1.
@@ -178,11 +178,11 @@ The Python models in `autoapp/app/models.py` are the definition of the schema.
 **Built**
 
 - `SQL/Create_Tables.sql`, the MariaDB table script, is generated from the models by `SQL/generate_ddl.py`.
-- Column defaults are declared in the database as well as in the code, so a row inserted with plain SQL gets the same defaults as one inserted through AutoApp.
+- Column defaults are declared in the database as well as in the code, so a row inserted with plain SQL gets the same defaults as one inserted through RunMyFiles.
 - `SQL/Seed_Sample_Data.sql` is a small working set of sample definitions in plain SQL. A test loads it and runs its jobs.
 - `autoapp/create_dev_db.py` builds a local SQLite database from the models and the sample data.
 
-- Runs on MariaDB (tested on 11.8) as well as SQLite. On SQLite, AutoApp switches on foreign-key enforcement, which SQLite leaves off by default, so that deleting a step removes its parameters there as it does on MariaDB. Two things are spelled out for MariaDB, where its defaults would give wrong answers:
+- Runs on MariaDB (tested on 11.8) as well as SQLite. On SQLite, RunMyFiles switches on foreign-key enforcement, which SQLite leaves off by default, so that deleting a step removes its parameters there as it does on MariaDB. Two things are spelled out for MariaDB, where its defaults would give wrong answers:
   - Run and operation times are stored to the microsecond. A plain `DATETIME` there keeps whole seconds, and the trace orders operations by time.
   - Every table compares text exactly (collation `utf8mb4_bin`). MariaDB ignores case by default.
 - **Names, paths and filenames are case-sensitive on every database.** `DEV-LOAD` and `dev-load` are two jobs; `Report.csv` and `report.csv` are two files. This applies to job keys, endpoint, application, entity, site and tag names, and variable and parameter names.
@@ -216,7 +216,7 @@ Step parameters, endpoint paths and variable values may contain `${...}` placeho
 - Cascade order, lowest priority first, by default: `ENV`, `SYS`, `ENTITY`, `APP`, `ENDPOINT`, `TAG`, `JOB`. A higher level overrides a lower one of the same name. The order is the `VariablePrecedence` setting, changed on the Settings page.
   - `ENTITY`, `APP` and `ENDPOINT` apply only while an endpoint's path and pattern are being filled in.
   - `TAG` is what the job's tags give it; `ENDPOINT` is what the endpoint's tags give it.
-  - `ENV` is the runner's environment, so a plain `${Name}` finds a variable the scheduler set when nothing in AutoApp defines it. On the server there is no such environment, so a plain name found nowhere else is reported there as unresolved; write `${ENV:Name}` for a value that only the scheduler gives. Planned: AutoApp reading the WLA job's parameters from the scheduler (TO-DO decision 7), so the editor knows them too.
+  - `ENV` is the runner's environment, so a plain `${Name}` finds a variable the scheduler set when nothing in RunMyFiles defines it. On the server there is no such environment, so a plain name found nowhere else is reported there as unresolved; write `${ENV:Name}` for a value that only the scheduler gives. Planned: RunMyFiles reading the WLA job's parameters from the scheduler (TO-DO decision 7), so the editor knows them too.
   - A precedence saved before a level existed keeps its order, with the new level at the lowest priority.
 - **Tags.** A tag's variables act as if they were on whatever carries it, just below that object's own. So a job's tags feed the job; an application's or entity's tags feed wherever that object's variables reach. A tag inherits its parents' variables, and its own override theirs.
 - **Conflicts.** When two of an object's tags give one variable different values, nothing is chosen. Using that variable is an error, unless the object gives it a value of its own or a higher level does; a conflict does not fall back to a lower level's value. A conflict on a variable the job does not use is a warning in the job editor. The same value from two tags is not a conflict, nor is one parent reached through two tags. Error messages name the tags, never the values.
@@ -301,7 +301,7 @@ This is what makes a file trace possible: an operation that reads from an endpoi
 - `engine/handlers/sql_handler.py`: step type `RUN_SQL` (Run SQL). Runs one statement against the database a connection URL names (`Database`), normally kept in a secret variable.
   - A query's rows can be written to `ResultFile` as CSV, with a line of column names unless `IncludeHeader=False`. The file is written under a temporary name and renamed when complete.
   - Changes are rolled back unless `Commit=True`, so a statement can be tried safely; the job log says so when it rolled back changes.
-  - The statement is sent as written, so `:` and `%` in it mean nothing to AutoApp; `${...}` placeholders are filled in first.
+  - The statement is sent as written, so `:` and `%` in it mean nothing to RunMyFiles; `${...}` placeholders are filled in first.
   - The database's password never appears in the job log, the operation record or an error message, whether or not the URL came from a secret.
   - Any database SQLAlchemy has a driver for will do. The project installs the MariaDB/MySQL driver; SQLite needs none.
 - A parameter of type `TEXT` is a string that may run to several lines. The job editor shows it as a box that grows to fit, in a fixed-width font. Run SQL's `Statement` is one.
@@ -467,7 +467,7 @@ Nothing in this section is built in the rewrite. The 2024 prototype tracked exte
   - A tag's page shows its parent, the variables it inherits from its parents and from which one, and, under Used by, its child tags and what carries it.
 - **Job History** page: every run, newest first, with its status, error, timing, the scheduler's identifiers, a link to the files it handled, and a **Log** link to its job log.
 - **Job Log** page (`log.html?run=...`): one run's job log as the runner printed it, with errors and warnings picked out, and the run's status, times and a link to its operations. A run still going is followed until it ends.
-- **Run Job** page: runs a job now, as a scheduler would, for trying jobs out without one. Choose a job (it shows whether it would run), an instance ID (one is made from the time if left blank, e.g. `UI-20261015-183012`) and a log level, and **Run**. The server starts the real runner as a separate process, with "AutoApp UI" as its scheduler; the page shows the command, follows the run and shows its log as each step ends, then the outcome and exit code. The job editor has a **Run** button that opens this page with the job chosen. A business date can be given, as Control-M would.
+- **Run Job** page: runs a job now, as a scheduler would, for trying jobs out without one. Choose a job (it shows whether it would run), an instance ID (one is made from the time if left blank, e.g. `UI-20261015-183012`) and a log level, and **Run**. The server starts the real runner as a separate process, with "RunMyFiles UI" as its scheduler; the page shows the command, follows the run and shows its log as each step ends, then the outcome and exit code. The job editor has a **Run** button that opens this page with the job chosen. A business date can be given, as Control-M would.
   - The server remembers its launches only until it restarts; the runs themselves are in Job History as usual.
   - The runner it starts keeps its spool in `autoapp/spool`, or where `AUTOAPP_SPOOL_DIR` says.
 - **Audit Log** page: every change to a definition or a setting, newest first, saying in words what changed, with a link to the thing changed if it still exists.
@@ -478,14 +478,14 @@ Nothing in this section is built in the rewrite. The 2024 prototype tracked exte
 **Planned**
 
 - Every other page in [UI_VISION.md](UI_VISION.md). The pages that edit definitions need the CRUD API first.
-- AutoApp is meant to be used from inside a scheduling product, with this web interface as a second option. Both are clients of the same REST API.
+- RunMyFiles is meant to be used from inside a scheduling product, with this web interface as a second option. Both are clients of the same REST API.
 
 ## 12. Testing
 
 - Tests are in `autoapp/tests/` and run with `python3 -m pytest` (about 700 tests: about six minutes on SQLite, eight on MariaDB). On the development machine, `autoapp_tests` (from `dev_env.sh`) runs both at once, in about eight minutes; each run has its own temporary folder.
 - Each test builds its own temporary SQLite database and temporary folders. No test touches the working directory or a shared database.
 - The same suite runs against MariaDB when `AUTOAPP_TEST_DATABASE_URL` names a test database. Its tables are built once per run from `SQL/Create_Tables.sql`, the script an installation would use, and emptied before each test.
-- Tests run the real code. AutoApp's own components are not mocked. The runner tests launch the runner as a separate process, as a scheduler would.
+- Tests run the real code. RunMyFiles' own components are not mocked. The runner tests launch the runner as a separate process, as a scheduler would.
 - API tests go through real HTTP requests. The delivery tests start a real API server in its own process.
 - The web interface is tested in a real browser (headless Chromium, driven by Playwright) against a real server: the tests click, type and read what is on screen.
 - The only things replaced in tests are at the edge of the system: the file copy (to imitate a transfer cut short) and the network call (to see what the runner would send).

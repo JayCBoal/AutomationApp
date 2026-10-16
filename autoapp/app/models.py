@@ -157,9 +157,9 @@ class Tag(MasterObject):
 
 class Scheduler(MasterObject):
     """
-    A workload automation product that runs AutoApp jobs: one installation of
-    RunMyJobs, Control-M, ActiveBatch and so on. AutoApp can serve several at once;
-    the runner's --scheduler names the one starting a run. ApiUrl is where AutoApp
+    A workload automation product that runs RunMyFiles jobs: one installation of
+    RunMyJobs, Control-M, ActiveBatch and so on. RunMyFiles can serve several at once;
+    the runner's --scheduler names the one starting a run. ApiUrl is where RunMyFiles
     reaches it, to read its jobs' parameters; the credential for that is a secret
     variable on the scheduler.
     """
@@ -360,7 +360,7 @@ class JobStepParameter(Base):
 # ============================================================================
 class JobRun(Base):
     """One execution of a job by the runner. The scheduler stays the authority on scheduling;
-    this is AutoApp's side of the run, and what each file operation points back to."""
+    this is RunMyFiles' side of the run, and what each file operation points back to."""
     __tablename__ = 'JobRuns'
 
     id = Column(Integer, primary_key=True, autoincrement=True)

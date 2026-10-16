@@ -72,7 +72,7 @@ def test_a_launched_job_runs_and_is_recorded_with_its_log(live_api, collect, tmp
     launch, run = follow(live_api, launch)
 
     assert launch["exit_code"] == 0
-    assert (run["status"], run["instance_id"], run["scheduler"], run["operations"]) == ("SUCCESS", "UI-T1", "AutoApp UI", 2)
+    assert (run["status"], run["instance_id"], run["scheduler"], run["operations"]) == ("SUCCESS", "UI-T1", "RunMyFiles UI", 2)
     assert any("Job 'DEV-COLLECT' completed successfully." in line for line in run["log"])
     assert (tmp_path / "work" / "DEV-COLLECT" / "incoming" / "Legal_Batch_1.csv").exists()
 

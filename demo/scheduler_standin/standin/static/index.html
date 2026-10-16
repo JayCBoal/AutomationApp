@@ -13,7 +13,7 @@
 <body>
 <header class="sis-header">
     <span class="product">Stand-in Scheduler</span>
-    <span class="note">Plays a workload automation product's part for AutoApp. Not part of AutoApp.</span>
+    <span class="note">Plays a workload automation product's part for RunMyFiles. Not part of RunMyFiles.</span>
 </header>
 
 <main x-data="standin()">
@@ -35,6 +35,10 @@
         </section>
 
         <div>
+            <section class="panel" x-show="!form" x-cloak>
+                <p class="message" style="margin: 0">Choose a job on the left to see its definition, edit it in RunMyFiles,
+                    and submit it. Or make a <strong>New job</strong>.</p>
+            </section>
             <!-- One job: its definition, as a WLA would hold it -->
             <template x-if="form">
                 <section class="panel" aria-label="Job definition">
@@ -54,18 +58,18 @@
                             <span class="muted small">Give each run today's date as its business date, as Control-M gives an order date.</span>
                         </div>
 
-                        <label for="autoapp-job-key">AutoApp job</label>
+                        <label for="autoapp-job-key">RunMyFiles job</label>
                         <div class="create-row">
                             <input id="autoapp-job-key" type="text" x-model="form.autoapp_job_key" maxlength="320"
-                                   placeholder="The AutoApp job this one runs; leave blank to make one" style="max-width: 420px">
+                                   placeholder="The RunMyFiles job this one runs; leave blank to make one" style="max-width: 420px">
                             <button type="button" class="primary" id="edit-in-autoapp" :disabled="!saved || changed"
-                                    @click="editInAutoApp()">Edit in AutoApp</button>
+                                    @click="editInAutoApp()">Edit in RunMyFiles</button>
                             <span class="muted small" x-show="!saved || changed">Save this job first.</span>
                         </div>
                     </div>
 
                     <h3 class="small">Parameters</h3>
-                    <p class="muted small">Set in the environment when the job runs. AutoApp's steps use them as
+                    <p class="muted small">Set in the environment when the job runs. RunMyFiles' steps use them as
                         <code>${Name}</code> or <code>${ENV:Name}</code>.</p>
                     <table class="results variables" id="parameters" x-show="form.parameters.length > 0">
                         <thead><tr><th>Name</th><th>Value</th><th>Secret</th><th></th></tr></thead>
@@ -93,10 +97,10 @@
                 </section>
             </template>
 
-            <!-- What AutoApp says about the AutoApp job this one runs: the "two-way" part -->
-            <section class="panel" aria-label="In AutoApp" id="in-autoapp" x-show="form && saved && form.autoapp_job_key">
-                <div class="steps-head"><h2 class="section" style="margin-top: 0">In AutoApp</h2>
-                    <span class="muted small">Asked from AutoApp's API, as a WLA plug-in would.</span></div>
+            <!-- What RunMyFiles says about the RunMyFiles job this one runs: the "two-way" part -->
+            <section class="panel" aria-label="In RunMyFiles" id="in-autoapp" x-show="form && saved && form.autoapp_job_key">
+                <div class="steps-head"><h2 class="section" style="margin-top: 0">In RunMyFiles</h2>
+                    <span class="muted small">Asked from RunMyFiles' API, as a WLA plug-in would.</span></div>
                 <p class="message error small" x-show="autoapp && autoapp.error" x-text="autoapp && autoapp.error"></p>
                 <template x-if="autoapp && autoapp.summary">
                     <div>
@@ -118,7 +122,7 @@
                             </template>
                         </ol>
                         <p class="small" x-show="autoapp.summary.run">
-                            Last run in AutoApp: <span class="status" :class="autoapp.summary.run && autoapp.summary.run.status"
+                            Last run in RunMyFiles: <span class="status" :class="autoapp.summary.run && autoapp.summary.run.status"
                                   x-text="autoapp.summary.run && autoapp.summary.run.status"></span>
                             <span x-text="autoapp.summary.run ? autoapp.summary.run.instance_id : ''"></span>
                             · <button type="button" class="link" id="autoapp-run-log"
@@ -144,7 +148,7 @@
                                 <td x-text="run.business_date || ''"></td>
                                 <td class="nowrap">
                                     <button type="button" class="link show-output" @click="toggleOutput(run)">Output</button>
-                                    · <button type="button" class="link operations-in-autoapp" @click="operationsInAutoApp(run)">Operations in AutoApp</button>
+                                    · <button type="button" class="link operations-in-autoapp" @click="operationsInAutoApp(run)">Operations in RunMyFiles</button>
                                     <template x-if="outputs[run.id] !== undefined">
                                         <pre class="sis-output" x-text="outputs[run.id]"></pre>
                                     </template>
@@ -157,7 +161,7 @@
         </div>
     </div>
 
-    <!-- AutoApp's pages, embedded, as a WLA would show them -->
+    <!-- RunMyFiles' pages, embedded, as a WLA would show them -->
     <dialog class="sis-window" id="autoapp-window" x-ref="window" @close="windowClosed()">
         <div class="bar">
             <strong x-text="windowTitle"></strong>
@@ -165,7 +169,7 @@
             <span class="spacer"></span>
             <button type="button" class="secondary" id="close-window" @click="$refs.window.close()">Close</button>
         </div>
-        <iframe id="autoapp-frame" x-ref="frame" title="AutoApp"></iframe>
+        <iframe id="autoapp-frame" x-ref="frame" title="RunMyFiles"></iframe>
     </dialog>
 </main>
 </body>

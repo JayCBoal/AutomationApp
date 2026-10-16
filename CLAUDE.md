@@ -1,0 +1,61 @@
+# CLAUDE.md
+
+Notes for Claude Code on this project. The why behind the product is in docs/PROJECT_GOALS.md and docs/PROJECT_BLUEPRINT.md; open work is in docs/TO-DO.md.
+
+## The product
+
+- **RunMyFiles** (formerly AutoApp): file-moving jobs made of defined steps instead of scripts, run by an existing scheduler (WLA), with every file operation recorded and traceable.
+- The rename covers user-facing text only. These keep the old name on purpose: the `autoapp` folder and package, `AUTOAPP_*` environment variables, database names, the JS namespace `AutoApp`, and messages' `source: "AutoApp"` (a documented contract, docs/INTEGRATION.md). Past CHANGE_LOG entries keep the old name too.
+- RunMyJobs (Redwood) is the integration that matters most. Control-M and others come later.
+- The owner is a WLA expert and still learning Python, so explain Python choices in plain terms.
+
+## Layout
+
+- `autoapp/app`: the FastAPI server (API, models, connectors to schedulers).
+- `autoapp/engine`: the runner (`python3 -m engine.runner --job-key ... --instance-id ...`), the step types, settings (`engine/settings.py`) and spool delivery.
+- `autoapp/ui`: static pages. `autoapp/tests`: pytest.
+- `demo/`: `demo.py` (setup|start|stop|status, in /tmp/autoapp_demo, ports 8200 and 8210), `DEMO.md` (the 30-minute walkthrough), and `scheduler_standin/` (the Stand-in Scheduler, a fake WLA).
+- `integrations/runmyjobs/`: the RunMyJobs draft. Nothing in it has been tried on a tenant yet.
+- `SQL/`: the DDL and seed data. Regenerate the DDL with `SQL/generate_ddl.py` and the diagrams with `docs/generate_diagrams.py` after any change to the models.
+
+## Working here
+
+- `source dev_env.sh` (git ignores it) sets up the venv, `DATABASE_URL` (MariaDB `autoapp_dev`) and these commands:
+  - `autoapp_server` (port 8000);
+  - `standin_server` (port 8100);
+  - `autoapp_tests`.
+- **Tests:** `autoapp_tests` runs the SQLite and MariaDB suites side by side, writes to `/tmp/autoapp_tests/sqlite.txt` and `mariadb.txt`, and takes about 8 to 11 minutes. Run it in the background. While iterating, run single test files, then the full suite before saying a change is done.
+  - Running other heavy work alongside the suite causes timing failures in the UI tests. Rerun the failed files before treating them as real.
+- **Shell:** never put `&&` before a `( ... ) &` on the same line.
+- **Databases:** `autoapp_dev`, `autoapp_test` and `autoapp_sales`. The Linux user can't create databases, so creating one needs `sudo -n mariadb`. Back up `autoapp_dev` (to `demo/output/autoapp_dev_before_*.sql`) before migrating it in place.
+- **Git:** work on a feature branch. Commit, merge (fast-forward only), push and delete the branch only when asked.
+- **Docs:** add an entry to docs/CHANGE_LOG.md for user-visible changes. Keep the docs in step with the code.
+
+## How to write and report changes
+
+- **Report in behaviour, not code.** End each change with what now behaves differently, what was tested, and what was not. The owner reviews results more than code, so the report is the review.
+- **Tests come with every behaviour change.** A bug fix starts with a test that fails because of the bug. A change is done only when `autoapp_tests` passes on both databases, or the report says plainly what failed.
+- **Database changes keep existing data working.** A change to the models comes with a migration that works on SQLite and MariaDB and keeps `autoapp_dev`'s data. Dropping or renaming a column, or anything that loses data, needs the owner's approval first.
+- **docs/INTEGRATION.md is a contract.** Scheduler plug-ins rely on it. A change must not break an existing caller, needs the owner's approval, and updates the document in the same change.
+- **A new step type is complete only with all of these:**
+  - its handler and its catalog entry;
+  - help text and a live preview in the editor;
+  - operation records, so the trace sees its files;
+  - masked secrets in its log lines;
+  - tests and a CHANGE_LOG entry.
+- **Plain words in anything a user sees.** Errors say what went wrong and what to do next, in the app's existing style ("No files matched ..."). No Python jargon in pages or logs.
+- **Short functions, built from named helpers.**
+  - New functions stay under about 60 lines. Split a longer one, or explain why in the report.
+  - Existing long functions are left alone unless the change is already in them.
+  - Pull steps out into small helpers whose names say what they do, so each function reads as a list of steps.
+  - Look for an existing helper before writing one. Write a helper for the use at hand, and generalise it only when a second use appears.
+- **Simple over clever.** Code a learning Python developer can follow. No new frameworks, layers or abstractions without asking, and versions stay pinned in requirements.txt.
+- **No unrequested extras.** No refactors, features or clean-ups beyond the task. List anything worth doing in the report instead.
+
+## Rules that are easy to break
+
+- Secret values never reach a page. They show as `********` in logs and previews, and audits never record variable values.
+- Redwood or BMC documentation saved locally stays out of git (third-party copyright).
+- Never commit credentials, keys or `.credentials.json`.
+- When a message both asks questions and requests changes, answer the questions first, then make the changes.
+- Ask before installing packages.

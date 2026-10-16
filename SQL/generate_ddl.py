@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Writes SQL/Create_Tables.sql, the MariaDB script that creates AutoApp's tables.
+Writes SQL/Create_Tables.sql, the MariaDB script that creates RunMyFiles' tables.
 
     python3 SQL/generate_ddl.py
 
@@ -31,12 +31,12 @@ def build() -> str:
 
     out = [
         "-- ============================================================================",
-        "-- AutoApp schema for MariaDB",
+        "-- RunMyFiles schema for MariaDB",
         "--",
         "-- Generated from autoapp/app/models.py by SQL/generate_ddl.py.",
         "-- Do not edit by hand: change the models and run the script.",
         "--",
-        "-- WARNING: this drops every AutoApp table, and the data in it, before",
+        "-- WARNING: this drops every RunMyFiles table, and the data in it, before",
         "-- creating the tables again.",
         "-- ============================================================================",
         "",

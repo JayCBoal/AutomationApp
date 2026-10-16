@@ -2,9 +2,9 @@
 
 ## Vision
 
-AutoApp is a lightweight execution framework and metadata store for batch jobs that works with any workload automation (WLA) scheduler, and ultimately inside it: the people who build, administer and operate jobs should not have to leave their scheduler to use AutoApp.
+RunMyFiles is a lightweight execution framework and metadata store for batch jobs that works with any workload automation (WLA) scheduler, and ultimately inside it: the people who build, administer and operate jobs should not have to leave their scheduler to use RunMyFiles.
 
-It separates **payload logic** (parameters, steps, credentials, logging) from **sequencing logic** (schedules, dependencies, SLAs). The scheduler owns sequencing. AutoApp owns the payload. This removes lock-in to a particular scheduler such as ActiveBatch, Control-M or AutoSys.
+It separates **payload logic** (parameters, steps, credentials, logging) from **sequencing logic** (schedules, dependencies, SLAs). The scheduler owns sequencing. RunMyFiles owns the payload. This removes lock-in to a particular scheduler such as ActiveBatch, Control-M or AutoSys.
 
 These are goals. For what is actually built, see [PROJECT_BLUEPRINT.md](PROJECT_BLUEPRINT.md).
 
@@ -13,15 +13,15 @@ These are goals. For what is actually built, see [PROJECT_BLUEPRINT.md](PROJECT_
 ### 1. Scheduler independence
 
 - The scheduler passes minimal runtime metadata: a job key and an instance ID.
-- Parameters, endpoints, credentials and step definitions are read from the AutoApp database at run time.
+- Parameters, endpoints, credentials and step definitions are read from the RunMyFiles database at run time.
 - Switching or upgrading schedulers requires no change to job logic.
 
 ### 2. Works inside the scheduler, not just beside it
 
-- Making job developers, WLA administrators and operators work in two separate applications is a barrier to adoption. The end state is that AutoApp's functions are reached from within the scheduling product.
+- Making job developers, WLA administrators and operators work in two separate applications is a barrier to adoption. The end state is that RunMyFiles' functions are reached from within the scheduling product.
 - Job steps, parameters, variables and endpoints can be viewed and edited from the scheduler's own interface.
 - Run results, operation history and file traces are visible where operators already look at job output.
-- Everything AutoApp does is therefore available through its API. AutoApp's own web interface is one client of that API, not the only way in.
+- Everything RunMyFiles does is therefore available through its API. RunMyFiles' own web interface is one client of that API, not the only way in.
 - Running standalone, beside a scheduler that has no integration, remains supported.
 
 ### 3. Standard execution
@@ -54,4 +54,4 @@ These are goals. For what is actually built, see [PROJECT_BLUEPRINT.md](PROJECT_
 
 ## Non-goals
 
-- Replacing the scheduler. AutoApp does not decide when jobs run or in what order.
+- Replacing the scheduler. RunMyFiles does not decide when jobs run or in what order.

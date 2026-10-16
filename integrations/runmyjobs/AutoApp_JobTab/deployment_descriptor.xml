@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
   Extension Point AutoApp_JobTab, a DRAFT: an "AutoApp" tab on the edit page of job
-  definitions, holding AutoApp's job editor. See ../README.md.
+  definitions, holding RunMyFiles' job editor. See ../README.md.
 
   The extensionpoint, extension, description, translations and csp elements follow the
   DTD published in "Extending Redwood Server Functionality with Extension Points"
@@ -14,7 +14,7 @@
 <!DOCTYPE extensionpoint PUBLIC "-//Redwood//DTD Extension Point 1.0//EN" "extensionpoint.dtd">
 <extensionpoint version="0.1">
   <extension name="AutoApp_JobTab" output="tabpage" sessionpersistence="StatefulMultiple">
-    <description>AutoApp: the steps, endpoints and variables of the AutoApp job this job definition runs</description>
+    <description>RunMyFiles: the steps, endpoints and variables of the RunMyFiles job this job definition runs</description>
     <extends>
       <!-- TO CONFIRM: element and attribute names. Only definitions of the AUTOAPP kind should get the tab:
            here by filtering on the definition's name prefix; a parameter or an object tag may suit better. -->
@@ -23,11 +23,11 @@
       </objectpage>
     </extends>
     <translations default="en">
-      <translation lang="en">AutoApp</translation>
+      <translation lang="en">RunMyFiles</translation>
     </translations>
   </extension>
   <!-- Since 9.2.10, RunMyJobs' Content-Security-Policy blocks external content unless the descriptor
-       allows it. AutoApp's address goes here. TO CONFIRM: the directive name RunMyJobs expects. -->
+       allows it. RunMyFiles' address goes here. TO CONFIRM: the directive name RunMyJobs expects. -->
   <csp>
     <directive name="frame-src">
       <source>https://autoapp.example.com</source>

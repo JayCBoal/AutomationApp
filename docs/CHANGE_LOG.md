@@ -6,6 +6,12 @@ Notable structural, schema and design changes to AutoApp, newest first. Line-by-
 
 ## 2026-10-15
 
+### AutoApp is now RunMyFiles
+
+- **Changed:** the product's name, wherever people read it: the web interface, the Stand-in Scheduler's pages, the job log, messages, and the documentation. Entries below this one keep the old name, as they were written.
+- **Kept:** the code's own names: the `autoapp` folder and Python package, the `AUTOAPP_...` environment variables, the database names, the JavaScript namespace `AutoApp`, and the `source: "AutoApp"` field of the messages to a WLA (part of the documented contract in [INTEGRATION.md](INTEGRATION.md)).
+- **Changed:** the Run Job page runs jobs as the scheduler "RunMyFiles UI" (was "AutoApp UI").
+
 ### A RunMyJobs draft
 
 - **Added:** [integrations/runmyjobs](../integrations/runmyjobs/README.md), from RunMyJobs' public documentation and untried:

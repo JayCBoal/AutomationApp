@@ -20,7 +20,7 @@ def world(seed, endpoints, db):
 
 @pytest.fixture
 def host(page, live_api):
-    """Opens an AutoApp address inside a stand-in WLA page. Returns (frame, messages)."""
+    """Opens a RunMyFiles address inside a stand-in WLA page. Returns (frame, messages)."""
     def _open(address):
         page.set_content(f"""
             <html><body>

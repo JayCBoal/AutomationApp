@@ -1,5 +1,5 @@
 /*
- * AutoApp web interface: one stylesheet for every page.
+ * RunMyFiles web interface: one stylesheet for every page.
  *
  * Colours are named once below, for the dark theme (the default) and the light
  * theme. Everything else refers to them by name, so a new page needs no colours
@@ -358,6 +358,7 @@ table.tag-variables td:nth-child(2) { width: 35%; }
 .embed-bar .page-title { color: var(--muted); }
 .embed-bar #open-in-autoapp { margin-left: auto; }
 body.embedded main { padding-top: 12px; }
+.embedded-job { font-weight: 700; font-size: 16px; }
 
 /* ---------- A job's summary card ---------- */
 .summary-steps { margin: 10px 0; padding-left: 22px; }

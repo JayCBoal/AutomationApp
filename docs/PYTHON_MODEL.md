@@ -323,5 +323,5 @@ flowchart TD
 
     telemetry --> spool[(spool .jsonl files)]
     delivery -->|HTTP| telemetry_api
-    database --> db[(AutoApp database)]
+    database --> db[(RunMyFiles database)]
 ```

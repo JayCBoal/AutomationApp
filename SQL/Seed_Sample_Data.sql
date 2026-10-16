@@ -1,5 +1,5 @@
 -- ============================================================================
--- AutoApp sample data
+-- RunMyFiles sample data
 --
 -- A small, working set of definitions to develop and demonstrate with: three
 -- applications, an external entity with an SFTP site, four endpoints, and two
@@ -85,12 +85,12 @@ INSERT INTO Entities (MasterObject_id, Name, Abbr, Description) VALUES
 INSERT INTO Sites (MasterObject_id, Entity_MasterObject_id, Name, Host, Port, Protocol, Description) VALUES
 (4, 3, 'ACME_BANK_SFTP', 'sftp.acmebank.example', 22, 'SFTP', 'Acme Bank file transfer server');
 
--- A scheduler is a workload automation product that runs AutoApp jobs. The web
+-- A scheduler is a workload automation product that runs RunMyFiles jobs. The web
 -- interface's Run Job page acts as one, under this name.
--- STANDIN is the Stand-in Scheduler in demo/scheduler_standin, on port 8100; AutoApp reads its jobs'
+-- STANDIN is the Stand-in Scheduler in demo/scheduler_standin, on port 8100; RunMyFiles reads its jobs'
 -- parameters through its API, with the token in its ApiToken variable (section 5).
 INSERT INTO Schedulers (MasterObject_id, Name, Technology, ApiUrl, Description) VALUES
-(19, 'AutoApp UI', 'OTHER',   NULL,                    'The Run Job page of the AutoApp web interface'),
+(19, 'RunMyFiles UI', 'OTHER',   NULL,                    'The Run Job page of the RunMyFiles web interface'),
 (20, 'STANDIN',    'STANDIN', 'http://localhost:8100', 'The Stand-in Scheduler (demo/scheduler_standin)');
 
 -- ----------------------------------------------------------------------------

@@ -50,7 +50,7 @@ def list_runs(
     limit: int = Query(MAX_RESULTS, ge=1, le=MAX_RESULTS),
     db: Session = Depends(get_db),
 ):
-    """Job History: every run AutoApp has a record of, newest first, with how many files each handled."""
+    """Job History: every run RunMyFiles has a record of, newest first, with how many files each handled."""
     query = db.query(JobRun)
     if job_key:
         query = query.filter(JobRun.JobKey.ilike(f"%{job_key}%"))
@@ -106,7 +106,7 @@ def get_run(run_id: str, db: Session = Depends(get_db)):
     """
     run = db.query(JobRun).filter(JobRun.RunID == run_id).first()
     if run is None:
-        raise HTTPException(404, f"AutoApp has no record of run '{run_id}'.")
+        raise HTTPException(404, f"RunMyFiles has no record of run '{run_id}'.")
     total, failed = (db.query(func.count(Operation.id), func.sum(case((Operation.OpStatus == "FAILED", 1), else_=0)))
                      .filter(Operation.JobRun_id == run.id).one())
     chunks = db.query(JobRunLog.LogText).filter(JobRunLog.JobRun_id == run.id).order_by(JobRunLog.Seq).all()

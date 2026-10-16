@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  Extension Point AutoApp_RunInAutoApp, a DRAFT: "Files in AutoApp" and "Log in AutoApp"
-  on the context menu of a job (a run), opening AutoApp's Operations Log or job log for
+  Extension Point AutoApp_RunInAutoApp, a DRAFT: "Files in RunMyFiles" and "Log in RunMyFiles"
+  on the context menu of a job (a run), opening RunMyFiles' Operations Log or job log for
   that run in a pop-up. See ../README.md.
 
   Follows the DTD and the CountObjects example published in "Extending Redwood Server
@@ -11,9 +11,9 @@
 <!DOCTYPE extensionpoint PUBLIC "-//Redwood//DTD Extension Point 1.0//EN" "extensionpoint.dtd">
 <extensionpoint version="0.1">
   <extension name="AutoApp_Files" output="popup">
-    <description>The files this run handled, and each file's route, in AutoApp's Operations Log</description>
+    <description>The files this run handled, and each file's route, in RunMyFiles' Operations Log</description>
     <extends>
-      <!-- Only runs of AutoApp job definitions. TO CONFIRM: the field path to the job's definition name. -->
+      <!-- Only runs of RunMyFiles job definitions. TO CONFIRM: the field path to the job's definition name. -->
       <popupmenu objecttype="Job" multiselect="false">
         <filter field="JobDefinition.Name" compare="EQUALS">AUTOAPP_*</filter>
       </popupmenu>
@@ -22,11 +22,11 @@
       <model name="Job" />
     </parameters>
     <translations default="en">
-      <translation lang="en">Files in AutoApp</translation>
+      <translation lang="en">Files in RunMyFiles</translation>
     </translations>
   </extension>
   <extension name="AutoApp_Log" output="popup">
-    <description>This run's job log, as AutoApp keeps it</description>
+    <description>This run's job log, as RunMyFiles keeps it</description>
     <extends>
       <popupmenu objecttype="Job" multiselect="false">
         <filter field="JobDefinition.Name" compare="EQUALS">AUTOAPP_*</filter>
@@ -36,7 +36,7 @@
       <model name="Job" />
     </parameters>
     <translations default="en">
-      <translation lang="en">Log in AutoApp</translation>
+      <translation lang="en">Log in RunMyFiles</translation>
     </translations>
   </extension>
   <csp>

@@ -1,6 +1,6 @@
 # UI Vision
 
-What the AutoApp web interface should contain and how it should behave. This is the specification the interface is built from.
+What the RunMyFiles web interface should contain and how it should behave. This is the specification the interface is built from.
 
 **Built:** every page in the navigation: the Main Index; Application, Entity, Site and Endpoint search and detail pages; the Job Search and job editor; the Operations Log with its trace; Job History; and the Audit Log. See the blueprint for how the pages are put together.
 
@@ -18,7 +18,7 @@ It is based on the 2024 mockup deck (linked from the original design document) a
 
 ## Navigation
 
-A header with the AutoApp name and the page title, and a navigation bar on every page:
+A header with the RunMyFiles name and the page title, and a navigation bar on every page:
 
 | Left | Centre | Right |
 | :--- | :--- | :--- |

@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Job Detail - AutoApp</title>
+    <title>Job Detail - RunMyFiles</title>
     <link rel="icon" href="data:,">
     <link rel="stylesheet" href="css/autoapp.css">
     <script src="js/common.js"></script>
@@ -18,6 +18,8 @@
     <!-- Selector and the page's buttons. The page arrives locked; Edit unlocks it. -->
     <div class="panel selector">
         <label for="job-selector" x-show="!embedded">Job</label>
+        <!-- Inside a scheduler the page is for one job: say which -->
+        <span class="embedded-job" x-show="embedded" x-text="job ? job.job_key : 'New RunMyFiles job'"></span>
         <input id="job-selector" type="text" list="job-keys" x-model="chosen" @change="choose()" x-show="!embedded"
                placeholder="Type to find a job" autocomplete="off" :disabled="editing">
         <datalist id="job-keys">
@@ -132,7 +134,7 @@
                             </tbody>
                         </table>
                         <p class="muted small" x-show="wlaJob">Set in the scheduler, not here. They have the lowest priority:
-                            a variable of the same name anywhere in AutoApp wins. <code>${ENV:Name}</code> names one directly.</p>
+                            a variable of the same name anywhere in RunMyFiles wins. <code>${ENV:Name}</code> names one directly.</p>
                     </div>
                 </template>
 

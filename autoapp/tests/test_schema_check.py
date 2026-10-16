@@ -1,5 +1,5 @@
 """
-A database built by an earlier version of AutoApp must produce an explanation,
+A database built by an earlier version of RunMyFiles must produce an explanation,
 not a bare "Internal Server Error".
 """
 import pytest
@@ -66,7 +66,7 @@ def test_a_route_that_needs_a_missing_column_explains_what_is_wrong(client_on):
 
     assert response.status_code == 500
     detail = response.json()["detail"]
-    assert detail.startswith("The database is out of date for this version of AutoApp.")
+    assert detail.startswith("The database is out of date for this version of RunMyFiles.")
     assert "StepDefinitions.DisplayOrder" in detail and "table Operations" in detail
     assert "README" in detail
 

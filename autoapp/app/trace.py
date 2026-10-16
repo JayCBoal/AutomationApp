@@ -225,7 +225,7 @@ def _readers(db: Session, write: Operation, member: Optional[str] = None) -> Lis
 
 def _predecessor(db: Session, op: Operation, member: Optional[str] = None) -> Optional[Operation]:
     """
-    The operation that put the file where this one found it, if AutoApp recorded one.
+    The operation that put the file where this one found it, if RunMyFiles recorded one.
     Where several files were zipped into one archive, the one followed is the member
     the trace came out with; with none to go on, the trace starts at the archive.
     """

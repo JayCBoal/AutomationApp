@@ -6,7 +6,7 @@ The records of what happened: job runs, and changes to definitions.
     GET /api/v1/audits    Audit Log: one row per change to a job, endpoint, application, entity or site
 """
 import json
-from datetime import datetime
+from datetime import date, datetime
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -27,6 +27,7 @@ class RunOut(BaseModel):
     instance_id: str
     run_number: int
     scheduler: Optional[str] = None
+    business_date: Optional[date] = None
     host: Optional[str] = None
     status: str
     started: Optional[datetime] = None
@@ -83,7 +84,8 @@ def list_runs(
 def _describe(run: JobRun, counts, has_log: bool) -> RunOut:
     return RunOut(
         run_id=run.RunID, job_key=run.JobKey, instance_id=run.SchedulerInstanceID, run_number=run.RunNumber,
-        scheduler=run.SchedulerName, host=run.Host, status=run.Status, started=run.StartedDateTime,
+        scheduler=run.SchedulerName, business_date=run.BusinessDate, host=run.Host, status=run.Status,
+        started=run.StartedDateTime,
         ended=run.EndedDateTime,
         duration_seconds=(run.EndedDateTime - run.StartedDateTime).total_seconds()
         if run.StartedDateTime and run.EndedDateTime else None,
@@ -123,7 +125,7 @@ class AuditOut(BaseModel):
 
 
 # Which key in an audit row's details names what was changed, by the start of its action
-_SUBJECTS = {"JOB": ("jobs", "job_key"), "ENDPOINT": ("endpoints", "endpoint"),
+_SUBJECTS = {"JOB": ("jobs", "job_key"), "ENDPOINT": ("endpoints", "endpoint"), "SCHEDULER": ("schedulers", "scheduler"),
              "APPLICATION": ("applications", "application"), "ENTITY": ("entities", "entity"), "SITE": ("sites", "site"),
              "TAG": ("tags", "tag"), "SETTING": ("settings", "setting")}
 

@@ -69,7 +69,8 @@ INSERT INTO MasterObjects (id, ObjectType) VALUES
 (15, 'JOB'),
 (16, 'TAG'),
 (17, 'TAG'),
-(18, 'TAG');
+(18, 'TAG'),
+(19, 'SCHEDULER');
 
 INSERT INTO Applications (MasterObject_id, Name, Abbr, Description) VALUES
 (1, 'LEGAL_APP',   'LGL', 'Legal case management system'),
@@ -82,6 +83,11 @@ INSERT INTO Entities (MasterObject_id, Name, Abbr, Description) VALUES
 
 INSERT INTO Sites (MasterObject_id, Entity_MasterObject_id, Name, Host, Port, Protocol, Description) VALUES
 (4, 3, 'ACME_BANK_SFTP', 'sftp.acmebank.example', 22, 'SFTP', 'Acme Bank file transfer server');
+
+-- A scheduler is a workload automation product that runs AutoApp jobs. The web
+-- interface's Run Job page acts as one, under this name.
+INSERT INTO Schedulers (MasterObject_id, Name, Technology, Description) VALUES
+(19, 'AutoApp UI', 'OTHER', 'The Run Job page of the AutoApp web interface');
 
 -- ----------------------------------------------------------------------------
 -- 3. Endpoints: the registered places files come from and go to.

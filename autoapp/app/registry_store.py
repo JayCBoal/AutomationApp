@@ -25,7 +25,9 @@ from sqlalchemy.orm import Session
 
 from app import tag_store
 from app.job_store import JobStoreError, apply_variables
-from app.models import Application, Audit, Endpoint, Entity, JobStep, JobStepParameter, MasterObject, Site, Tag, utcnow
+from app.models import (
+    Application, Audit, Endpoint, Entity, JobRun, JobStep, JobStepParameter, MasterObject, Scheduler, Site, Tag, utcnow
+)
 from engine.step_catalog import ENDPOINT_SUFFIX
 from engine.tag_vars import find_by_path, shown, tag_path
 
@@ -40,7 +42,8 @@ class Field:
     refers_to: Optional[str] = None  # for a field that names another kind: that kind's key
     ref_column: Optional[str] = None  # ... and the foreign key attribute that holds the link
     required: bool = False
-    kind: str = "text"              # text, int or bool
+    kind: str = "text"              # text, int, bool or choice
+    choices: tuple = ()             # for a choice: the values allowed
     derived: bool = False           # shown, but not set directly (an endpoint's entity comes from its site)
 
 
@@ -89,6 +92,13 @@ KINDS: Dict[str, Kind] = {
         Field("filename_pattern", "FilenamePattern", required=True),
         Field("description", "Description"),
     ]),
+    "schedulers": Kind("schedulers", "scheduler", Scheduler, [
+        Field("name", "Name", required=True),
+        Field("technology", "Technology", required=True, kind="choice", choices=Scheduler.TECHNOLOGIES),
+        Field("api_url", "ApiUrl"),
+        Field("description", "Description"),
+        Field("active", "IsActive", kind="bool"),
+    ], variables=True),
     "tags": Kind("tags", "tag", Tag, [
         Field("name", "Name", required=True),
         Field("parent", refers_to="tags", ref_column="Parent_MasterObject_id"),
@@ -156,6 +166,8 @@ def describe(kind: Kind, obj, db: Optional[Session] = None) -> Dict[str, Any]:
         if kind.key == "tags":
             out["inherited_variables"] = tag_store.inherited_by_tag(obj)
         out["used_by"] = used_by(db, kind, obj)
+        if kind.key == "schedulers":
+            out["runs"] = runs_by(db, obj)
     return out
 
 
@@ -181,6 +193,11 @@ def used_by(db: Session, kind: Kind, obj) -> List[Dict[str, str]]:
         names = [s.Name for s in db.query(Site).filter(Site.Entity_MasterObject_id == obj.MasterObject_id)]
         return [{"kind": "sites", "name": n} for n in sorted(names, key=str.lower)]
     return []
+
+
+def runs_by(db: Session, scheduler) -> int:
+    """How many runs AutoApp has recorded from a scheduler: its history, which does not stop it being deleted."""
+    return db.query(JobRun.id).filter(JobRun.SchedulerName == scheduler.Name).count()
 
 
 def find(db: Session, kind: Kind, name: str):
@@ -286,6 +303,14 @@ def update(db: Session, kind: Kind, name: str, payload: Dict[str, Any], who: str
             if new_id != getattr(obj, f.ref_column):
                 setattr(obj, f.ref_column, new_id)
                 changes.append(f"Changed the {f.name}.")
+            continue
+        if f.kind == "choice":
+            chosen = next((c for c in f.choices if c.lower() == text.lower()), None)
+            if chosen is None:
+                raise JobStoreError(f"The {f.name} must be one of {', '.join(f.choices)}, not '{text}'.")
+            if chosen != getattr(obj, f.column):
+                setattr(obj, f.column, chosen)
+                changes.append(f"Changed the {f.name} to {chosen}.")
             continue
         if f.kind == "int":
             try:

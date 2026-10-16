@@ -64,6 +64,16 @@ Defined in `autoapp/app/models.py`. Diagrams: [DB_SCHEMA.md](DB_SCHEMA.md) and [
 
 Jobs are deliberately **not** linked to an Application or Entity. A job may touch several of each. The relationship is expressed through the endpoints its steps use, and through tags.
 
+### Schedulers
+
+**Built**
+
+- `Schedulers`: a workload automation product that runs AutoApp jobs. One AutoApp can serve several: each run records the scheduler that started it (the runner's `--scheduler`) and the business date it gave, if any (`JobRuns.BusinessDate`).
+- A scheduler has a name, a technology (`RUNMYJOBS`, `ACTIVEBATCH`, `CONTROL_M`, `TIDAL`, `CRON`, `STANDIN`, `OTHER`), an API address, a description and an active flag. The credential AutoApp would use for its API is kept as a secret variable on it.
+- The sample data registers `AutoApp UI`, the name the Run Job page runs jobs under.
+
+**Planned:** a connector per technology, reading a WLA job's parameters through the scheduler's API (TO-DO decision 7).
+
 ### Tags
 
 **Built**
@@ -194,14 +204,18 @@ Step parameters, endpoint paths and variable values may contain `${...}` placeho
 | `${JOB.Name}` | The variable on the job, specifically |
 | `${APP.Name}`, `${ENTITY.Name}` | Inside an endpoint only: the variable on that endpoint's Application, or its Site's Entity |
 | `${APP:LEGAL_APP.Name}`, `${ENTITY:JAYCO.Name}` | The variable on a named Application or Entity, from anywhere, including what its tags give it |
+| `${ENV:Name}` | An environment variable of the runner's process, which is where a scheduler puts a job's own variables. On the server (the editor's preview and the pre-run check) it is left for the run to fill in, as the scheduler's environment is not known there |
+| `${BUSINESS_DATE:yyyyMMdd}` | The date the run is for, from the runner's `--business-date` (Control-M's order date), with the same masks as `${DATE:...}`. Without one, the date the run started |
 | `${TAG:Finance/Reporting.Name}` | The variable as that tag gives it. Only a tag the job carries, or a parent of one. This also picks one side of a conflict |
 | `${DATE:yyyyMMdd}`, `${DATE:yyyy-MM-dd_HHmmss}`, ... | The moment the run started, in the format the mask gives. See "Date masks" below |
 | `${SYS:INSTANCE_ID}`, `${SYS:TIMESTAMP}`, `${SYS:WORKING_FOLDER}` | Values supplied by the runner. `${SYS:YYYYMMDD}` also still works; `${DATE:yyyyMMdd}` is the form to use |
 | `${FILE:NAME}`, `${FILE:STEM}`, `${FILE:EXT}` | Parts of a file's own name. Only in a rename mask; see section 5 |
 
-- Cascade order, lowest priority first, by default: `SYS`, `ENTITY`, `APP`, `ENDPOINT`, `TAG`, `JOB`. A higher level overrides a lower one of the same name. The order is the `VariablePrecedence` setting, changed on the Settings page.
+- Cascade order, lowest priority first, by default: `ENV`, `SYS`, `ENTITY`, `APP`, `ENDPOINT`, `TAG`, `JOB`. A higher level overrides a lower one of the same name. The order is the `VariablePrecedence` setting, changed on the Settings page.
   - `ENTITY`, `APP` and `ENDPOINT` apply only while an endpoint's path and pattern are being filled in.
   - `TAG` is what the job's tags give it; `ENDPOINT` is what the endpoint's tags give it.
+  - `ENV` is the runner's environment, so a plain `${Name}` finds a variable the scheduler set when nothing in AutoApp defines it. On the server there is no such environment, so a plain name found nowhere else is reported there as unresolved; write `${ENV:Name}` for a value that only the scheduler gives. Planned: AutoApp reading the WLA job's parameters from the scheduler (TO-DO decision 7), so the editor knows them too.
+  - A precedence saved before a level existed keeps its order, with the new level at the lowest priority.
 - **Tags.** A tag's variables act as if they were on whatever carries it, just below that object's own. So a job's tags feed the job; an application's or entity's tags feed wherever that object's variables reach. A tag inherits its parents' variables, and its own override theirs.
 - **Conflicts.** When two of an object's tags give one variable different values, nothing is chosen. Using that variable is an error, unless the object gives it a value of its own or a higher level does; a conflict does not fall back to a lower level's value. A conflict on a variable the job does not use is a warning in the job editor. The same value from two tags is not a conflict, nor is one parent reached through two tags. Error messages name the tags, never the values.
 - A variable's value may contain placeholders; they are resolved too, up to 10 levels deep. A circular reference is an error.
@@ -372,6 +386,7 @@ FastAPI application in `autoapp/app/`. The interactive description of every rout
 | `GET /api/v1/lookups` | The names offered in drop-downs. Built; tested over HTTP |
 | `GET`, `PUT`, `DELETE /api/v1/{applications,entities,sites,endpoints,tags}[/{name}]` | Search, view, change and remove them, and the tags they carry. A tag's name is its path: `/api/v1/tags/Finance/Reporting`. Every search takes `tag`, which includes child tags. Built; tested over HTTP |
 | `POST /api/v1/tags` | Register a tag, under a parent if wanted. Built; tested over HTTP |
+| `POST /api/v1/schedulers`, and `GET`, `PUT`, `DELETE /api/v1/schedulers[/{name}]` | Register, search, view, change and remove schedulers. Built; tested over HTTP |
 | `GET /api/v1/tag-variables?tag=...&tag=...&own=...` | What a set of tags gives together and where each variable comes from, and their conflicts; secrets masked. The pages ask it before a tag is added. Built; tested over HTTP |
 | `GET /api/v1/settings`, `PUT /api/v1/settings/{key}` | The system-wide settings. Built; tested over HTTP |
 | `GET /api/v1/runs`, `GET /api/v1/audits` | Job History and the Audit Log. Built; tested over HTTP |
@@ -436,7 +451,7 @@ Nothing in this section is built in the rewrite. The 2024 prototype tracked exte
   - A placeholder naming a variable the job does not have offers **Add variable ...**, which adds it to the panel ready for its value.
   - That window's Application and Site boxes have a **New...** of their own, and the New site window has one for its Entity. All five windows (endpoint, application, site, entity, tag) are one mechanism in `common.js` (`createInPlace`), driven by a short description of each form, so a later page gets them by asking.
   - **Tags panel**, as on the detail pages below. Its "What its tags give" table also stops **Add variable ...** being offered for a variable a tag provides. A conflict among the job's tags on a variable it does not use is shown as a warning under "Would it run?"; one it uses is a problem.
-- **Application, Entity, Site, Endpoint and Tag** pages: one search page and one detail page serve all five (`search.html?kind=sites`, `detail.html?kind=sites&name=...`; a tag is named by its path, `detail.html?kind=tags&name=Finance/Reporting`), drawn from a short description of each kind in `definitions.js`.
+- **Application, Entity, Site, Endpoint, Tag and Scheduler** pages: one search page and one detail page serve all six (`search.html?kind=sites`, `detail.html?kind=sites&name=...`; a tag is named by its path, `detail.html?kind=tags&name=Finance/Reporting`), drawn from a short description of each kind in `definitions.js`.
   - Search by any field; each row says how much uses it. Every search page except the tags' own has a **Tag** box, which finds what carries a tag whose path contains the text, or any tag under it, and a Tags column.
   - **New** opens the detail page blank and unlocked, so a new one is created with its variables and its active flag in one go. The small "New..." windows remain for registering something from inside another form.
   - The detail page arrives locked; Edit, Submit and Cancel work as on the job editor. Fields that name another kind have its drop-down and a **New...** link.
@@ -444,10 +459,11 @@ Nothing in this section is built in the rewrite. The 2024 prototype tracked exte
   - Applications, entities and sites have a Variables panel. An application's `Root`, which its endpoints' paths use, is set here.
   - An endpoint links to the files taken from it and delivered to it on the Operations Log. Renaming an endpoint renames it in every job step that names it.
   - **Tags panel** (everything but a tag): the tags it carries, as links, and a table of what they give it and from which tag, with secrets masked and a struck-out value where its own variable wins. While editing, a tag is chosen from a drop-down (or made with **New...**); before it is added, the panel shows the variables it would give and any conflict it would bring with the tags already there. The panel is one piece of markup and code in `common.js` (`fillTagPanels`, `tagEditing`), shared with the job editor.
+  - A scheduler's page says how many runs it has started, linking to them in Job History, and its technology is chosen from a list.
   - A tag's page shows its parent, the variables it inherits from its parents and from which one, and, under Used by, its child tags and what carries it.
 - **Job History** page: every run, newest first, with its status, error, timing, the scheduler's identifiers, a link to the files it handled, and a **Log** link to its job log.
 - **Job Log** page (`log.html?run=...`): one run's job log as the runner printed it, with errors and warnings picked out, and the run's status, times and a link to its operations. A run still going is followed until it ends.
-- **Run Job** page: runs a job now, as a scheduler would, for trying jobs out without one. Choose a job (it shows whether it would run), an instance ID (one is made from the time if left blank, e.g. `UI-20261015-183012`) and a log level, and **Run**. The server starts the real runner as a separate process, with "AutoApp UI" as its scheduler; the page shows the command, follows the run and shows its log as each step ends, then the outcome and exit code. The job editor has a **Run** button that opens this page with the job chosen.
+- **Run Job** page: runs a job now, as a scheduler would, for trying jobs out without one. Choose a job (it shows whether it would run), an instance ID (one is made from the time if left blank, e.g. `UI-20261015-183012`) and a log level, and **Run**. The server starts the real runner as a separate process, with "AutoApp UI" as its scheduler; the page shows the command, follows the run and shows its log as each step ends, then the outcome and exit code. The job editor has a **Run** button that opens this page with the job chosen. A business date can be given, as Control-M would.
   - The server remembers its launches only until it restarts; the runs themselves are in Job History as usual.
   - The runner it starts keeps its spool in `autoapp/spool`, or where `AUTOAPP_SPOOL_DIR` says.
 - **Audit Log** page: every change to a definition or a setting, newest first, saying in words what changed, with a link to the thing changed if it still exists.

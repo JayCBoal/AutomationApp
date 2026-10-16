@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import Annotated, Any, Dict, List, Literal, Optional, Union
 
 from pydantic import BaseModel, Field
@@ -219,6 +219,7 @@ class RunStartRecord(BaseModel):
     InstanceID: str = Field(..., max_length=64, description="The scheduler's ID for this job instance")
     RunNumber: int = 1
     Scheduler: Optional[str] = Field(None, max_length=100)
+    BusinessDate: Optional[date] = Field(None, description="The date the run is for, if the scheduler gave one")
     Host: Optional[str] = Field(None, max_length=255)
     StartedAtUtc: datetime
 

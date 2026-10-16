@@ -26,6 +26,7 @@ DROP TABLE IF EXISTS JobRuns;
 DROP TABLE IF EXISTS Variables;
 DROP TABLE IF EXISTS Tags;
 DROP TABLE IF EXISTS StepDefinitions;
+DROP TABLE IF EXISTS Schedulers;
 DROP TABLE IF EXISTS Jobs;
 DROP TABLE IF EXISTS Entities;
 DROP TABLE IF EXISTS Credentials;
@@ -39,7 +40,7 @@ SET FOREIGN_KEY_CHECKS = 1;
 
 CREATE TABLE `MasterObjects` (
 	id INTEGER NOT NULL AUTO_INCREMENT, 
-	`ObjectType` ENUM('APPLICATION','ENTITY','SITE','CREDENTIAL','TAG','JOB','ENDPOINT') NOT NULL, 
+	`ObjectType` ENUM('APPLICATION','ENTITY','SITE','CREDENTIAL','TAG','JOB','ENDPOINT','SCHEDULER') NOT NULL, 
 	`CreatedDateTime` DATETIME DEFAULT (now()), 
 	`CreatedBy` VARCHAR(100) DEFAULT 'system', 
 	`ModifiedDateTime` DATETIME, 
@@ -120,6 +121,18 @@ CREATE TABLE `Jobs` (
 	UNIQUE (`JobKey`)
 )ENGINE=InnoDB CHARSET=utf8mb4 COLLATE utf8mb4_bin;
 
+CREATE TABLE `Schedulers` (
+	`MasterObject_id` INTEGER NOT NULL, 
+	`Name` VARCHAR(100) NOT NULL, 
+	`Technology` VARCHAR(20) NOT NULL DEFAULT 'OTHER', 
+	`ApiUrl` VARCHAR(512), 
+	`Description` TEXT, 
+	`IsActive` BOOL DEFAULT true, 
+	PRIMARY KEY (`MasterObject_id`), 
+	FOREIGN KEY(`MasterObject_id`) REFERENCES `MasterObjects` (id) ON DELETE CASCADE, 
+	UNIQUE (`Name`)
+)ENGINE=InnoDB CHARSET=utf8mb4 COLLATE utf8mb4_bin;
+
 CREATE TABLE `StepDefinitions` (
 	id INTEGER NOT NULL AUTO_INCREMENT, 
 	`StepType_id` INTEGER NOT NULL, 
@@ -166,6 +179,7 @@ CREATE TABLE `JobRuns` (
 	`SchedulerInstanceID` VARCHAR(64) NOT NULL, 
 	`RunNumber` INTEGER NOT NULL DEFAULT 1, 
 	`SchedulerName` VARCHAR(100), 
+	`BusinessDate` DATE, 
 	`Host` VARCHAR(255), 
 	`Status` VARCHAR(20) NOT NULL DEFAULT 'RUNNING', 
 	`ErrorMessage` TEXT, 

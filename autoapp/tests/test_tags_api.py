@@ -275,18 +275,18 @@ def test_the_settings_are_listed_with_their_defaults(client, world):
     [precedence] = ok(client.get("/api/v1/settings"))
 
     assert precedence["key"] == "VariablePrecedence"
-    assert precedence["value"] == precedence["default"] == ["SYS", "ENTITY", "APP", "ENDPOINT", "TAG", "JOB"]
+    assert precedence["value"] == precedence["default"] == ["ENV", "SYS", "ENTITY", "APP", "ENDPOINT", "TAG", "JOB"]
     assert precedence["changed"] is False
 
 
 def test_a_setting_is_changed_and_put_back(client, db, world):
     result = ok(client.put("/api/v1/settings/VariablePrecedence",
-                           json={"value": ["SYS", "ENTITY", "APP", "ENDPOINT", "JOB", "TAG"]}))
+                           json={"value": ["ENV", "SYS", "ENTITY", "APP", "ENDPOINT", "JOB", "TAG"]}))
 
     assert result["setting"]["value"][-2:] == ["JOB", "TAG"] and result["setting"]["changed"] is True
-    assert result["changes"] == ["Changed Variable precedence from SYS,ENTITY,APP,ENDPOINT,TAG,JOB "
-                                 "to SYS,ENTITY,APP,ENDPOINT,JOB,TAG."]
-    back = ok(client.put("/api/v1/settings/VariablePrecedence", json={"value": "SYS,ENTITY,APP,ENDPOINT,TAG,JOB"}))
+    assert result["changes"] == ["Changed Variable precedence from ENV,SYS,ENTITY,APP,ENDPOINT,TAG,JOB "
+                                 "to ENV,SYS,ENTITY,APP,ENDPOINT,JOB,TAG."]
+    back = ok(client.put("/api/v1/settings/VariablePrecedence", json={"value": "ENV,SYS,ENTITY,APP,ENDPOINT,TAG,JOB"}))
     assert back["setting"]["changed"] is False
     db.commit()
     assert db.query(Audit).filter(Audit.Action == "SETTING_CHANGED").count() == 2
@@ -297,5 +297,5 @@ def test_a_setting_that_does_not_fit_is_refused(client, world):
 
     assert response.status_code == 422
     detail = response.json()["detail"]
-    assert "missing: ENTITY, APP, ENDPOINT, TAG" in detail and "given more than once: JOB" in detail
+    assert "missing: ENV, ENTITY, APP, ENDPOINT, TAG" in detail and "given more than once: JOB" in detail
     assert client.put("/api/v1/settings/NoSuchThing", json={"value": "x"}).status_code == 404

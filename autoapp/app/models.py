@@ -1,7 +1,7 @@
 import datetime
 import re
 from sqlalchemy import (
-    BigInteger, Column, Integer, String, Text, Boolean, DateTime, ForeignKey, Enum, UniqueConstraint,
+    BigInteger, Column, Integer, String, Text, Boolean, Date, DateTime, ForeignKey, Enum, UniqueConstraint,
     false, func, text, true
 )
 from sqlalchemy.dialects import mysql
@@ -29,7 +29,8 @@ class MasterObject(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     ObjectType = Column(
-        Enum('APPLICATION', 'ENTITY', 'SITE', 'CREDENTIAL', 'TAG', 'JOB', 'ENDPOINT', name='object_type_enum'),
+        Enum('APPLICATION', 'ENTITY', 'SITE', 'CREDENTIAL', 'TAG', 'JOB', 'ENDPOINT', 'SCHEDULER',
+             name='object_type_enum'),
         nullable=False
     )
     CreatedDateTime = Column(DateTime, default=utcnow, server_default=func.now())
@@ -151,6 +152,30 @@ class Tag(MasterObject):
     __mapper_args__ = {
         'polymorphic_identity': 'TAG',
         'inherit_condition': MasterObject_id == MasterObject.id,
+    }
+
+
+class Scheduler(MasterObject):
+    """
+    A workload automation product that runs AutoApp jobs: one installation of
+    RunMyJobs, Control-M, ActiveBatch and so on. AutoApp can serve several at once;
+    the runner's --scheduler names the one starting a run. ApiUrl is where AutoApp
+    reaches it, to read its jobs' parameters; the credential for that is a secret
+    variable on the scheduler.
+    """
+    __tablename__ = 'Schedulers'
+
+    TECHNOLOGIES = ("RUNMYJOBS", "ACTIVEBATCH", "CONTROL_M", "TIDAL", "CRON", "STANDIN", "OTHER")
+
+    MasterObject_id = Column(Integer, ForeignKey('MasterObjects.id', ondelete='CASCADE'), primary_key=True)
+    Name = Column(String(100), nullable=False, unique=True)
+    Technology = Column(String(20), nullable=False, default='OTHER', server_default='OTHER')
+    ApiUrl = Column(String(512), nullable=True)
+    Description = Column(Text, nullable=True)
+    IsActive = Column(Boolean, default=True, server_default=true())
+
+    __mapper_args__ = {
+        'polymorphic_identity': 'SCHEDULER',
     }
 
 
@@ -348,6 +373,8 @@ class JobRun(Base):
     SchedulerInstanceID = Column(String(64), nullable=False, index=True)
     RunNumber = Column(Integer, nullable=False, default=1, server_default=text('1'))
     SchedulerName = Column(String(100), nullable=True)
+    # The date the run is for, where the scheduler gave one (Control-M's order date)
+    BusinessDate = Column(Date, nullable=True)
     Host = Column(String(255), nullable=True)
     Status = Column(String(20), nullable=False, default='RUNNING', server_default='RUNNING')
     ErrorMessage = Column(Text, nullable=True)

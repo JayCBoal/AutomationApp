@@ -58,10 +58,13 @@ _HINT = ("Use yyyy for the year, MM for the month, dd for the day, HH for the ho
          "and ss for the second; put other text in single quotes.")
 
 
-def format_date(mask: str, moment: datetime) -> str:
-    """Applies a mask to a date and time. Raises ValueError for a mask that is not understood."""
+def format_date(mask: str, moment: datetime, name: str = "DATE") -> str:
+    """
+    Applies a mask to a date and time. Raises ValueError for a mask that is not understood.
+    name is the placeholder the mask came from, for the message when it is empty.
+    """
     if not mask or not mask.strip():
-        raise ValueError(f"A date placeholder needs a mask, for example ${{DATE:yyyyMMdd}}. {_HINT}")
+        raise ValueError(f"A date placeholder needs a mask, for example ${{{name}:yyyyMMdd}}. {_HINT}")
     if mask.count("'") % 2:
         raise ValueError(f"The date mask '{mask}' has a single quote that is never closed.")
 

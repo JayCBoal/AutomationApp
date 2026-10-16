@@ -6,6 +6,14 @@ Notable structural, schema and design changes to AutoApp, newest first. Line-by-
 
 ## 2026-10-15
 
+### What a run knows about its scheduler
+
+- **Added:** the runner's `--business-date` (YYYY-MM-DD or YYYYMMDD), for schedulers that have one, such as Control-M's order date. Steps use it as `${BUSINESS_DATE:yyyyMMdd}`; without it, that is the date the run started. It is kept with the run (`JobRuns.BusinessDate`) and shown in Job History. The Run Job page can give one.
+- **Added:** the environment as a variable level, `ENV`, at the lowest priority, and `${ENV:Name}` to name an environment variable. Schedulers put a job's own variables in the environment of the process they start, so AutoApp sees them without the scheduler passing them. On the server, where the scheduler's environment is unknown, `${ENV:...}` is left for the run rather than reported.
+- **Added:** Scheduler as a master object (`Schedulers`): name, technology, API address, a secret variable for its credential. Search and detail pages; it can carry tags.
+- **Decided:** AutoApp will read a WLA job's parameters from the scheduler (pull), with a connector per technology, rather than the WLA pushing them. It needs least from the WLA plug-in, and the connectors can be written and tested here. See TO-DO decision 7.
+- **Migration:** `MasterObjects.ObjectType` gains `SCHEDULER`; add the `Schedulers` table and `JobRuns.BusinessDate`. `autoapp_dev` has them.
+
 ### Running jobs from the web interface, and keeping job logs
 
 - **Added:** the job log is kept with each run. The runner sends its lines, secrets already masked, as `LOG` records after the run starts, after each step and at the end; they are stored in the new `JobRunLogs` table. `GET /api/v1/runs/{run_id}` gives a run with its log.

@@ -22,7 +22,7 @@ MASK = "********"
 
 # The API's name for each kind of master object, and how to name one
 KIND_OF_TYPE = {"APPLICATION": "applications", "ENTITY": "entities", "SITE": "sites", "ENDPOINT": "endpoints",
-                "JOB": "jobs", "TAG": "tags"}
+                "JOB": "jobs", "TAG": "tags", "SCHEDULER": "schedulers"}
 
 
 class TagError(JobStoreError):

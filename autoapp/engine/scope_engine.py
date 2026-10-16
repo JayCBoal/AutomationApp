@@ -2,7 +2,7 @@ import os
 import re
 from engine.date_mask import format_date
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import date, datetime, time
 from typing import Any, Dict, List, Optional
 from sqlalchemy.orm import Session
 from app.models import Application, Entity, Job, Variable
@@ -15,6 +15,8 @@ class ScopeResolutionEngine:
 
     The levels, lowest priority first by default (the VariablePrecedence setting):
 
+        ENV        the environment the runner was started in: where a scheduler puts the
+                   job's own variables. Also named directly as ${ENV:Name}
         SYS        system values
         ENTITY     the endpoint's entity: its tags' variables, then its own
         APP        the endpoint's application: its tags' variables, then its own
@@ -38,6 +40,10 @@ class ScopeResolutionEngine:
     IMPLICIT_VAR_PATTERN = re.compile(r"\$\{([a-zA-Z0-9_:]+)\}")
     # ${DATE:yyyyMMdd}: the moment the run started, in the format the mask gives (see engine/date_mask.py)
     DATE_PATTERN = re.compile(r"\$\{DATE:([^}]*)\}")
+    # ${BUSINESS_DATE:yyyyMMdd}: the date the scheduler said the run is for (--business-date), or the run's own date
+    BUSINESS_DATE_PATTERN = re.compile(r"\$\{BUSINESS_DATE:([^}]*)\}")
+    # ${ENV:Name}: an environment variable of the runner's process
+    ENV_PATTERN = re.compile(r"\$\{ENV:([A-Za-z_][A-Za-z0-9_]*)\}")
     ANY_PLACEHOLDER_PATTERN = re.compile(r"\$\{[^}]+\}")
 
     # A variable's value may itself contain placeholders; stop after this many passes
@@ -50,14 +56,25 @@ class ScopeResolutionEngine:
         job_id: int,
         instance_id: str,
         global_config: Optional[Dict[str, Any]] = None,
+        environment: Optional[Dict[str, str]] = None,
+        business_date: Optional[date] = None,
     ):
+        """
+        environment: the environment variables a run has, which the runner passes. None
+        where there is none to give: the server checking or previewing a job, which
+        cannot know what a scheduler will set, so ${ENV:...} is left for the run to fill in.
+        business_date: the date the run is for, if the scheduler gave one.
+        """
         self.db = db
         self.job_id = job_id
         self.instance_id = instance_id
         self.global_config = global_config or {}
+        self.environment = dict(environment) if environment is not None else None
+        self.business_date = business_date
 
         # Isolated scope caches for targeted lookup
         self.scoped_vars: Dict[str, Dict[str, Any]] = {
+            "ENV": dict(self.environment or {}),
             "SYS": {},
             "APP": {},
             "ENTITY": {},
@@ -108,12 +125,15 @@ class ScopeResolutionEngine:
         """Populates scope caches and eager-merges the execution context dictionary."""
         now = datetime.now()
         self.started = now      # every date placeholder in the run shows this one moment
+        # ${BUSINESS_DATE:...} shows the date the run is for, at midnight; the run's own date if none was given
+        self.business_day = datetime.combine(self.business_date or now.date(), time())
 
         # 1. System Scope (${SYS:...})
         self.scoped_vars["SYS"] = {
             "YYYYMMDD": now.strftime("%Y%m%d"),
             "INSTANCE_ID": self.instance_id,
             "TIMESTAMP": now.isoformat(),
+            "BUSINESS_DATE": self.business_day.strftime("%Y-%m-%d"),
         }
         self.scoped_vars["SYS"].update(self.global_config)
 
@@ -254,10 +274,17 @@ class ScopeResolutionEngine:
                 f"(circular variable reference?)"
             )
 
+        # Where there is no environment to look in (the server), ${ENV:...} waits for the run
+        leave = tuple(leave) + (("ENV",) if self.environment is None else ())
         unresolved = sorted(
             placeholder for placeholder in set(self.ANY_PLACEHOLDER_PATTERN.findall(text))
             if not any(placeholder.startswith("${" + kind + ":") for kind in leave)
         )
+        missing = [p for p in unresolved if p.startswith("${ENV:")]
+        if missing:
+            names = ", ".join(p[len("${ENV:"):-1] for p in missing)
+            raise ValueError(f"No environment variable {names} was set for this run, as '{original}' needs. "
+                             f"A scheduler normally sets a job's own variables in the environment.")
         if unresolved:
             raise ValueError(f"Unresolved placeholder(s) in '{original}': {', '.join(unresolved)}")
 
@@ -267,6 +294,12 @@ class ScopeResolutionEngine:
         """Single substitution pass; unknown placeholders are left in place."""
         # 0. Dates: ${DATE:yyyyMMdd}. A mask that is not understood raises ValueError.
         text = self.DATE_PATTERN.sub(lambda match: format_date(match.group(1), self.started), text)
+        text = self.BUSINESS_DATE_PATTERN.sub(
+            lambda match: format_date(match.group(1), self.business_day, name="BUSINESS_DATE"), text)
+        if self.environment is not None:
+            text = self.ENV_PATTERN.sub(
+                lambda match: str(self.environment[match.group(1)]) if match.group(1) in self.environment
+                else match.group(0), text)
 
         # 1. Resolve Explicit Targeted Syntax: ${SCOPE:TargetName.VarName}
         def replace_explicit_target(match):

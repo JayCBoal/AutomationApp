@@ -80,6 +80,7 @@ function runPage() {
         jobKey: address.get("key") || "",
         instanceId: "",
         logLevel: "DETAIL",
+        businessDate: "",       // as a scheduler such as Control-M would give it; blank for none
         check: null,            // the pre-run check of the chosen job
         jobKeys: [],
         launch: null,           // the launch under way or last finished
@@ -122,6 +123,7 @@ function runPage() {
             try {
                 this.launch = await AutoApp.send("POST", "/launches", {
                     job_key: this.jobKey.trim(), instance_id: this.instanceId.trim() || null, log_level: this.logLevel,
+                    business_date: this.businessDate || null,
                 });
             } catch (e) {
                 this.error = e.message;

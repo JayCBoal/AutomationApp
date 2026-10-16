@@ -27,6 +27,12 @@
                         <template x-for="field in spec.fields" :key="field.name">
                             <label>
                                 <span x-text="field.label"></span>
+                                <template x-if="field.choices">
+                                    <select x-model="criteria[field.name]" :name="field.name">
+                                        <option value="">Any</option>
+                                        <template x-for="choice in field.choices" :key="choice"><option x-text="choice"></option></template>
+                                    </select>
+                                </template>
                                 <template x-if="field.type === 'checkbox'">
                                     <select x-model="criteria[field.name]" :name="field.name">
                                         <option value="">Any</option>
@@ -34,7 +40,7 @@
                                         <option value="false">No</option>
                                     </select>
                                 </template>
-                                <template x-if="field.type !== 'checkbox'">
+                                <template x-if="field.type !== 'checkbox' && !field.choices">
                                     <input type="text" x-model="criteria[field.name]" :name="field.name"
                                            :list="field.lookup ? 'lookup-' + field.lookup : (field.name === 'name' ? 'lookup-' + kind : null)"
                                            autocomplete="off">

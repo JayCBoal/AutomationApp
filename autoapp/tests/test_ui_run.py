@@ -82,3 +82,31 @@ def test_the_job_editor_has_a_run_button(page, collect):
 
     page.wait_for_url("**/ui/run.html?key=DEV-COLLECT")
     assert page.locator("#run-job").input_value() == "DEV-COLLECT"
+
+
+def test_a_business_date_can_be_given(page, collect):
+    page.goto("/ui/run.html?key=DEV-COLLECT")
+    page.locator("#run-check .status").wait_for()
+    page.locator("#run-business-date").fill("2026-09-30")
+
+    run_it(page)
+
+    assert "--business-date 2026-09-30" in page.locator("#run-command").inner_text()
+
+
+def test_a_scheduler_is_registered_on_its_detail_page(page, db):
+    page.goto("/ui/detail.html?kind=schedulers&new")
+    page.wait_for_selector("#field-name")
+    page.locator("#field-name").fill("CTM_PROD")
+    page.locator("#field-technology").select_option("CONTROL_M")
+    page.locator("#field-api_url").fill("https://ctm.example/automation-api")
+
+    with page.expect_response(lambda r: r.request.method == "POST" and "/api/v1/schedulers" in r.url):
+        page.locator("#submit-button").click()
+
+    page.locator("#save-notice").wait_for(state="visible")
+    assert page.locator("#field-technology").input_value() == "CONTROL_M"
+    assert page.locator("#scheduler-runs").inner_text() == "0 runs"
+    page.goto("/ui/search.html?kind=schedulers&technology=CONTROL_M")
+    page.locator("a.item-name").first.wait_for()
+    assert [a.inner_text() for a in page.locator("a.item-name").all()] == ["CTM_PROD"]

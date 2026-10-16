@@ -6,7 +6,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import Application, Endpoint, Entity, Job, JobRun, Site, Tag
+from app.models import Application, Endpoint, Entity, Job, JobRun, Scheduler, Site, Tag
 from engine.tag_vars import tag_path
 
 router = APIRouter(prefix="/api/v1/lookups", tags=["Lookups"])
@@ -46,7 +46,12 @@ def get_lookups(db: Session = Depends(get_db)):
         "sites": [LookupEntry(value=s.Name, label=" · ".join(filter(None, [s.entity.Name if s.entity else None, s.Host])))
                   for s in in_order(db.query(Site), Site.Name)],
         "jobs": [LookupEntry(value=j.JobKey, label=j.Description) for j in in_order(db.query(Job), Job.JobKey)],
-        "schedulers": [LookupEntry(value=name) for (name,) in schedulers],
+        # Registered schedulers, and any other name a run has given
+        "schedulers": sorted(
+            [LookupEntry(value=s.Name, label=s.Technology) for s in db.query(Scheduler)]
+            + [LookupEntry(value=name) for (name,) in schedulers
+               if not db.query(Scheduler.MasterObject_id).filter(Scheduler.Name == name).first()],
+            key=lambda entry: (entry.value.lower(), entry.value)),
         # A tag is named by its path; listed in path order, so each sits under its parent
         "tags": [LookupEntry(value=path, label=tag.Description)
                  for path, tag in sorted(((tag_path(t), t) for t in db.query(Tag)), key=lambda pt: (pt[0].lower(), pt[0]))],

@@ -25,6 +25,7 @@ const AutoApp = (() => {
         { group: "centre", name: "Run Job", href: "run.html", about: "Run a job now, as a scheduler would, and watch its log" },
         { group: "centre", name: "Endpoints", href: "search.html?kind=endpoints", about: "The registered places files come from and go to" },
         { group: "centre", name: "Tags", href: "search.html?kind=tags", about: "Labels anything can carry, and the variables they give" },
+        { group: "centre", name: "Schedulers", href: "search.html?kind=schedulers", about: "The workload automation products that run AutoApp jobs" },
         { group: "right", name: "Operations Log", href: "operations.html", about: "Every file handled, and each file's trace" },
         { group: "right", name: "Job History", href: "history.html", about: "Every run of every job" },
         { group: "right", name: "Audit Log", href: "audit.html", about: "Who changed which definition, and when" },

@@ -81,6 +81,7 @@ app.include_router(history.router)
 app.include_router(registry.applications)
 app.include_router(registry.entities)
 app.include_router(registry.sites)
+app.include_router(registry.schedulers)
 app.include_router(registry.tags)
 app.include_router(registry.tag_variables)
 for router in definitions.routers:

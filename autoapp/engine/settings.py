@@ -8,7 +8,7 @@ a setting with no row has its default.
 
 Settings are not variables: nothing reads them through ${...}.
 
-    current(db, "VariablePrecedence")   ->  ["SYS", "ENTITY", "APP", "ENDPOINT", "TAG", "JOB"]
+    current(db, "VariablePrecedence")   ->  ["ENV", "SYS", "ENTITY", "APP", "ENDPOINT", "TAG", "JOB"]
 
 An order is stored, and given by the API, lowest priority first: the order the
 levels are merged in. The Settings page shows it the other way round.
@@ -36,13 +36,14 @@ class Setting:
 SETTINGS: Dict[str, Setting] = {s.key: s for s in [
     Setting(
         "VariablePrecedence", ORDER,
-        default="SYS,ENTITY,APP,ENDPOINT,TAG,JOB",
+        default="ENV,SYS,ENTITY,APP,ENDPOINT,TAG,JOB",
         title="Variable precedence",
         description="Where a ${Name} is looked for. When two of these define the same variable, the one with "
                     "the higher priority wins. The tags on an application, entity or endpoint always count "
                     "just below that object's own variables.",
-        choices=("SYS", "ENTITY", "APP", "ENDPOINT", "TAG", "JOB"),
-        labels=(("SYS", "System values"), ("ENTITY", "The endpoint's entity"),
+        choices=("ENV", "SYS", "ENTITY", "APP", "ENDPOINT", "TAG", "JOB"),
+        labels=(("ENV", "The environment the runner starts in, where a scheduler puts the job's own variables"),
+                ("SYS", "System values"), ("ENTITY", "The endpoint's entity"),
                 ("APP", "The endpoint's application"), ("ENDPOINT", "The endpoint's tags"),
                 ("TAG", "The job's tags"), ("JOB", "The job's own variables")),
     ),
@@ -96,6 +97,10 @@ def current(db: Optional[Session], key: str) -> Any:
     s = setting(key)
     text = stored(db).get(key) if db is not None else None
     if text is not None:
+        if s.kind == ORDER:
+            # An order saved before a choice existed keeps its order; the new choice goes in at the lowest priority
+            items = [item.strip().upper() for item in text.split(",") if item.strip()]
+            text = ",".join([c for c in s.choices if c not in items] + items)
         try:
             return parse(key, text)
         except ValueError:

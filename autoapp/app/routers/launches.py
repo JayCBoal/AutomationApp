@@ -20,7 +20,7 @@ import sys
 import tempfile
 import threading
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -44,6 +44,7 @@ class LaunchRequest(BaseModel):
     instance_id: Optional[str] = Field(
         None, max_length=100, description="Leave out for one made from the time, e.g. UI-20261015-183012")
     log_level: str = Field(job_log.DEFAULT_LEVEL, description="DEBUG, DETAIL, SUMMARY or SILENT")
+    business_date: Optional[date] = Field(None, description="The date the run is for, as a scheduler such as Control-M gives it")
 
 
 class LaunchOut(BaseModel):
@@ -112,6 +113,8 @@ def launch(payload: LaunchRequest, request: Request, db: Session = Depends(get_d
                "--spool-dir", os.environ.get("AUTOAPP_SPOOL_DIR") or str(AUTOAPP_DIR / "spool"), "--run-id", run_id]
     if working_root:
         command += ["--working-root", working_root]
+    if payload.business_date:
+        command += ["--business-date", payload.business_date.isoformat()]
 
     output = tempfile.NamedTemporaryFile(prefix="autoapp_launch_", suffix=".log", delete=False)
     try:
@@ -121,7 +124,8 @@ def launch(payload: LaunchRequest, request: Request, db: Session = Depends(get_d
         output.close()
 
     shown = " ".join(["python3", "-m", "engine.runner", "--job-key", job_key, "--instance-id", instance_id,
-                      "--log-level", level])
+                      "--log-level", level]
+                     + (["--business-date", payload.business_date.isoformat()] if payload.business_date else []))
     entry = _Launch(str(uuid.uuid4()), run_id, job_key, instance_id, shown, process, output.name)
     with _lock:
         _launches[entry.launch_id] = entry

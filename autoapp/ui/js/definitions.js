@@ -61,6 +61,19 @@ const DEFINITIONS = {
             { name: "description", label: "Description", max: 256 },
         ],
     },
+    schedulers: {
+        title: "Scheduler", plural: "Schedulers", creates: "scheduler", variables: true,
+        usedByLabel: "Uses",
+        fields: [
+            { name: "name", label: "Name", required: true, max: 100,
+              help: "What the runner's --scheduler calls it, e.g. RMJ_PROD." },
+            { name: "technology", label: "Technology", required: true, choices: ["RUNMYJOBS", "ACTIVEBATCH", "CONTROL_M", "TIDAL", "CRON", "STANDIN", "OTHER"] },
+            { name: "api_url", label: "API address", max: 512,
+              help: "Where AutoApp reaches it, to read its jobs' parameters." },
+            { name: "description", label: "Description" },
+            { name: "active", label: "Active", type: "checkbox" },
+        ],
+    },
     tags: {
         title: "Tag", plural: "Tags", creates: "tag", variables: true, carriesTags: false,
         usedByLabel: "Uses",
@@ -122,6 +135,12 @@ const COLUMNS = {
         { label: "Site", main: r => r.site, sub: r => r.entity },
         { label: "Path", main: r => r.path, sub: r => r.filename_pattern, code: true },
     ],
+    schedulers: [
+        { label: "Scheduler", main: r => r.name, sub: r => r.description, link: true },
+        { label: "Technology", main: r => r.technology },
+        { label: "API address", main: r => r.api_url, code: true },
+        { label: "Status", main: r => yesNo(r.active), status: true },
+    ],
     tags: [
         { label: "Tag", main: r => AutoApp.showPath(r.path), sub: r => r.description, link: true },
     ],
@@ -140,6 +159,7 @@ const STARTING_VALUES = {
     entities: { active: true },
     sites: { port: "22", protocol: "SFTP", active: true },
     endpoints: { filename_pattern: "*" },
+    schedulers: { technology: "OTHER", active: true },
     tags: {},
 };
 
@@ -305,6 +325,7 @@ function definitionDetail() {
         /** A tag's variables inherited from its parents, which its own override. */
         get inherited() { return (this.item && this.item.inherited_variables) || []; },
         showPath: AutoApp.showPath,
+        historyLink() { return "history.html?" + new URLSearchParams({ scheduler: this.item.name }); },
 
         newLink() { return newLink(KIND); },
 

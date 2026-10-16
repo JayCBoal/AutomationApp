@@ -60,6 +60,15 @@ classDiagram
         +bool IsActive
     }
     MasterObject <|-- Job
+    class Scheduler {
+        +int MasterObject_id
+        +string(100) Name
+        +string(20) Technology
+        +string(512) ApiUrl
+        +text Description
+        +bool IsActive
+    }
+    MasterObject <|-- Scheduler
     class Site {
         +int MasterObject_id
         +int Entity_MasterObject_id
@@ -103,6 +112,7 @@ classDiagram
         +string(64) SchedulerInstanceID
         +int RunNumber
         +string(100) SchedulerName
+        +date BusinessDate
         +string(255) Host
         +string(20) Status
         +text ErrorMessage

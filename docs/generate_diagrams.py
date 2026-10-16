@@ -20,7 +20,7 @@ from app.models import Base, MasterObject
 
 # How the tables are grouped into detail diagrams
 TABLE_GROUPS = {
-    "Domain registry": ["MasterObjects", "Applications", "Entities", "Sites", "Credentials", "Tags",
+    "Domain registry": ["MasterObjects", "Applications", "Entities", "Sites", "Credentials", "Schedulers", "Tags",
                         "Variables", "TagAssignments"],
     "Jobs and steps": ["Jobs", "JobSteps", "JobStepParameters", "StepTypes", "StepDefinitions"],
     "Endpoints, runs, operations, audits and settings": ["Endpoints", "JobRuns", "JobRunLogs", "Operations", "Audits", "Settings"],

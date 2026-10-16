@@ -31,13 +31,20 @@ Updated 2026-10-13. The order under "Work queue" is a proposal; the items under 
 6. **Prototype features.** Which of these carry forward: start at step, stop after step, skip steps; per-step success, warning and failure return codes; and a "use date" (business date) for date masks, which today always show the moment the run started?
 
 7. **What "inside the scheduler" means first.** The goal is for AutoApp to be used from within a scheduling product. Decide the first integration target and its shape: for example, job definitions edited in the scheduler's interface through AutoApp's API, results written back to the scheduler's job log, and single sign-on. This raises the priority of the CRUD API relative to a standalone web interface.
-   - **Put off for now (2026-10-15):** there is no WLA software on the development machine to integrate with. The Run Job page stands in for a scheduler meanwhile.
+   - **Picked up again (2026-10-15).** Redwood owns RunMyJobs, ActiveBatch and Tidal, so dev or demo tenants may be possible. RunMyJobs' extensibility is ExtensionPoints, plug-ins written in RedwoodScript; any work on one has to come from the public documentation.
+   - **Plan, in order:**
+     1. Run context. *Built 2026-10-15:* `--business-date` and `${BUSINESS_DATE:...}`, the environment as the lowest variable level and `${ENV:Name}`, and Scheduler as a master object.
+     2. An embedded mode for the pages a WLA opens (no AutoApp header or navigation; the page tells the WLA when it has saved), and the addresses a WLA plug-in may rely on, written down and tested: `job.html?key=...`, `job.html?new`, `operations.html?job_key=...&instance_id=...`.
+     3. Pull: the editor, opened from a WLA job, reads that job's parameters from the scheduler through a connector, shows them read-only in its Variables panel ("from the scheduler", secrets masked), and the pre-run check uses them. At run time, parameters the WLA marks secret are masked in the job log.
+     4. A scheduler stand-in: a separate small app with its own look, API and database, standing in for a WLA, with the first connector.
+   - **Decided:** what the scheduler gives a run: the business date (optional, for Control-M), its job name, its instance ID, the restart count, and which scheduler it is (name and technology). The job's own variables come through the environment, as ActiveBatch, Control-M and RunMyJobs all set them there for an OS job; the runner does not need to tell them apart from the rest of the environment.
+   - **Requirement:** AutoApp should gather everything the source WLA job has and be able to map all of it. Control-M must be order-date aware.
+   - **Decided:** pull, not push. Reading the WLA job's parameters through the scheduler's API needs least from the WLA plug-in (only to open AutoApp's page with the job's identifier), and the connectors live in AutoApp, where they can be built and tested. The costs: AutoApp needs network access to each WLA, and holds a credential for each.
    - **The user's thoughts so far (2026-10-15), for when this comes back:**
      - In the WLA's own job editor, creating or editing a job of the AutoApp type (whatever it ends up being called) opens AutoApp's Job Detail page.
      - Ideally the integration goes both ways, so that the AutoApp job's attributes are visible in the host WLA's interface. Whether that is feasible is not known yet.
      - Most other pages only need to be reachable from the standalone AutoApp interface, as they are used less often.
      - The exception is the Operations Log, seen as AutoApp's stand-out feature: reaching it from inside the host WLA's interface is a must.
-   - **Still open from earlier:** which values matter (an order date and the like; Control-M must be order-date aware, and AutoApp should gather everything the source WLA job has and be able to map it), which direction first, and which scheduler first.
 
 8. **Repository housekeeping.** `AutomationApp/_gemini_debris/` and the zip files in `PriorArt/CodeRepo/backup/` can be deleted once no longer wanted.
 
@@ -58,9 +65,9 @@ Every page of the web interface is built. See [UI_VISION.md](UI_VISION.md) for w
    - REST call
    - Send email
 
-### Put off: the scheduler conversation
+### Next: the scheduler integration
 
-2. **Scheduler integration.** Decision 7, which holds the user's thoughts so far. Put off on 2026-10-15 because no WLA software is available to try it against.
+2. **Scheduler integration.** Decision 7 holds the plan and the user's thoughts. Step 1 (run context) is built; next is the embedded mode and the documented addresses.
 
 ### Then: breadth
 

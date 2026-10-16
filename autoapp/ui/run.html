@@ -46,6 +46,13 @@
                 <span class="muted small">What a scheduler would pass. Each run of a job needs its own.</span>
             </div>
 
+            <label for="run-business-date">Business date</label>
+            <div class="create-row">
+                <input id="run-business-date" type="date" x-model="businessDate" style="max-width: 200px">
+                <span class="muted small">Optional: the date the run is for, as Control-M's order date. Steps use it as
+                    <code>${BUSINESS_DATE:yyyyMMdd}</code>; left blank, that is today.</span>
+            </div>
+
             <label for="run-level">Log level</label>
             <div class="create-row">
                 <select id="run-level" x-model="logLevel">

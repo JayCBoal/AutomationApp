@@ -57,12 +57,14 @@ class LocalSpoolTelemetryClient:
         self._file_handle.write(json.dumps(record) + "\n")
         self._undelivered.append(record)
 
-    def start_run(self, job_key: str, run_number: int = 1, scheduler: Optional[str] = None) -> None:
+    def start_run(self, job_key: str, run_number: int = 1, scheduler: Optional[str] = None,
+                  business_date=None) -> None:
         self._write("RUN_START", {
             "JobKey": job_key,
             "InstanceID": self.instance_id,
             "RunNumber": run_number,
             "Scheduler": scheduler,
+            "BusinessDate": business_date.isoformat() if business_date else None,
             "Host": socket.gethostname(),
             "StartedAtUtc": utc_now_iso(),
         })

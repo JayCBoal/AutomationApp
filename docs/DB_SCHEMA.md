@@ -21,6 +21,7 @@ erDiagram
     MasterObjects ||--o| Credentials : "MasterObject_id"
     MasterObjects ||--o| Entities : "MasterObject_id"
     MasterObjects ||--o| Jobs : "MasterObject_id"
+    MasterObjects ||--o| Schedulers : "MasterObject_id"
     StepTypes ||--o{ StepDefinitions : "StepType_id"
     MasterObjects ||--o| Tags : "MasterObject_id"
     Tags |o--o{ Tags : "Parent_MasterObject_id"
@@ -49,7 +50,7 @@ erDiagram
 erDiagram
     MasterObjects {
         int id PK
-        enum ObjectType "required; one of: APPLICATION, ENTITY, SITE, CREDENTIAL, TAG, JOB, ENDPOINT"
+        enum ObjectType "required; one of: APPLICATION, ENTITY, SITE, CREDENTIAL, TAG, JOB, ENDPOINT, SCHEDULER"
         datetime CreatedDateTime
         string(100) CreatedBy
         datetime ModifiedDateTime
@@ -86,6 +87,14 @@ erDiagram
         text SecretData
         bool IsActive
     }
+    Schedulers {
+        int MasterObject_id PK, FK
+        string(100) Name UK "required"
+        string(20) Technology "required"
+        string(512) ApiUrl
+        text Description
+        bool IsActive
+    }
     Tags {
         int MasterObject_id PK, FK
         int Parent_MasterObject_id FK
@@ -108,6 +117,7 @@ erDiagram
     MasterObjects ||--o| Applications : "MasterObject_id"
     MasterObjects ||--o| Credentials : "MasterObject_id"
     MasterObjects ||--o| Entities : "MasterObject_id"
+    MasterObjects ||--o| Schedulers : "MasterObject_id"
     MasterObjects ||--o| Tags : "MasterObject_id"
     Tags |o--o{ Tags : "Parent_MasterObject_id"
     MasterObjects ||--o{ Variables : "MasterObject_id"
@@ -188,6 +198,7 @@ erDiagram
         string(64) SchedulerInstanceID "required"
         int RunNumber "required"
         string(100) SchedulerName
+        date BusinessDate
         string(255) Host
         string(20) Status "required"
         text ErrorMessage

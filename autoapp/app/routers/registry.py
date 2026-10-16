@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app import tag_store
 from app.job_store import JobStoreError, apply_variables
-from app.models import Application, Audit, Entity, Site, Tag
+from app.models import Application, Audit, Entity, Scheduler, Site, Tag
 from app.schemas import VariableSave
 from engine.tag_vars import shown, tag_path
 
@@ -174,6 +174,44 @@ def create_site(payload: SiteCreate, db: Session = Depends(get_db)):
     record(db, site, "site", name, payload.variables, payload.tags)
     return SiteOut(name=site.Name, entity=entity.Name if entity else None, host=site.Host, port=site.Port,
                    protocol=site.Protocol, description=site.Description)
+
+
+# --- Schedulers -----------------------------------------------------------------------------------
+
+schedulers = APIRouter(prefix="/api/v1/schedulers", tags=["Schedulers"])
+
+
+class SchedulerCreate(BaseModel):
+    name: str = Field(..., max_length=100, description="What the runner's --scheduler calls it, e.g. RMJ_PROD")
+    technology: str = Field("OTHER", description=", ".join(Scheduler.TECHNOLOGIES))
+    api_url: Optional[str] = Field(None, max_length=512, description="Where AutoApp reaches it")
+    description: Optional[str] = None
+    active: bool = True
+    variables: Optional[List[VariableSave]] = None
+    tags: Optional[List[str]] = Field(None, description="Paths of the tags it carries")
+
+
+class SchedulerOut(BaseModel):
+    name: str
+    technology: str
+    api_url: Optional[str] = None
+    description: Optional[str] = None
+
+
+@schedulers.post("", response_model=SchedulerOut, status_code=status.HTTP_201_CREATED)
+def create_scheduler(payload: SchedulerCreate, db: Session = Depends(get_db)):
+    """Registers a scheduler: a workload automation product that runs AutoApp jobs."""
+    name = clean_name("scheduler", payload.name, Scheduler, db)
+    technology = next((t for t in Scheduler.TECHNOLOGIES if t.lower() == (payload.technology or "").strip().lower()), None)
+    if technology is None:
+        raise HTTPException(422, f"The technology must be one of {', '.join(Scheduler.TECHNOLOGIES)}, "
+                                 f"not '{payload.technology}'.")
+    scheduler = Scheduler(Name=name, Technology=technology, ApiUrl=(payload.api_url or "").strip() or None,
+                          Description=(payload.description or "").strip() or None, IsActive=payload.active,
+                          CreatedBy=EDITOR_NAME)
+    record(db, scheduler, "scheduler", name, payload.variables, payload.tags)
+    return SchedulerOut(name=scheduler.Name, technology=scheduler.Technology, api_url=scheduler.ApiUrl,
+                        description=scheduler.Description)
 
 
 # --- Tags -----------------------------------------------------------------------------------------

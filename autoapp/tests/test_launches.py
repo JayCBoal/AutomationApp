@@ -120,3 +120,15 @@ def test_a_launch_is_refused_for_an_unknown_job_a_bad_level_or_a_used_instance_i
 
 def test_an_unknown_launch_is_404(live_api):
     assert get(f"{live_api}/api/v1/launches/nope").status_code == 404
+
+
+def test_a_launch_can_give_a_business_date(live_api, seed, endpoints, db):
+    job = seed.job("DEV-DATED")
+    seed.step(job, 1, SourceEndpoint="LEGAL_EXTRACTS", Dest="in_${BUSINESS_DATE:yyyyMMdd}")
+    db.commit()
+
+    launch = post(f"{live_api}/api/v1/launches", json={"job_key": "DEV-DATED", "business_date": "2026-09-30"}).json()
+    launch, run = follow(live_api, launch)
+
+    assert "--business-date 2026-09-30" in launch["command"]
+    assert (run["status"], run["business_date"]) == ("SUCCESS", "2026-09-30")

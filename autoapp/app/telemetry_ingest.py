@@ -58,6 +58,7 @@ def ingest_batch(db: Session, batch: TelemetryBatch) -> TelemetryIngestResult:
                     SchedulerInstanceID=record.InstanceID,
                     RunNumber=record.RunNumber,
                     SchedulerName=record.Scheduler,
+                    BusinessDate=record.BusinessDate,
                     Host=record.Host,
                     Status="RUNNING",
                     StartedDateTime=_naive_utc(record.StartedAtUtc),

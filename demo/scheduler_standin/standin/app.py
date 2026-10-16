@@ -27,9 +27,13 @@ The runner it starts gets the rest of this process's environment, including
 DATABASE_URL and AUTOAPP_WORKING_ROOT, so start it where AutoApp's settings are
 loaded (dev_env.sh).
 """
+import json
 import os
 import re
 import subprocess
+import urllib.error
+import urllib.parse
+import urllib.request
 import sys
 import threading
 from datetime import date, datetime, timezone
@@ -308,6 +312,31 @@ def submit(name: str, db: Session = Depends(get_db)):
                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
     threading.Thread(target=_finish, args=(run.id, process), daemon=True).start()
     return describe_run(run)
+
+
+@app.get("/api/jobs/{name}/autoapp", dependencies=[Depends(authorised)])
+def autoapp_summary(name: str, db: Session = Depends(get_db)):
+    """
+    The AutoApp job this one runs, as AutoApp describes it for a scheduler
+    (GET /api/v1/jobs/{key}/summary), asked by this server the way a real WLA's
+    plug-in would ask from its server. Gives {"summary": ...} or {"error": "..."}.
+    """
+    job = find_job(db, name)
+    if not job.autoapp_job_key:
+        return {"summary": None, "error": None}
+    query = urllib.parse.urlencode({"scheduler": NAME, "wla_job": job.name})
+    url = f"{AUTOAPP_URL}/api/v1/jobs/{urllib.parse.quote(job.autoapp_job_key, safe='')}/summary?{query}"
+    try:
+        with urllib.request.urlopen(url, timeout=10) as response:
+            return {"summary": json.loads(response.read().decode("utf-8")), "error": None}
+    except urllib.error.HTTPError as e:
+        try:
+            detail = json.loads(e.read().decode("utf-8")).get("detail")
+        except ValueError:
+            detail = None
+        return {"summary": None, "error": detail or f"AutoApp answered {e.code}."}
+    except (urllib.error.URLError, OSError, ValueError) as e:
+        return {"summary": None, "error": f"Could not reach AutoApp at {AUTOAPP_URL}: {e}"}
 
 
 @app.get("/api/runs", response_model=List[RunOut], dependencies=[Depends(authorised)])

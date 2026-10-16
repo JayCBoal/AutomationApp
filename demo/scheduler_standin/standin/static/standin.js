@@ -29,6 +29,7 @@ function standin() {
         form: null,             // the job on screen
         saved: "",              // the job as last loaded or saved, to tell whether anything changed
         runs: [],
+        autoapp: null,          // what AutoApp says about the AutoApp job: { summary, error }
         outputs: {},            // run id -> its output, for the runs whose output is open
         busy: false,
         error: "",
@@ -82,7 +83,7 @@ function standin() {
                 this.show(await call("GET", "/api/jobs/" + encodeURIComponent(name)));
                 this.chosen = name;
                 this.outputs = {};
-                await this.loadRuns();
+                await Promise.all([this.loadRuns(), this.loadAutoApp()]);
             } catch (e) {
                 this.error = e.message;
             }
@@ -92,6 +93,7 @@ function standin() {
             if (this.changed && !confirm("Discard the changes to this job?")) return;
             this.chosen = "";
             this.runs = [];
+            this.autoapp = null;
             this.show({ name: "", parameters: [] });
             this.error = this.notice = "";
         },
@@ -107,7 +109,7 @@ function standin() {
                     : await call("POST", "/api/jobs", this.payload());
                 this.show(job);
                 this.chosen = job.name;
-                await this.loadJobs();
+                await Promise.all([this.loadJobs(), this.loadAutoApp()]);
                 this.notice = `Saved job '${job.name}'.`;
             } catch (e) {
                 this.error = e.message;
@@ -142,7 +144,7 @@ function standin() {
             this.$refs.window.showModal();
         },
 
-        windowClosed() { this.$refs.frame.src = "about:blank"; },
+        windowClosed() { this.$refs.frame.src = "about:blank"; this.loadAutoApp(); },
 
         editInAutoApp() {
             // The AutoApp job this one runs, or a new one named after it; and this job's parameters, for AutoApp to read
@@ -191,12 +193,32 @@ function standin() {
             }
         },
 
+        /** What AutoApp says about the AutoApp job this one runs, asked through our own server. */
+        async loadAutoApp() {
+            if (!this.chosen) { this.autoapp = null; return; }
+            try {
+                this.autoapp = await call("GET", `/api/jobs/${encodeURIComponent(this.chosen)}/autoapp`);
+            } catch (e) {
+                this.autoapp = { summary: null, error: e.message };
+            }
+        },
+
+        /** One of AutoApp's pages from the summary, in our window, embedded. */
+        openFromSummary(title, url) {
+            const target = new URL(url);
+            target.searchParams.set("embed", "1");
+            target.searchParams.set("theme", "light");
+            target.searchParams.set("host", location.origin);
+            this.openWindow(title, target.toString());
+        },
+
         async loadRuns() {
             clearTimeout(pollTimer);
             if (!this.chosen) return;
             this.runs = await call("GET", "/api/runs?" + new URLSearchParams({ job: this.chosen }));
             for (const id of Object.keys(this.outputs)) this.outputs[id] = (await call("GET", "/api/runs/" + id)).output;
             if (this.runs.some(run => run.status === "RUNNING")) pollTimer = setTimeout(() => this.loadRuns(), 1000);
+            else this.loadAutoApp();            // a run that has just ended changes AutoApp's "last run"
         },
 
         async toggleOutput(run) {

@@ -2,7 +2,7 @@
 
 How a workload automation product (a WLA: RunMyJobs, ActiveBatch, Control-M, Tidal, ...) uses AutoApp. A WLA plug-in can rely on everything here. It is kept working by `autoapp/tests/test_ui_embedded.py`, and anything that changes it is recorded in [CHANGE_LOG.md](CHANGE_LOG.md).
 
-The plan this belongs to is decision 7 in [TO-DO.md](TO-DO.md).
+The plan this belongs to is decision 7 in [TO-DO.md](TO-DO.md). What real WLAs allow, from their public documentation, is in [WLA_RESEARCH.md](WLA_RESEARCH.md).
 
 ## 1. Running a job
 
@@ -31,10 +31,11 @@ Each address is relative to the AutoApp server, e.g. `https://autoapp.example/ui
 | `ui/job.html?key=<JobKey>&edit` | The same, already unlocked for editing. |
 | `ui/job.html?new` | The job editor, with a new, blank job. |
 | `ui/job.html?new&key=<JobKey>` | A new job, with the key the WLA suggests already filled in. |
-| `...&scheduler=<name>&wla_job=<the WLA's job>` | Added to any job editor address: the WLA job this AutoApp job is edited for. AutoApp reads that job's parameters from the WLA (section 3) and shows them in the Variables panel; its preview and "Would it run?" use them. |
+| `...&scheduler=<name>&wla_job=<the WLA's job>` | Added to any job editor address: the WLA job this AutoApp job is edited for. AutoApp reads that job's parameters from the WLA (section 4) and shows them in the Variables panel; its preview and "Would it run?" use them. |
 | `ui/operations.html?job_key=<JobKey>&instance_id=<ID>` | The Operations Log: every file one run of the job handled, with each file's trace. Either criterion can be left out. Any other search box can be given the same way, e.g. `dest_endpoint=` or `source_filename=`. |
 | `ui/history.html?job_key=<JobKey>` | Job History for the job: every run, with links to each run's log and files. `instance_id=` narrows it to one run. |
 | `ui/log.html?run=<RunID>` | One run's job log. |
+| `ui/summary.html?key=<JobKey>` | The job in brief, as a card: whether it would run, its steps in a line each, its endpoints and tags, its last run, and links to its pages. For a WLA that can show a web page in a panel of its own job screen. Takes `instance_id=` for one run, and `scheduler=` and `wla_job=` as the job editor does. |
 | `ui/run.html?key=<JobKey>` | The Run Job page, ready to run the job. Mainly for trying jobs out without a WLA. |
 
 ### Embedded mode
@@ -77,7 +78,19 @@ window.addEventListener("message", event => {
 
 A renamed job matters to the WLA. It runs the job by its key, so on a `saved` message with a `previous_key`, the WLA must update its own job.
 
-## 3. AutoApp reading the WLA
+## 3. Showing an AutoApp job in the WLA's own screens
+
+`GET /api/v1/jobs/<JobKey>/summary` describes a job for a WLA to show however it likes:
+
+- whether it is enabled, and whether it would run (`ready`), with the `problems` that would stop it;
+- its `steps`, each with its order, title, step type and a `line` saying where it takes files from and puts them, e.g. `LEGAL_EXTRACTS  →  incoming`;
+- the `endpoints` it uses and its `tags`;
+- a `run`: the one named by `instance_id=`, or else the latest. Each has its status, times, operation counts and `links` to its job log and its operations;
+- `links` to the job editor, the Operations Log and Job History, as full addresses.
+
+It takes `scheduler=` and `wla_job=`, so "would it run" is checked with the WLA job's parameters. A WLA plug-in would ask from its own server; a page on the WLA's site cannot read AutoApp's API directly, as browsers keep pages to their own site's data. `ui/summary.html` shows the same, ready-made, for a WLA that would rather show a page.
+
+## 4. AutoApp reading the WLA
 
 AutoApp reads from a WLA through that WLA's own API, with a **connector** for its technology (`autoapp/app/connectors/`). This needs the least from a WLA plug-in: only that it opens AutoApp's page with the WLA job's identifier. So far a connector reads one thing, a job's parameters:
 
@@ -90,6 +103,6 @@ AutoApp reads from a WLA through that WLA's own API, with a **connector** for it
 | `STANDIN` | The Stand-in Scheduler, [demo/scheduler_standin](../demo/scheduler_standin/README.md) |
 | `RUNMYJOBS`, `ACTIVEBATCH`, `CONTROL_M`, `TIDAL` | Not yet. Each needs its API's documentation, and a system to try it against. |
 
-## 4. The Stand-in Scheduler
+## 5. The Stand-in Scheduler
 
-[demo/scheduler_standin](../demo/scheduler_standin/README.md) is a small WLA of its own that does all of the above from the WLA's side, for trying it without a real one. Its job editor opens AutoApp's embedded, its runs start the runner as an OS job, and its API is the one AutoApp's `STANDIN` connector reads.
+[demo/scheduler_standin](../demo/scheduler_standin/README.md) is a small WLA of its own that does all of the above from the WLA's side, for trying it without a real one. Its job editor opens AutoApp's embedded, its runs start the runner as an OS job, its API is the one AutoApp's `STANDIN` connector reads, and its job page shows AutoApp's summary of the job.

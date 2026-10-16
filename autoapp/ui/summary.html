@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Job Summary - AutoApp</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="css/autoapp.css">
+    <script src="js/common.js"></script>
+    <script src="js/summary.js"></script>
+    <script defer src="vendor/alpine-3.17.4.min.js"></script>
+</head>
+<body>
+<!-- A job in brief, for a scheduler to show in a panel of its own: summary.html?key=<JobKey>&embed=1 -->
+<div id="app-chrome" data-title="Job Summary" data-nav="jobs.html"></div>
+
+<main x-data="jobSummary()" class="summary-card">
+    <p class="message error" id="page-error" x-show="error" x-text="error" role="alert" x-cloak></p>
+    <template x-if="summary">
+        <section class="panel" aria-label="Job summary">
+            <div class="steps-head">
+                <h2 class="section" style="margin-top: 0"><a id="summary-job" :href="open(summary.links.editor)" x-text="summary.job_key"></a></h2>
+                <span id="summary-ready" class="status"
+                      :class="!summary.active ? 'Disabled' : (summary.ready ? 'SUCCESS' : 'FAILED')"
+                      x-text="!summary.active ? 'Disabled' : (summary.ready ? 'Ready to run' : summary.problems.length + (summary.problems.length === 1 ? ' problem' : ' problems'))"></span>
+            </div>
+            <p class="small" x-show="summary.description" x-text="summary.description"></p>
+            <ul class="problems" id="summary-problems" x-show="summary.active && !summary.ready">
+                <template x-for="problem in summary.problems"><li class="small" x-text="problem"></li></template>
+            </ul>
+            <template x-for="warning in summary.warnings"><p class="message warning small" x-text="warning"></p></template>
+
+            <ol class="summary-steps" id="summary-steps">
+                <template x-for="step in summary.steps" :key="step.order">
+                    <li :class="{ muted: !step.active }">
+                        <strong x-text="step.title || ('Step ' + step.order)"></strong>
+                        <span class="tag" x-text="step.step_type"></span>
+                        <code class="small" x-text="step.line"></code>
+                        <span class="muted small" x-show="!step.active">(disabled)</span>
+                    </li>
+                </template>
+            </ol>
+
+            <p class="small">
+                <span x-show="summary.endpoints.length" x-text="'Endpoints: ' + summary.endpoints.join(', ')"></span>
+                <span x-show="summary.tags.length" x-text="(summary.endpoints.length ? ' · ' : '') + 'Tags: ' + summary.tags.map(AutoApp.showPath).join(', ')"></span>
+            </p>
+
+            <div id="summary-run" class="small">
+                <template x-if="summary.run">
+                    <span>
+                        <span x-text="'Last run'"></span>
+                        <span class="status" :class="summary.run.status" x-text="summary.run.status"></span>
+                        <span x-text="time(summary.run.started) + ' · instance ' + summary.run.instance_id"></span>
+                        · <a id="summary-run-log" :href="open(summary.run.links.log)">Log</a>
+                        · <a id="summary-run-operations" :href="open(summary.run.links.operations)"
+                             x-text="summary.run.operations + (summary.run.operations === 1 ? ' operation' : ' operations')"></a>
+                    </span>
+                </template>
+                <span class="muted" x-show="!summary.run">Never run.</span>
+            </div>
+            <p class="small">
+                <a id="summary-editor" :href="open(summary.links.editor)">Open the job</a>
+                · <a :href="open(summary.links.operations)">Its operations</a>
+                · <a :href="open(summary.links.history)">Its history</a>
+            </p>
+        </section>
+    </template>
+</main>
+</body>
+</html>

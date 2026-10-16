@@ -93,6 +93,41 @@
                 </section>
             </template>
 
+            <!-- What AutoApp says about the AutoApp job this one runs: the "two-way" part -->
+            <section class="panel" aria-label="In AutoApp" id="in-autoapp" x-show="form && saved && form.autoapp_job_key">
+                <div class="steps-head"><h2 class="section" style="margin-top: 0">In AutoApp</h2>
+                    <span class="muted small">Asked from AutoApp's API, as a WLA plug-in would.</span></div>
+                <p class="message error small" x-show="autoapp && autoapp.error" x-text="autoapp && autoapp.error"></p>
+                <template x-if="autoapp && autoapp.summary">
+                    <div>
+                        <p>
+                            <strong x-text="autoapp.summary.job_key"></strong>
+                            <span id="autoapp-ready" class="status"
+                                  :class="!autoapp.summary.active ? 'Disabled' : (autoapp.summary.ready ? 'SUCCESS' : 'FAILED')"
+                                  x-text="!autoapp.summary.active ? 'Disabled' : (autoapp.summary.ready ? 'Ready to run' : autoapp.summary.problems.length + ' problem(s)')"></span>
+                            <span class="muted small" x-text="autoapp.summary.description || ''"></span>
+                        </p>
+                        <ul class="problems small" x-show="autoapp.summary.active && !autoapp.summary.ready">
+                            <template x-for="problem in autoapp.summary.problems"><li x-text="problem"></li></template>
+                        </ul>
+                        <ol id="autoapp-steps" class="small">
+                            <template x-for="step in autoapp.summary.steps" :key="step.order">
+                                <li><strong x-text="step.title || ('Step ' + step.order)"></strong>
+                                    (<span x-text="step.step_type"></span>)
+                                    <code x-text="step.line"></code></li>
+                            </template>
+                        </ol>
+                        <p class="small" x-show="autoapp.summary.run">
+                            Last run in AutoApp: <span class="status" :class="autoapp.summary.run && autoapp.summary.run.status"
+                                  x-text="autoapp.summary.run && autoapp.summary.run.status"></span>
+                            <span x-text="autoapp.summary.run ? autoapp.summary.run.instance_id : ''"></span>
+                            · <button type="button" class="link" id="autoapp-run-log"
+                                      @click="openFromSummary('Job log', autoapp.summary.run.links.log)">Its log</button>
+                        </p>
+                    </div>
+                </template>
+            </section>
+
             <!-- Its runs -->
             <section class="panel" aria-label="Runs" x-show="form && saved">
                 <div class="steps-head"><h2 class="section" style="margin-top: 0">Runs</h2></div>

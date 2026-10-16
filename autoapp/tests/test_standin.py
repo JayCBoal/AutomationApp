@@ -230,3 +230,23 @@ def test_the_standins_page_opens_autoapps_editor_and_learns_a_new_jobs_key(brows
     page.locator("#notice", has_text="Saved job 'NEW_ONE'").wait_for()      # the stand-in has stored it
     assert call("GET", f"{standin}/api/jobs/NEW_ONE", token=TOKEN)[1]["autoapp_job_key"] == "NEW_ONE"
     context.close()
+
+
+def test_the_standin_shows_what_autoapp_says_about_its_job(browser, registered, wla_job, regional):
+    standin = registered.ApiUrl
+    status, answer = call("GET", f"{standin}/api/jobs/BILLING_EXPORT/autoapp", token=TOKEN)
+    assert status == 200 and answer["error"] is None
+    assert (answer["summary"]["job_key"], answer["summary"]["ready"]) == ("DEV-REGIONAL", True)   # with its parameters
+    submit_and_wait(standin)
+
+    context = browser.new_context(viewport={"width": 1400, "height": 900})
+    page = context.new_page()
+    page.goto(f"{standin}/ui/?job=BILLING_EXPORT")
+    page.locator("#autoapp-steps li").first.wait_for()
+
+    assert page.locator("#autoapp-ready").inner_text() == "Ready to run"
+    assert page.locator("#autoapp-steps li").count() == 2
+    page.locator("#autoapp-run-log").wait_for()
+    page.locator("#autoapp-run-log").click()
+    page.frame_locator("#autoapp-frame").locator("#job-log").wait_for()
+    context.close()

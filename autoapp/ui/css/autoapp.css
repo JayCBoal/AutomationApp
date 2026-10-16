@@ -358,3 +358,8 @@ table.tag-variables td:nth-child(2) { width: 35%; }
 .embed-bar .page-title { color: var(--muted); }
 .embed-bar #open-in-autoapp { margin-left: auto; }
 body.embedded main { padding-top: 12px; }
+
+/* ---------- A job's summary card ---------- */
+.summary-steps { margin: 10px 0; padding-left: 22px; }
+.summary-steps li { padding: 3px 0; }
+.summary-steps li .tag { margin: 0 6px; }

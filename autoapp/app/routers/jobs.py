@@ -1,12 +1,16 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import func
-from sqlalchemy.orm import Session
+from datetime import date, datetime
 from typing import Dict, Any, List, Optional
+from urllib.parse import urlencode
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from pydantic import BaseModel, Field
+from sqlalchemy import case, func
+from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app import tag_store
 from app.job_store import JobStoreError, apply_job, delete_job, describe_job, inherited_variables, save_job
-from app.models import Job, JobRun, JobStep, JobStepParameter, Variable
+from app.models import Job, JobRun, JobStep, JobStepParameter, Operation, Variable
 from app.schemas import (
     FieldPreview, JobCheckResult, JobDetail, JobInitRequest, JobInitResponse, JobPreview, JobSave, JobSaveResult,
     JobStepPayloadSchema, JobSummary, LastRun
@@ -327,3 +331,113 @@ def wla_environment(db: Session, scheduler: Optional[str], wla_job: Optional[str
         return None, [f"The scheduler's parameters for this job could not be read, so they are not checked: {e}"]
     except HTTPException as e:
         return None, [str(e.detail)]
+
+
+# --- A job's summary, for a scheduler to show in its own interface -----------------------------
+
+class SummaryStep(BaseModel):
+    order: int
+    title: Optional[str] = None
+    step_type: str = Field(..., description="The step type's name, e.g. Copy Files")
+    active: bool
+    line: str = Field(..., description="Where it takes files from and puts them, e.g. LEGAL_EXTRACTS → incoming")
+
+
+class SummaryRun(BaseModel):
+    run_id: str
+    instance_id: str
+    run_number: int
+    scheduler: Optional[str] = None
+    business_date: Optional[date] = None
+    status: str
+    started: Optional[datetime] = None
+    ended: Optional[datetime] = None
+    error: Optional[str] = None
+    operations: int
+    failed_operations: int
+    links: Dict[str, str] = Field(..., description="log: its job log; operations: the files it handled")
+
+
+class JobSummaryForHost(BaseModel):
+    """What a scheduler needs to show an AutoApp job in its own interface. Links are full addresses."""
+    job_key: str
+    description: Optional[str] = None
+    active: bool
+    ready: bool = Field(..., description="Whether the pre-run check finds nothing to stop it")
+    problems: List[str]
+    warnings: List[str] = []
+    steps: List[SummaryStep]
+    endpoints: List[str]
+    tags: List[str]
+    run: Optional[SummaryRun] = Field(None, description="The run asked for with instance_id, or else the latest")
+    modified: Optional[datetime] = None
+    modified_by: Optional[str] = None
+    links: Dict[str, str] = Field(..., description="editor, operations and history: AutoApp's pages for the job")
+
+
+def _step_line(step: JobStep) -> str:
+    """Where a step takes files from and puts them: its file locations in order, by endpoint or path."""
+    try:
+        handler_cls = get_handler(step.step_type.HandlerClass)
+    except ValueError:
+        return ""
+    stored = {p.ParamName: p.ParamValue for p in step.parameters}
+    places = [stored.get(name + ENDPOINT_SUFFIX) or stored.get(name) for name in handler_cls.path_params()]
+    return "  →  ".join(p for p in places if p)
+
+
+@router.get("/{job_key}/summary", response_model=JobSummaryForHost)
+def job_summary(job_key: str, request: Request,
+                instance_id: Optional[str] = Query(None, description="One run to describe, by the scheduler's instance ID"),
+                scheduler: Optional[str] = Query(None, description="With wla_job: the scheduler that runs the job"),
+                wla_job: Optional[str] = Query(None, description="The scheduler's job, whose parameters it runs with"),
+                db: Session = Depends(get_db)):
+    """
+    A job described for a scheduler to show in its own interface: whether it would
+    run, its steps in a line each, the endpoints and tags, a run, and links to
+    AutoApp's pages. A small page showing the same is ui/summary.html. See docs/INTEGRATION.md.
+    """
+    job = db.query(Job).filter(Job.JobKey == job_key).first()
+    if not job:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"No job with JobKey '{job_key}' exists.")
+    environment, warnings = wla_environment(db, scheduler, wla_job)
+    problems = job_problems(db, job, environment)
+    base = str(request.base_url).rstrip("/") + "/ui/"
+
+    def address(page: str, **params) -> str:
+        return base + page + "?" + urlencode(params)
+
+    steps = sorted(job.steps, key=lambda s: (s.StepOrder, s.id))
+    endpoints = sorted({p.ParamValue for s in steps for p in s.parameters
+                        if p.ParamName.endswith(ENDPOINT_SUFFIX) and p.ParamValue}, key=str.lower)
+
+    runs = db.query(JobRun).filter(JobRun.JobKey == job.JobKey)
+    if instance_id:
+        runs = runs.filter(JobRun.SchedulerInstanceID == instance_id)
+    run = runs.order_by(JobRun.StartedDateTime.desc(), JobRun.id.desc()).first()
+    run_out = None
+    if run:
+        total, failed = (db.query(func.count(Operation.id), func.sum(case((Operation.OpStatus == "FAILED", 1), else_=0)))
+                         .filter(Operation.JobRun_id == run.id).one())
+        run_out = SummaryRun(
+            run_id=run.RunID, instance_id=run.SchedulerInstanceID, run_number=run.RunNumber,
+            scheduler=run.SchedulerName, business_date=run.BusinessDate, status=run.Status,
+            started=run.StartedDateTime, ended=run.EndedDateTime, error=run.ErrorMessage,
+            operations=total or 0, failed_operations=int(failed or 0),
+            links={"log": address("log.html", run=run.RunID),
+                   "operations": address("operations.html", job_key=job.JobKey, instance_id=run.SchedulerInstanceID)},
+        )
+
+    editor = {"key": job.JobKey}
+    if scheduler and wla_job:
+        editor.update(scheduler=scheduler, wla_job=wla_job)
+    return JobSummaryForHost(
+        job_key=job.JobKey, description=job.Description, active=bool(job.IsActive), ready=not problems,
+        problems=problems, warnings=warnings,
+        steps=[SummaryStep(order=position, title=s.Title, step_type=s.step_type.TypeName, active=bool(s.IsActive),
+                           line=_step_line(s)) for position, s in enumerate(steps, start=1)],
+        endpoints=endpoints, tags=tag_store.paths_on(job), run=run_out,
+        modified=job.ModifiedDateTime or job.CreatedDateTime, modified_by=job.ModifiedBy or job.CreatedBy,
+        links={"editor": address("job.html", **editor), "operations": address("operations.html", job_key=job.JobKey),
+               "history": address("history.html", job_key=job.JobKey)},
+    )

@@ -6,6 +6,12 @@ Notable structural, schema and design changes to AutoApp, newest first. Line-by-
 
 ## 2026-10-15
 
+### An AutoApp job shown in the WLA's own screens
+
+- **Added:** `GET /api/v1/jobs/{key}/summary`: a job described for a WLA to show: whether it would run and why not, its steps in a line each, its endpoints and tags, its latest run (or the one `instance_id=` names) and links to AutoApp's pages. It takes `scheduler=` and `wla_job=`.
+- **Added:** `ui/summary.html`, the same as a small card, for a WLA that shows a page in a panel.
+- **Added:** the Stand-in Scheduler's "In AutoApp" panel: the summary, asked by its server as a WLA plug-in would, with the last run's log a click away.
+
 ### The Stand-in Scheduler, and AutoApp reading a WLA job's parameters
 
 - **Added:** [demo/scheduler_standin](../demo/scheduler_standin/README.md), a small WLA of its own, separate from AutoApp. It has job definitions with parameters, runs AutoApp jobs by starting the runner as an OS job, opens AutoApp's job editor and Operations Log embedded, and has an API.

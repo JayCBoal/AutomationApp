@@ -5,6 +5,7 @@ A deliberately small workload automation product (WLA), for trying AutoApp's sch
 - **Job definitions with parameters.** It runs an AutoApp job by starting AutoApp's runner as an OS job. The job's parameters go into the environment, and the names of the secret ones go in `AUTOAPP_MASK_ENV`, so the job log masks their values.
 - **Edit in AutoApp.** Opens AutoApp's job editor embedded, for the AutoApp job it runs (or a new one named after it), and listens for the editor's messages. When AutoApp saves a new job, the stand-in learns its key.
 - **Its parameters, as AutoApp sees them.** AutoApp reads them through the stand-in's API, using its connector for the `STANDIN` technology, and shows them in the editor as "From the scheduler".
+- **In AutoApp.** The job page shows AutoApp's summary of the AutoApp job: whether it would run, its steps, its last run. The stand-in's server asks AutoApp's API for it, as a WLA plug-in would.
 - **Submit and Runs.** Runs a job now, then shows each run's output and exit code, with **Operations in AutoApp** for the files that run handled.
 
 ## Running it

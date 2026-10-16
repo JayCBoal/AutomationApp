@@ -396,6 +396,8 @@ FastAPI application in `autoapp/app/`. The interactive description of every rout
 | `POST /api/v1/launches`, `GET /api/v1/launches/{id}` | Run a job now: the server starts the real runner as a separate process, as a scheduler would, and says when it has finished. Built; tested over HTTP |
 | `POST /api/v1/applications`, `/entities`, `/sites` | Register an application, entity or site. Built; tested over HTTP |
 | `GET /api/v1/jobs/{job_key}/check` | Built; tested over HTTP |
+| `GET /api/v1/jobs/{job_key}/summary` | A job described for a scheduler to show in its own interface. Built; tested over HTTP |
+| `GET /api/v1/schedulers/{name}/jobs/{wla_job}` | A WLA job's parameters, read through its connector. Built; tested over HTTP |
 | `GET /ui/...` and `/` | The web interface's files; `/` redirects to it |
 
 **Planned:** authentication, CRUD routes for the web interface.

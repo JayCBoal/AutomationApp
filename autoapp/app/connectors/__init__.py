@@ -57,8 +57,9 @@ class Connector:
 
 
 def _connectors():
+    from app.connectors.runmyjobs import RunMyJobsConnector
     from app.connectors.standin import StandinConnector
-    return {c.TECHNOLOGY: c for c in (StandinConnector,)}
+    return {c.TECHNOLOGY: c for c in (StandinConnector, RunMyJobsConnector)}
 
 
 def connector_for(scheduler) -> Connector:

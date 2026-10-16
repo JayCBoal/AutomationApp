@@ -35,6 +35,7 @@ Each address is relative to the AutoApp server, e.g. `https://autoapp.example/ui
 | `ui/operations.html?job_key=<JobKey>&instance_id=<ID>` | The Operations Log: every file one run of the job handled, with each file's trace. Either criterion can be left out. Any other search box can be given the same way, e.g. `dest_endpoint=` or `source_filename=`. |
 | `ui/history.html?job_key=<JobKey>` | Job History for the job: every run, with links to each run's log and files. `instance_id=` narrows it to one run. |
 | `ui/log.html?run=<RunID>` | One run's job log. |
+| `ui/log.html?job_key=<JobKey>&instance_id=<ID>` | The same, found by the WLA's own instance ID, for a WLA that does not know AutoApp's run ID. If the instance ran more than once, the latest run. |
 | `ui/summary.html?key=<JobKey>` | The job in brief, as a card: whether it would run, its steps in a line each, its endpoints and tags, its last run, and links to its pages. For a WLA that can show a web page in a panel of its own job screen. Takes `instance_id=` for one run, and `scheduler=` and `wla_job=` as the job editor does. |
 | `ui/run.html?key=<JobKey>` | The Run Job page, ready to run the job. Mainly for trying jobs out without a WLA. |
 
@@ -101,7 +102,8 @@ AutoApp reads from a WLA through that WLA's own API, with a **connector** for it
 | Technology | Connector |
 | :--- | :--- |
 | `STANDIN` | The Stand-in Scheduler, [demo/scheduler_standin](../demo/scheduler_standin/README.md) |
-| `RUNMYJOBS`, `ACTIVEBATCH`, `CONTROL_M`, `TIDAL` | Not yet. Each needs its API's documentation, and a system to try it against. |
+| `RUNMYJOBS` | A draft: reads a job definition's parameters through the Inbound REST extension, by its business key (`wla_job=GLOBAL.AUTOAPP_BillingExport`), with the scheduler's `ApiToken` as `X-API-KEY`. Written to Redwood's published specification; not yet tried against RunMyJobs. See [integrations/runmyjobs](../integrations/runmyjobs/README.md). |
+| `ACTIVEBATCH`, `CONTROL_M`, `TIDAL` | Not yet. Each needs its API's documentation, and a system to try it against. |
 
 ## 5. The Stand-in Scheduler
 

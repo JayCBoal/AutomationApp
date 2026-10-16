@@ -6,6 +6,16 @@ Notable structural, schema and design changes to AutoApp, newest first. Line-by-
 
 ## 2026-10-15
 
+### A RunMyJobs draft
+
+- **Added:** [integrations/runmyjobs](../integrations/runmyjobs/README.md), from RunMyJobs' public documentation and untried:
+  - a BASH job definition that runs the runner with the job's parameters in its environment;
+  - an Extension Point adding an AutoApp tab to AutoApp job definitions, holding AutoApp's editor and passing its messages on to RunMyJobs;
+  - an Extension Point opening AutoApp's files and log for a run.
+- **Added:** the `RUNMYJOBS` connector, reading a job definition's parameters through the Inbound REST extension, written to Redwood's published specification and tested against a stand-in of it.
+- **Added:** `log.html?job_key=...&instance_id=...`, a run's log found by the scheduler's own instance ID.
+- **Changed:** [WLA_RESEARCH.md](WLA_RESEARCH.md) with what the RunMyJobs 2025.4 documentation and the Inbound REST specification say.
+
 ### An AutoApp job shown in the WLA's own screens
 
 - **Added:** `GET /api/v1/jobs/{key}/summary`: a job described for a WLA to show: whether it would run and why not, its steps in a line each, its endpoints and tags, its latest run (or the one `instance_id=` names) and links to AutoApp's pages. It takes `scheduler=` and `wla_job=`.

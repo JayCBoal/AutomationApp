@@ -132,13 +132,13 @@ def test_the_connector_says_what_went_wrong(live_api, db, registered, wla_job):
 
 
 def test_a_technology_without_a_connector_says_so(live_api, db):
-    db.add(Scheduler(Name="RMJ_PROD", Technology="RUNMYJOBS", ApiUrl="https://rmj.example"))
+    db.add(Scheduler(Name="TIDAL_PROD", Technology="TIDAL", ApiUrl="https://tidal.example"))
     db.commit()
 
-    status, answer = call("GET", f"{live_api}/api/v1/schedulers/RMJ_PROD/jobs/X")
+    status, answer = call("GET", f"{live_api}/api/v1/schedulers/TIDAL_PROD/jobs/X")
 
     assert status == 502
-    assert "AutoApp cannot read RUNMYJOBS schedulers yet. It can read: STANDIN." in answer["detail"]
+    assert "AutoApp cannot read TIDAL schedulers yet. It can read: RUNMYJOBS, STANDIN." in answer["detail"]
 
 
 def test_the_pre_run_check_uses_the_wla_jobs_parameters(live_api, registered, wla_job, regional):

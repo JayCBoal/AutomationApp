@@ -172,6 +172,10 @@ def test_a_runs_log_and_the_jobs_history(page, host, world, run_runner, load_spo
     frame.locator("#job-log").wait_for()
     assert "completed successfully" in frame.locator("#job-log").inner_text()
 
+    frame, _ = host("/ui/log.html?job_key=DEV-COLLECT&instance_id=WLA-882&embed=1")
+    frame.locator("#job-log").wait_for()
+    assert "instance WLA-882" in frame.locator(".run-panel").inner_text()
+
     frame, _ = host("/ui/history.html?job_key=DEV-COLLECT&embed=1")
     frame.locator("a.run-log").first.wait_for()
     assert frame.locator(".embed-bar").count() == 1

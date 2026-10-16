@@ -1,12 +1,12 @@
 # What real WLAs allow: research from public documentation
 
-Groundwork for connecting AutoApp to a real workload automation product, gathered on 2026-10-15 from public documentation only. Nothing here has been tried against a real system. Each claim says where it comes from, and what still needs confirming on a dev tenant is listed at the end of each section.
+Groundwork for connecting AutoApp to a real workload automation product, gathered on 2026-10-15 from public documentation only. The RunMyJobs draft built on it is in [integrations/runmyjobs](../integrations/runmyjobs/README.md). Nothing here has been tried against a real system. Each claim says where it comes from, and what still needs confirming on a dev tenant is listed at the end of each section.
 
 How AutoApp's side works is in [INTEGRATION.md](INTEGRATION.md); the plan is decision 7 in [TO-DO.md](TO-DO.md).
 
 ## RunMyJobs
 
-Sources: the RunMyJobs 2024.1 documentation pages *Extending Redwood Server Functionality with Extension Points* and *Extending Edit Pages with ObjectPageExtensionPoint* (documentation.runmyjobs.cloud), and Redwood's *Inbound REST Extension* pages (documentation.redwood.com), the latter seen only as search excerpts. 2024.1 is past end of maintenance; newer versions may differ.
+Sources: the RunMyJobs 2024.1 and 2025.4 documentation (documentation.runmyjobs.cloud): *Extending Redwood Server Functionality with Extension Points*, *Creating Extension Points*, *Extending Edit Pages with ObjectPageExtensionPoint*, *Built-in Inbound REST Interface*, *Using the BASH Definition Type* and *Platform Agent Definition Types*; and on the connectors site (documentation.redwood.com/extensions), *Inbound REST Extension* with its published Swagger specification, version 1.1.0.0.
 
 ### Extension Points
 
@@ -46,20 +46,41 @@ This is the closest match to "the WLA's job editor opens AutoApp's Job Detail pa
 2. **Persist as a safety net.** The Persist call could ask AutoApp's `GET /api/v1/jobs/<key>/summary` and warn, or refuse the save, when the AutoApp job does not exist or would not run.
 3. **The Operations Log from RunMyJobs.** A context-menu Extension Point on a process (a run) opens `operations.html?job_key=…&instance_id=<the process id>&embed=1` in a pop-up. The same works for the job log (`log.html`) and for `summary.html`.
 4. **Running the job.** An ordinary OS job definition (on a platform agent) runs `python3 -m engine.runner --job-key <AutoAppJobKey> --instance-id <process id> --scheduler <name> ...`. The job's parameters reach the runner as environment variables; that is from your experience of RunMyJobs, not from these pages.
-5. **AutoApp reading RunMyJobs (the connector).** The Inbound REST extension reads objects by business key, e.g. `GET .../rest/v1/JobDefinition/<name>`, with an API key (header `X-API-KEY`) or a bearer token. Its full schema is a Swagger file at `rest/swagger.yml` under the extension's path. The built-in REST interface takes HTTP Basic. A RunMyJobs connector would read a job definition's parameters from there.
+5. **AutoApp reading RunMyJobs (the connector).**
+   - **The Inbound REST extension** (Catalog package "REST Inbound", which depends on the API Key extension) serves `https://<server>/<context>/api-extension/External/REDWOOD/Redwood_RestService/rest/v1`.
+   - `GET <base>/JobDefinition/<partition>.<name>` returns the job definition as JSON. Authentication is by API key (header `X-API-KEY`), Basic, or OAuth bearer (scope `rmj:system:admin`).
+   - Per its published specification, the definition's `JobDefinitionParameters` each have `Name`, `DefaultExpression`, `Direction` (In, Out, InOut), `DataType`, `DisplayOrder` and `Password` ("treated as a password and masked").
+   - The **built-in REST interface** (`<context>/api-rest/object/JobDefinition/<partition>.<name>`, XML, Basic authentication only) is, on RunMyJobs SaaS, reachable only from within RunMyJobs.
+   - AutoApp's `RUNMYJOBS` connector is written to the extension's specification.
+6. **Running.** A BASH definition's parameters are its script's environment variables. The script also gets `JCS_JOB_ID`, and a non-zero exit puts the job into Error. Extra variables per Job Server come from its `EnvironmentVariables` parameter.
 
 ### To confirm on a RunMyJobs tenant
 
-- Whether the Inbound REST extension is installed or installable, its exact path, and what a `JobDefinition` read returns: are parameters and their default values included, and how are secret ones (credentials, passwords) shown?
+- That the Inbound REST extension is installed or installable, and that a real `JobDefinition` read matches its specification: whether `DefaultExpression` is the literal default value or an expression, and what a `Password` parameter shows.
 - Whether a *remote* Extension Point can be served by AutoApp itself, which would avoid RedwoodScript.
 - The CSP directive that allows an iframe of AutoApp in a tab.
 - How a job definition's own fields, such as a parameter holding the AutoApp job key, are read and changed through the shared session.
 - What the process id looks like, as the `--instance-id`, and whether restarts reuse it (`--run-number`).
-- That parameters really arrive as environment variables on a platform agent, and their exact names.
+- Parameters arriving as environment variables is documented for platform agents (BASH and others); confirm their exact names, case included.
 
 ## Control-M
 
-Sources: BMC's Control-M Automation API documentation (docs.bmc.com and documents.bmc.com), seen only as search excerpts, because the pages refuse automated reading; and general Control-M knowledge, marked as such.
+Sources:
+- BMC's Control-M Automation API documentation (docs.bmc.com and documents.bmc.com), seen only as search excerpts, because the pages refuse automated reading.
+- BMC's public sample repository, [controlm/automation-api-quickstart](https://github.com/controlm/automation-api-quickstart) on GitHub, read in full.
+- General Control-M knowledge, marked as such.
+
+### From BMC's own samples
+
+- **A job's variables** are a list of one-entry objects, on a folder (for all its jobs) as well as on a job:
+  ```json
+  "Variables": [ {"DestDataFile": "DESTINATION_FILE"}, {"SrcDataFile": "SOURCE_FILE"} ]
+  ```
+  (`101-running-file-transfer-and-database-query-job-flow`, and `saas-control-m/102-automate-code-deployment/ciEnvironmentJobs.json`, which is a definition as read back from Control-M.)
+- **Definitions** are JSON with each folder keyed by its name. A folder (`"Type": "Folder"`, with `ControlmServer`) holds its jobs keyed by job name (`"Type": "Job:Command"`, `"Job:Script"`, ...), and possibly sub-folders (`"Type": "SubFolder"`).
+- **Reading definitions back:** `GET <endpoint>/deploy/jobs?ctm=<server>&folder=<folder>` (`104-push-jobs-script-from-DEV-to-PROD/deployscript.sh`). The sample un-escapes the answer before saving it, which suggests the definitions may come back as JSON inside a JSON string.
+- **Authentication in the samples:** `POST <endpoint>/session/login` with `{"username": ..., "password": ...}` returns a token, then `Authorization: Bearer <token>`, then `POST /session/logout`. The endpoint is `https://<server>:8443/automation-api`, with a self-signed certificate out of the box.
+- **A run** is addressed as `<server>:<order number>`: `GET /run/job/<server>:<orderno>/status`, `/log` and `/output` (`201-call-rest-api-using-curl`).
 
 - **Automation API:** a REST API, documented per version, with its full description (Swagger) at `<endpoint>/automation-api` on each installation.
   - **Authentication:** an API token in an `x-api-key` header (recommended since 9.0.21), or a session token from `POST /session/login`, valid for 30 minutes, sent as `Authorization: Bearer`. The API ships with a self-signed certificate.
@@ -71,9 +92,26 @@ Sources: BMC's Control-M Automation API documentation (docs.bmc.com and document
   - Job variables are set in the job's environment.
 - **The job editor:** nothing found yet on extending Control-M's web interface's job editor with an external page. Control-M's *Application Integrator* defines custom job types, and might be the way to an "AutoApp" job type. This needs your experience with Control-M, or BMC's documentation read in a browser.
 
+### What a Control-M connector would do
+
+Given a WLA job named `<server>:<folder>/<job>`:
+1. Log in, or use an API token (`x-api-key`).
+2. `GET /deploy/jobs?ctm=<server>&folder=<folder>` and find the job in the folder, looking in sub-folders too.
+3. Merge the folder's `Variables` with the job's own, the job's winning.
+
+AutoApp's run would be started by a command job such as:
+
+```
+cd $AUTOAPP_HOME/autoapp && python3 -m engine.runner --job-key %%AUTOAPP_JOB_KEY \
+    --instance-id %%ORDERID --run-number %%RUNCOUNT --scheduler CTM_PROD --business-date %%$ODATE
+```
+
+The `%%` variables are from general Control-M knowledge and are to be confirmed. That is enough to write the connector, tested against a stand-in shaped like BMC's samples, whenever it is wanted.
+
 ### To confirm on Control-M
 
-- The exact REST path and query for one job's definition, and the shape of `Variables` in the JSON.
+- Whether `/deploy/jobs` takes a job name as well as a folder, and whether its answer is JSON or JSON inside a string.
+- Whether a job's variables reach a script or command job's environment, or must be passed on its command line as `%%NAME`.
 - Whether Control-M's web interface can open an external page from a job, or from a job type made with Application Integrator.
 - The order date and run variables above.
 

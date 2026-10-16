@@ -159,13 +159,26 @@ function runPage() {
 // ---------- A run's log page ----------
 
 function runLogPage() {
-    const runId = new URLSearchParams(location.search).get("run") || "";
+    const address = new URLSearchParams(location.search);
+    let runId = address.get("run") || "";
     return {
         ...followRun(),
         runId,
         error: "",
 
-        init() {
+        async init() {
+            // A scheduler knows the run by its own instance ID: log.html?job_key=...&instance_id=...
+            if (!runId && address.get("job_key") && address.get("instance_id")) {
+                try {
+                    const runs = await AutoApp.get("/runs", { job_key: address.get("job_key"), instance_id: address.get("instance_id") });
+                    const exact = runs.filter(run => run.job_key === address.get("job_key"));
+                    if (exact.length) runId = this.runId = exact[0].run_id;        // newest first: the latest restart
+                    else { this.runMissing = true; return; }
+                } catch (e) {
+                    this.error = e.message;
+                    return;
+                }
+            }
             if (!runId) { this.error = "No run was given. Open a run's log from Job History."; return; }
             // A finished run's log opens at the top; one still going is followed, at its end, until it ends
             this.following = false;

@@ -17,8 +17,8 @@
 
     <!-- Selector and the page's buttons. The page arrives locked; Edit unlocks it. -->
     <div class="panel selector">
-        <label for="job-selector">Job</label>
-        <input id="job-selector" type="text" list="job-keys" x-model="chosen" @change="choose()"
+        <label for="job-selector" x-show="!embedded">Job</label>
+        <input id="job-selector" type="text" list="job-keys" x-model="chosen" @change="choose()" x-show="!embedded"
                placeholder="Type to find a job" autocomplete="off" :disabled="editing">
         <datalist id="job-keys">
             <template x-for="jobKey in allKeys" :key="jobKey"><option :value="jobKey"></option></template>
@@ -31,7 +31,7 @@
             </template>
         </datalist>
         <span class="spacer"></span>
-        <a class="button secondary" href="job.html?new" x-show="!editing">New job</a>
+        <a class="button secondary" href="job.html?new" x-show="!editing && !embedded">New job</a>
         <a class="button secondary" id="run-job-button" x-show="job && !editing"
            :href="job ? 'run.html?' + new URLSearchParams({ key: job.job_key }) : '#'">Run</a>
         <button type="button" class="secondary" id="edit-button" x-show="form && !editing" @click="edit()">Edit</button>

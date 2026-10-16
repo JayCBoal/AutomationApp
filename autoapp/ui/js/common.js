@@ -8,6 +8,7 @@
  *   - registering something new at the moment it is first needed (createInPlace)
  *   - what every search page does (searchPage)
  *   - the Tags panel of the detail pages and the job editor (tagPanel, tagEditing, at the end)
+ *   - embedded mode, for a page opened from inside a scheduler (see docs/INTEGRATION.md)
  *
  * The pages never read the database. Everything they show comes from the API.
  */
@@ -32,6 +33,60 @@ const AutoApp = (() => {
         { group: "right", name: "Settings", href: "settings.html", about: "System-wide settings, such as the order variables are looked for in" },
     ];
 
+    // ---------- Embedded mode ----------
+    /*
+     * A page opened with embed=1 in its address is shown without AutoApp's header and
+     * navigation, for a scheduler (a WLA) to show inside its own interface. It stays
+     * embedded as it is used: links to other AutoApp pages keep embed=1. It tells the
+     * window that opened it what happened (tellHost). host=<origin> limits which
+     * origin may receive those messages; theme=light or theme=dark matches the host's look.
+     * The addresses and messages are documented in docs/INTEGRATION.md.
+     */
+    const ADDRESS = new URLSearchParams(location.search);
+    const EMBEDDED = ADDRESS.has("embed") && ADDRESS.get("embed") !== "0";
+    const HOST_ORIGIN = ADDRESS.get("host") || "*";
+    const HOST_THEME = ["light", "dark"].includes(ADDRESS.get("theme")) ? ADDRESS.get("theme") : null;
+
+    /** An AutoApp page's address, kept embedded if this page is. Other addresses are left alone. */
+    function link(url) {
+        if (!EMBEDDED) return url;
+        const target = new URL(url, location.href);
+        if (target.origin !== location.origin || !target.pathname.includes("/ui/")) return url;
+        target.searchParams.set("embed", "1");
+        if (ADDRESS.has("host")) target.searchParams.set("host", ADDRESS.get("host"));
+        if (HOST_THEME) target.searchParams.set("theme", HOST_THEME);
+        return target.pathname + target.search + target.hash;
+    }
+
+    /** Goes to another AutoApp page, staying embedded if this page is. */
+    function go(url) { location.href = link(url); }
+
+    /**
+     * Tells the window that opened this page what happened, if it is embedded:
+     * { source: "AutoApp", event: "saved", page: "job", ... }. An iframe's parent,
+     * or the window that opened a pop-up.
+     */
+    function tellHost(event, details = {}) {
+        if (!EMBEDDED) return;
+        const host = window.parent !== window ? window.parent : window.opener;
+        if (!host) return;
+        const page = location.pathname.split("/").pop().replace(/\.html$/, "");
+        host.postMessage({ source: "AutoApp", event, page, ...details }, HOST_ORIGIN);
+    }
+
+    if (EMBEDDED) {
+        // Addresses the page puts in the address bar stay embedded, so a reload stays embedded too
+        const replace = history.replaceState.bind(history);
+        history.replaceState = (state, unused, url) => replace(state, unused, url === undefined ? url : link(url));
+        // So do the links the page shows
+        document.addEventListener("click", event => {
+            const anchor = event.target.closest && event.target.closest("a[href]");
+            if (anchor && !anchor.target && !anchor.getAttribute("href").startsWith("#")) {
+                anchor.setAttribute("href", link(anchor.getAttribute("href")));
+            }
+        }, true);
+    }
+
     // ---------- Theme ----------
 
     function currentTheme() {
@@ -49,7 +104,7 @@ const AutoApp = (() => {
     (function applySavedTheme() {
         let saved = null;
         try { saved = localStorage.getItem(THEME_KEY); } catch (e) { /* ignore */ }
-        document.documentElement.dataset.theme = saved === "light" ? "light" : "dark";
+        document.documentElement.dataset.theme = (HOST_THEME || saved) === "light" ? "light" : "dark";
     })();
 
     // ---------- Header and navigation ----------
@@ -63,6 +118,20 @@ const AutoApp = (() => {
         if (!holder) return;
         // A page shared by several kinds sets window.AUTOAPP_PAGE_TITLE before this runs
         const title = window.AUTOAPP_PAGE_TITLE || holder.dataset.title || "";
+
+        if (EMBEDDED) {
+            // Inside a scheduler: a thin bar instead of the header and navigation
+            document.body.classList.add("embedded");
+            const full = new URL(location.href);
+            for (const name of ["embed", "host", "theme"]) full.searchParams.delete(name);
+            holder.innerHTML = `
+                <div class="embed-bar">
+                    <span class="product">AutoApp</span>
+                    <span class="page-title">${escapeHtml(title)}</span>
+                    <a id="open-in-autoapp" href="${escapeHtml(full.pathname + full.search)}" target="_blank" rel="noopener">Open in AutoApp</a>
+                </div>`;
+            return;
+        }
         // A detail page marks its search page as the current one: data-nav="jobs.html".
         // {kind} stands for the page's ?kind=, for the pages shared by several kinds.
         const kind = new URLSearchParams(location.search).get("kind") || "";
@@ -657,6 +726,6 @@ const AutoApp = (() => {
         };
     }
 
-    return { PAGES, get, send, createInPlace, ensureLookups, parseUtc, formatTime, localInputToUtc, timeZoneName, formatSize, toCsv, download, searchPage,
+    return { PAGES, EMBEDDED, link, go, tellHost, get, send, createInPlace, ensureLookups, parseUtc, formatTime, localInputToUtc, timeZoneName, formatSize, toCsv, download, searchPage,
              showPath, normalPath, fillTagPanels, tagEditing };
 })();

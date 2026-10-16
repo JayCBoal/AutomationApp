@@ -137,6 +137,10 @@ What to look at afterwards:
 
 If the server was not running, the runs' records are waiting in `autoapp/spool/`. Start the server and run `python3 -m engine.spool_delivery`, or load them straight into the database with `env -u AUTOAPP_API_URL python3 -m engine.spool_delivery`.
 
+## Using AutoApp from a scheduler
+
+[docs/INTEGRATION.md](docs/INTEGRATION.md) describes how a workload automation product runs AutoApp jobs, the AutoApp pages it can open inside its own interface (add `embed=1` to the address), and the messages those pages send it.
+
 ## Layout
 
 ```

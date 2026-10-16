@@ -6,6 +6,13 @@ Notable structural, schema and design changes to AutoApp, newest first. Line-by-
 
 ## 2026-10-15
 
+### Pages a scheduler can show inside its own interface
+
+- **Added:** embedded mode. With `embed=1` in its address, any page shows a thin bar ("Open in AutoApp") instead of the header and navigation, and its links stay embedded. `theme=light|dark` matches the host's look, and `host=<origin>` limits who receives its messages.
+- **Added:** the job editor's messages to the window that opened it: `ready`, `saved`, `cancelled` and `deleted`, with the job key and, on a save, whether the job would run and what changed. Embedded, it shows only its own job, and a delete or a cancelled new job stays in place for the WLA to decide what comes next.
+- **Added:** `job.html?new&key=...`, a new job with the key a WLA suggests.
+- **Added:** [INTEGRATION.md](INTEGRATION.md): the runner's command line for a WLA, the addresses a WLA plug-in may rely on, embedded mode and the messages. `tests/test_ui_embedded.py` opens each address in a stand-in host page.
+
 ### What a run knows about its scheduler
 
 - **Added:** the runner's `--business-date` (YYYY-MM-DD or YYYYMMDD), for schedulers that have one, such as Control-M's order date. Steps use it as `${BUSINESS_DATE:yyyyMMdd}`; without it, that is the date the run started. It is kept with the run (`JobRuns.BusinessDate`) and shown in Job History. The Run Job page can give one.

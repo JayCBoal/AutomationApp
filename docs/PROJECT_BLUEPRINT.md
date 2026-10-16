@@ -469,6 +469,7 @@ Nothing in this section is built in the rewrite. The 2024 prototype tracked exte
 - **Audit Log** page: every change to a definition or a setting, newest first, saying in words what changed, with a link to the thing changed if it still exists.
 - **Settings** page: each system-wide setting with what it means, drawn from the declarations in `engine/settings.py`. The variable precedence is a list put in order with arrows. Each setting is saved on its own, can be undone, or put back to its default.
 - **Main Index** page, linking to every page.
+- **Embedded mode:** any page opened with `embed=1` in its address shows a thin bar instead of the header and navigation, for a scheduler to show inside its own interface. Its links stay embedded; `theme=` matches the host's look. The job editor then shows only its own job, and tells the window that opened it when it is ready, has saved (with the job key, whether it would run, and what changed), was cancelled or deleted. `job.html?new&key=...` starts a new job with a suggested key. The addresses and messages a WLA plug-in may rely on are in [INTEGRATION.md](INTEGRATION.md), and `tests/test_ui_embedded.py` keeps them working.
 
 **Planned**
 

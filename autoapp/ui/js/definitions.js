@@ -312,7 +312,7 @@ function definitionDetail() {
 
         choose() {
             const names = [...document.querySelectorAll(`#lookup-${KIND} option`)].map(o => o.value);
-            if (names.includes(this.chosen) && this.chosen !== this.name) location.href = detailLink(KIND, this.chosen);
+            if (names.includes(this.chosen) && this.chosen !== this.name) AutoApp.go(detailLink(KIND, this.chosen));
         },
 
         lookupList(field) { return field.lookup ? "lookup-" + field.lookup : (field.name === "name" ? null : null); },
@@ -333,7 +333,7 @@ function definitionDetail() {
 
         cancel() {
             if (this.changed && !confirm("Discard the changes you have made?")) return;
-            if (this.isNew) { location.href = "search.html?" + new URLSearchParams({ kind: KIND }); return; }
+            if (this.isNew) { AutoApp.go("search.html?" + new URLSearchParams({ kind: KIND })); return; }
             this.editing = false;
             this.error = "";
             this.show(this.item);
@@ -384,7 +384,7 @@ function definitionDetail() {
             try {
                 await AutoApp.send("DELETE", `/${KIND}/${encodeURI(keyOf(this.item))}`);
                 this.saved = JSON.stringify(this.payload());
-                location.href = "search.html?" + new URLSearchParams({ kind: KIND });
+                AutoApp.go("search.html?" + new URLSearchParams({ kind: KIND }));
             } catch (e) {
                 this.error = e.message;
                 this.busy = false;

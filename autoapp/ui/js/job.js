@@ -38,6 +38,7 @@ function jobDetail() {
         ...AutoApp.tagEditing(ownVariables),
         key: address.get("key") || "",
         isNew: address.has("new"),
+        embedded: AutoApp.EMBEDDED,     // opened from inside a scheduler: one job, no way to wander off to others
         job: null,              // the job as last loaded or saved; null for one not yet saved
         form: null,             // what is on screen, edited or not
         saved: "",              // the form's contents when last loaded or saved, to tell whether anything changed
@@ -66,12 +67,19 @@ function jobDetail() {
                 return;
             }
             if (this.isNew) {
-                this.show({ job_key: "", description: "", active: true, steps: [], variables: [], tags: [] });
+                // A scheduler creating a job can suggest its key: job.html?new&key=...
+                this.show({ job_key: this.key, description: "", active: true, steps: [], variables: [], tags: [] });
+                // Compared with a blank job, so one whose key was suggested can be saved as it is
+                this.saved = JSON.stringify({ ...this.payload(), job_key: "" });
+                this.key = "";
                 this.editing = true;
             } else if (this.key) {
                 await this.load();
                 if (this.job && address.has("edit")) this.editing = true;
             }
+            AutoApp.tellHost("ready", this.job
+                ? { job_key: this.job.job_key, exists: true, valid: Boolean(this.check && this.check.valid) }
+                : { job_key: this.form ? this.form.job_key : this.key, exists: false });
         },
 
         async load() {
@@ -119,7 +127,7 @@ function jobDetail() {
         /** The selector: typing narrows the list; choosing a job opens it. */
         choose() {
             if (this.allKeys.includes(this.chosen) && this.chosen !== this.key) {
-                location.href = "job.html?" + new URLSearchParams({ key: this.chosen });
+                AutoApp.go("job.html?" + new URLSearchParams({ key: this.chosen }));
             }
         },
 
@@ -268,7 +276,14 @@ function jobDetail() {
 
         cancel() {
             if (this.changed && !confirm("Discard the changes you have made?")) return;
-            if (!this.job) { location.href = "jobs.html"; return; }       // a new job, never saved
+            if (!this.job) {                                            // a new job, never saved
+                if (!this.embedded) { AutoApp.go("jobs.html"); return; }
+                // Inside a scheduler, the scheduler decides what happens next; the page starts again
+                AutoApp.tellHost("cancelled", { job_key: this.form.job_key });
+                this.show({ job_key: new URLSearchParams(location.search).get("key") || "", description: "",
+                            active: true, steps: [], variables: [], tags: [] });
+                return;
+            }
             this.editing = false;
             this.error = "";
             this.show(this.job);
@@ -370,9 +385,14 @@ function jobDetail() {
             this.error = "";
             this.notice = "";
             try {
+                const previousKey = this.job ? this.job.job_key : null;
                 const result = this.job
                     ? await AutoApp.send("PUT", "/jobs/" + encodeURIComponent(this.job.job_key), payload)
                     : await AutoApp.send("POST", "/jobs", payload);
+                AutoApp.tellHost("saved", {
+                    job_key: result.job.job_key, previous_key: previousKey !== result.job.job_key ? previousKey : null,
+                    created: previousKey === null, valid: result.valid, problems: result.problems, changes: result.changes,
+                });
                 this.job = result.job;
                 this.check = { valid: result.valid, problems: result.problems };
                 // The save's own verdict stands until a fresh preview arrives; any older one is discarded
@@ -400,7 +420,15 @@ function jobDetail() {
             try {
                 await AutoApp.send("DELETE", "/jobs/" + encodeURIComponent(this.job.job_key));
                 this.saved = JSON.stringify(this.payload());       // nothing left to lose
-                location.href = "jobs.html";
+                if (this.embedded) {
+                    // The scheduler decides what happens next; there is no job left to show
+                    AutoApp.tellHost("deleted", { job_key: this.job.job_key });
+                    this.notice = `Deleted job '${this.job.job_key}'.`;
+                    this.job = this.form = null;
+                    this.editing = this.busy = false;
+                    return;
+                }
+                AutoApp.go("jobs.html");
             } catch (e) {
                 this.error = e.message;
                 this.busy = false;

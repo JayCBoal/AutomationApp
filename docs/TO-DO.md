@@ -34,7 +34,7 @@ Updated 2026-10-13. The order under "Work queue" is a proposal; the items under 
    - **Picked up again (2026-10-15).** Redwood owns RunMyJobs, ActiveBatch and Tidal, so dev or demo tenants may be possible. RunMyJobs' extensibility is ExtensionPoints, plug-ins written in RedwoodScript; any work on one has to come from the public documentation.
    - **Plan, in order:**
      1. Run context. *Built 2026-10-15:* `--business-date` and `${BUSINESS_DATE:...}`, the environment as the lowest variable level and `${ENV:Name}`, and Scheduler as a master object.
-     2. An embedded mode for the pages a WLA opens (no AutoApp header or navigation; the page tells the WLA when it has saved), and the addresses a WLA plug-in may rely on, written down and tested: `job.html?key=...`, `job.html?new`, `operations.html?job_key=...&instance_id=...`.
+     2. An embedded mode for the pages a WLA opens, and the addresses a WLA plug-in may rely on, written down and tested. *Built 2026-10-15:* see [INTEGRATION.md](INTEGRATION.md).
      3. Pull: the editor, opened from a WLA job, reads that job's parameters from the scheduler through a connector, shows them read-only in its Variables panel ("from the scheduler", secrets masked), and the pre-run check uses them. At run time, parameters the WLA marks secret are masked in the job log.
      4. A scheduler stand-in: a separate small app with its own look, API and database, standing in for a WLA, with the first connector.
    - **Decided:** what the scheduler gives a run: the business date (optional, for Control-M), its job name, its instance ID, the restart count, and which scheduler it is (name and technology). The job's own variables come through the environment, as ActiveBatch, Control-M and RunMyJobs all set them there for an OS job; the runner does not need to tell them apart from the rest of the environment.
@@ -67,7 +67,7 @@ Every page of the web interface is built. See [UI_VISION.md](UI_VISION.md) for w
 
 ### Next: the scheduler integration
 
-2. **Scheduler integration.** Decision 7 holds the plan and the user's thoughts. Step 1 (run context) is built; next is the embedded mode and the documented addresses.
+2. **Scheduler integration.** Decision 7 holds the plan and the user's thoughts; [INTEGRATION.md](INTEGRATION.md) what a WLA plug-in can rely on. Steps 1 (run context) and 2 (embedded mode, documented addresses) are built; next is reading a WLA job's parameters (pull), which needs the scheduler stand-in to have something to read from.
 
 ### Then: breadth
 

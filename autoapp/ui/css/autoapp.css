@@ -350,3 +350,11 @@ table.tag-variables td:nth-child(2) { width: 35%; }
 .job-log .log-warn { color: var(--warning); }
 .job-log .log-debug { color: var(--muted); }
 .run-panel .steps-head .status { font-weight: 600; }
+
+/* ---------- Embedded in a scheduler's interface ---------- */
+.embed-bar { display: flex; align-items: center; gap: 12px; padding: 6px 16px; background: var(--header);
+             border-bottom: 1px solid var(--border); font-size: 13px; }
+.embed-bar .product { font-weight: 700; }
+.embed-bar .page-title { color: var(--muted); }
+.embed-bar #open-in-autoapp { margin-left: auto; }
+body.embedded main { padding-top: 12px; }

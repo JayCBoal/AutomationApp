@@ -10,8 +10,8 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.catalog import sync_catalog
 from app.database import get_db
 from app.routers import (
-    definitions, endpoints, history, jobs, launches, lookups, operations, registry, settings, step_types, telemetry,
-    variables
+    definitions, endpoints, history, jobs, launches, lookups, operations, registry, schedulers, settings, step_types,
+    telemetry, variables
 )
 from app.schema_check import out_of_date_message, schema_problems
 
@@ -82,6 +82,7 @@ app.include_router(registry.applications)
 app.include_router(registry.entities)
 app.include_router(registry.sites)
 app.include_router(registry.schedulers)
+app.include_router(schedulers.router)
 app.include_router(registry.tags)
 app.include_router(registry.tag_variables)
 for router in definitions.routers:

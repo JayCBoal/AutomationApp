@@ -204,6 +204,7 @@ class JobCheckResult(BaseModel):
     job_key: str
     valid: bool
     problems: List[str]
+    warnings: List[str] = Field(default_factory=list, description="Such as the scheduler's parameters not being readable")
 
 
 # --- Telemetry Schemas ---

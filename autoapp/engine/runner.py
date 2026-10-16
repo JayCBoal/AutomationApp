@@ -134,6 +134,10 @@ def main():
                         help="The date the run is for, where the scheduler has one (Control-M's order date): "
                              "YYYY-MM-DD or YYYYMMDD. Steps use it as ${BUSINESS_DATE:yyyyMMdd}; without it, "
                              "that is the date the run started.")
+    parser.add_argument("--mask-env", default=os.getenv("AUTOAPP_MASK_ENV", ""),
+                        help="Names of environment variables, separated by commas, whose values must never appear "
+                             "in the job log: the scheduler's secret job parameters (default: the AUTOAPP_MASK_ENV "
+                             "environment variable)")
     parser.add_argument("--run-id", type=uuid.UUID, default=None,
                         help="The ID to record the run under (default: a new one). AutoApp's own Run Job page "
                              "passes one, so it can follow the run; a scheduler leaves it out.")
@@ -146,8 +150,9 @@ def main():
 
     db: Session = SessionLocal()
     try:
-        # Values of secret variables must never reach the log
+        # Values of secret variables must never reach the log: AutoApp's own, and the scheduler's it names
         secrets = [value for (value,) in db.query(Variable.VarValue).filter(Variable.IsSecret.is_(True))]
+        secrets += [os.environ[name.strip()] for name in args.mask_env.split(",") if name.strip() in os.environ]
         job_log.configure(args.log_level, secrets=secrets)
         exit_code = run_job(db, args.job_key, args.instance_id, args.spool_dir, args.working_root,
                             run_number=args.run_number, scheduler=args.scheduler, api_url=args.api_url,

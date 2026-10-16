@@ -72,7 +72,9 @@ Jobs are deliberately **not** linked to an Application or Entity. A job may touc
 - A scheduler has a name, a technology (`RUNMYJOBS`, `ACTIVEBATCH`, `CONTROL_M`, `TIDAL`, `CRON`, `STANDIN`, `OTHER`), an API address, a description and an active flag. The credential AutoApp would use for its API is kept as a secret variable on it.
 - The sample data registers `AutoApp UI`, the name the Run Job page runs jobs under.
 
-**Planned:** a connector per technology, reading a WLA job's parameters through the scheduler's API (TO-DO decision 7).
+- **Connectors** (`app/connectors/`), one per technology, read from the scheduler through its own API, with its `ApiToken`. So far they read a WLA job's parameters, for the job editor and the pre-run check. The first is for the Stand-in Scheduler ([demo/scheduler_standin](../demo/scheduler_standin/README.md)); see [INTEGRATION.md](INTEGRATION.md).
+
+**Planned:** connectors for RunMyJobs, ActiveBatch, Control-M and Tidal (TO-DO decision 7).
 
 ### Tags
 

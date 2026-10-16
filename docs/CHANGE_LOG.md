@@ -6,6 +6,14 @@ Notable structural, schema and design changes to AutoApp, newest first. Line-by-
 
 ## 2026-10-15
 
+### The Stand-in Scheduler, and AutoApp reading a WLA job's parameters
+
+- **Added:** [demo/scheduler_standin](../demo/scheduler_standin/README.md), a small WLA of its own, separate from AutoApp. It has job definitions with parameters, runs AutoApp jobs by starting the runner as an OS job, opens AutoApp's job editor and Operations Log embedded, and has an API.
+- **Added:** connectors (`app/connectors/`), one per WLA technology, reading through the WLA's API; the first is for the stand-in (`STANDIN`). `GET /api/v1/schedulers/{name}/jobs/{wla_job}` gives a WLA job's parameters.
+- **Added:** the job editor, opened with `scheduler=...&wla_job=...`, shows that WLA job's parameters under Variables ("From the scheduler", secrets masked), and its preview and pre-run check use them. `GET /api/v1/jobs/{key}/check` takes the same, and gives warnings.
+- **Added:** the runner's `--mask-env` (or `AUTOAPP_MASK_ENV`): environment variables whose values are masked in the job log, for a WLA's secret parameters.
+- **Added to the sample data:** the scheduler `STANDIN` at `http://localhost:8100`, with its token as the secret variable `ApiToken`.
+
 ### Pages a scheduler can show inside its own interface
 
 - **Added:** embedded mode. With `embed=1` in its address, any page shows a thin bar ("Open in AutoApp") instead of the header and navigation, and its links stay embedded. `theme=light|dark` matches the host's look, and `host=<origin>` limits who receives its messages.

@@ -139,7 +139,9 @@ If the server was not running, the runs' records are waiting in `autoapp/spool/`
 
 ## Using AutoApp from a scheduler
 
-[docs/INTEGRATION.md](docs/INTEGRATION.md) describes how a workload automation product runs AutoApp jobs, the AutoApp pages it can open inside its own interface (add `embed=1` to the address), and the messages those pages send it.
+[docs/INTEGRATION.md](docs/INTEGRATION.md) describes how a workload automation product runs AutoApp jobs, the AutoApp pages it can open inside its own interface (add `embed=1` to the address), the messages those pages send it, and how AutoApp reads a WLA job's parameters.
+
+[demo/scheduler_standin](demo/scheduler_standin/README.md) is a small stand-in WLA that does all of this, for trying it without a real one: `python3 -m uvicorn standin.app:app --port 8100` from that folder, then `http://localhost:8100/`.
 
 ## Layout
 

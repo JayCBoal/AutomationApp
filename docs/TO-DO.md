@@ -35,8 +35,9 @@ Updated 2026-10-13. The order under "Work queue" is a proposal; the items under 
    - **Plan, in order:**
      1. Run context. *Built 2026-10-15:* `--business-date` and `${BUSINESS_DATE:...}`, the environment as the lowest variable level and `${ENV:Name}`, and Scheduler as a master object.
      2. An embedded mode for the pages a WLA opens, and the addresses a WLA plug-in may rely on, written down and tested. *Built 2026-10-15:* see [INTEGRATION.md](INTEGRATION.md).
-     3. Pull: the editor, opened from a WLA job, reads that job's parameters from the scheduler through a connector, shows them read-only in its Variables panel ("from the scheduler", secrets masked), and the pre-run check uses them. At run time, parameters the WLA marks secret are masked in the job log.
-     4. A scheduler stand-in: a separate small app with its own look, API and database, standing in for a WLA, with the first connector.
+     3. Pull: the editor, opened from a WLA job, reads that job's parameters from the scheduler through a connector, shows them read-only in its Variables panel ("from the scheduler", secrets masked), and the pre-run check uses them. At run time, parameters the WLA marks secret are masked in the job log. *Built 2026-10-15.*
+     4. A scheduler stand-in: a separate small app with its own look, API and database, standing in for a WLA, with the first connector. *Built 2026-10-15:* [demo/scheduler_standin](../demo/scheduler_standin/README.md).
+     5. Next: a connector for a real WLA, once there is one to try it against (a RunMyJobs, ActiveBatch or Tidal dev tenant), and a WLA plug-in (for RunMyJobs, an ExtensionPoint) that opens AutoApp's pages.
    - **Decided:** what the scheduler gives a run: the business date (optional, for Control-M), its job name, its instance ID, the restart count, and which scheduler it is (name and technology). The job's own variables come through the environment, as ActiveBatch, Control-M and RunMyJobs all set them there for an OS job; the runner does not need to tell them apart from the rest of the environment.
    - **Requirement:** AutoApp should gather everything the source WLA job has and be able to map all of it. Control-M must be order-date aware.
    - **Decided:** pull, not push. Reading the WLA job's parameters through the scheduler's API needs least from the WLA plug-in (only to open AutoApp's page with the job's identifier), and the connectors live in AutoApp, where they can be built and tested. The costs: AutoApp needs network access to each WLA, and holds a credential for each.
@@ -67,7 +68,7 @@ Every page of the web interface is built. See [UI_VISION.md](UI_VISION.md) for w
 
 ### Next: the scheduler integration
 
-2. **Scheduler integration.** Decision 7 holds the plan and the user's thoughts; [INTEGRATION.md](INTEGRATION.md) what a WLA plug-in can rely on. Steps 1 (run context) and 2 (embedded mode, documented addresses) are built; next is reading a WLA job's parameters (pull), which needs the scheduler stand-in to have something to read from.
+2. **Scheduler integration.** Decision 7 holds the plan and the user's thoughts; [INTEGRATION.md](INTEGRATION.md) what a WLA plug-in can rely on. Steps 1 to 4 are built: run context, embedded mode and the documented addresses, reading a WLA job's parameters, and the Stand-in Scheduler. Next is a real WLA, when one is available.
 
 ### Then: breadth
 

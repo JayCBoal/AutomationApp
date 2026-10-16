@@ -70,7 +70,8 @@ INSERT INTO MasterObjects (id, ObjectType) VALUES
 (16, 'TAG'),
 (17, 'TAG'),
 (18, 'TAG'),
-(19, 'SCHEDULER');
+(19, 'SCHEDULER'),
+(20, 'SCHEDULER');
 
 INSERT INTO Applications (MasterObject_id, Name, Abbr, Description) VALUES
 (1, 'LEGAL_APP',   'LGL', 'Legal case management system'),
@@ -86,8 +87,11 @@ INSERT INTO Sites (MasterObject_id, Entity_MasterObject_id, Name, Host, Port, Pr
 
 -- A scheduler is a workload automation product that runs AutoApp jobs. The web
 -- interface's Run Job page acts as one, under this name.
-INSERT INTO Schedulers (MasterObject_id, Name, Technology, Description) VALUES
-(19, 'AutoApp UI', 'OTHER', 'The Run Job page of the AutoApp web interface');
+-- STANDIN is the Stand-in Scheduler in demo/scheduler_standin, on port 8100; AutoApp reads its jobs'
+-- parameters through its API, with the token in its ApiToken variable (section 5).
+INSERT INTO Schedulers (MasterObject_id, Name, Technology, ApiUrl, Description) VALUES
+(19, 'AutoApp UI', 'OTHER',   NULL,                    'The Run Job page of the AutoApp web interface'),
+(20, 'STANDIN',    'STANDIN', 'http://localhost:8100', 'The Stand-in Scheduler (demo/scheduler_standin)');
 
 -- ----------------------------------------------------------------------------
 -- 3. Endpoints: the registered places files come from and go to.
@@ -198,7 +202,8 @@ INSERT INTO Variables (MasterObject_id, VarName, VarValue, Description) VALUES
 -- that use it name it as ${APP:BILLING_APP.SalesDbUrl}. For MariaDB it would be
 -- something like mysql+pymysql://user:password@localhost/autoapp_sales.
 INSERT INTO Variables (MasterObject_id, VarName, VarValue, IsSecret, Description) VALUES
-(2, 'SalesDbUrl',  'sqlite:////tmp/autoapp_sample/sales.db', 1, 'The billing application''s sales database');
+(2, 'SalesDbUrl',  'sqlite:////tmp/autoapp_sample/sales.db', 1, 'The billing application''s sales database'),
+(20, 'ApiToken',   'standin-dev-token',                      1, 'What the Stand-in Scheduler''s API wants (its STANDIN_TOKEN)');
 
 -- ----------------------------------------------------------------------------
 -- 6. Tags. A tag can sit under a parent; names need only be unique under one

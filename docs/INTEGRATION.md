@@ -11,7 +11,7 @@ The WLA runs AutoApp jobs as OS jobs, with this command:
 ```
 python3 -m engine.runner --job-key <JobKey> --instance-id <the WLA's ID for this run>
         [--run-number <restart count>] [--scheduler <its name in AutoApp>] [--business-date YYYY-MM-DD]
-        [--log-level DETAIL|SUMMARY|DEBUG|SILENT]
+        [--mask-env NAME,NAME,...] [--log-level DETAIL|SUMMARY|DEBUG|SILENT]
 ```
 
 - **Exit code:** `0` if every step succeeded, `1` if the job failed, `2` if the command line was wrong.
@@ -19,6 +19,7 @@ python3 -m engine.runner --job-key <JobKey> --instance-id <the WLA's ID for this
 - **The job's own variables:** whatever the WLA sets in the environment of the process it starts. A step's `${Name}` finds them when nothing in AutoApp defines that name, and `${ENV:Name}` names one directly.
 - **`--business-date`:** for a WLA that has one, such as Control-M's order date. Steps use it as `${BUSINESS_DATE:yyyyMMdd}`.
 - **`--scheduler`:** the name of a scheduler registered in AutoApp (Schedulers page), so one AutoApp can serve several WLAs.
+- **`--mask-env`**, or the environment variable `AUTOAPP_MASK_ENV`: the names of the job's secret parameters, separated by commas. Their values are replaced by `********` wherever they would appear in the job log. AutoApp cannot tell on its own which environment variables are secret.
 
 ## 2. Pages a WLA can open
 
@@ -30,6 +31,7 @@ Each address is relative to the AutoApp server, e.g. `https://autoapp.example/ui
 | `ui/job.html?key=<JobKey>&edit` | The same, already unlocked for editing. |
 | `ui/job.html?new` | The job editor, with a new, blank job. |
 | `ui/job.html?new&key=<JobKey>` | A new job, with the key the WLA suggests already filled in. |
+| `...&scheduler=<name>&wla_job=<the WLA's job>` | Added to any job editor address: the WLA job this AutoApp job is edited for. AutoApp reads that job's parameters from the WLA (section 3) and shows them in the Variables panel; its preview and "Would it run?" use them. |
 | `ui/operations.html?job_key=<JobKey>&instance_id=<ID>` | The Operations Log: every file one run of the job handled, with each file's trace. Either criterion can be left out. Any other search box can be given the same way, e.g. `dest_endpoint=` or `source_filename=`. |
 | `ui/history.html?job_key=<JobKey>` | Job History for the job: every run, with links to each run's log and files. `instance_id=` narrows it to one run. |
 | `ui/log.html?run=<RunID>` | One run's job log. |
@@ -75,8 +77,19 @@ window.addEventListener("message", event => {
 
 A renamed job matters to the WLA. It runs the job by its key, so on a `saved` message with a `previous_key`, the WLA must update its own job.
 
-## 3. Planned
+## 3. AutoApp reading the WLA
 
-- **AutoApp reading the WLA job's parameters (pull).** The job editor, opened for a WLA job, will read that job's parameters through the scheduler's API, using a connector for that technology. It will show them read-only in its Variables panel, and its preview and pre-run check will use them. The address will then also carry which scheduler and which WLA job, e.g. `&scheduler=RMJ_PROD&wla_job=...`; the exact form is to be settled with the first connector.
-- **Secrets from the WLA:** parameters the WLA marks secret will be masked in the job log.
-- **A scheduler stand-in:** a separate small app that plays the WLA's part, for trying all of this without one.
+AutoApp reads from a WLA through that WLA's own API, with a **connector** for its technology (`autoapp/app/connectors/`). This needs the least from a WLA plug-in: only that it opens AutoApp's page with the WLA job's identifier. So far a connector reads one thing, a job's parameters:
+
+- **Registering the WLA in AutoApp (Schedulers page):** its name (what the runner's `--scheduler` says), its technology, its API address, and its credential as the secret variable `ApiToken`.
+- `GET /api/v1/schedulers/<name>/jobs/<the WLA's job>` gives that job's parameters as the WLA gives them, with secret values left out.
+- `POST /api/v1/jobs/preview` and `GET /api/v1/jobs/<JobKey>/check` take `scheduler=` and `wla_job=`, and check the job with those parameters standing for the environment it will run in; a secret stands as `********`. If the WLA cannot be read, they say so as a warning and check without them.
+
+| Technology | Connector |
+| :--- | :--- |
+| `STANDIN` | The Stand-in Scheduler, [demo/scheduler_standin](../demo/scheduler_standin/README.md) |
+| `RUNMYJOBS`, `ACTIVEBATCH`, `CONTROL_M`, `TIDAL` | Not yet. Each needs its API's documentation, and a system to try it against. |
+
+## 4. The Stand-in Scheduler
+
+[demo/scheduler_standin](../demo/scheduler_standin/README.md) is a small WLA of its own that does all of the above from the WLA's side, for trying it without a real one. Its job editor opens AutoApp's embedded, its runs start the runner as an OS job, and its API is the one AutoApp's `STANDIN` connector reads.

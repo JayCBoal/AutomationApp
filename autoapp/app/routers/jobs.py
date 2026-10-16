@@ -25,12 +25,15 @@ MAX_RESULTS = 500
 EDITOR_NAME = "web interface"
 
 
-def job_problems(db: Session, job: Job) -> List[str]:
-    """Everything that would stop the job from running, as the runner would report it. Runs nothing."""
+def job_problems(db: Session, job: Job, environment: Optional[Dict[str, str]] = None) -> List[str]:
+    """
+    Everything that would stop the job from running, as the runner would report it. Runs nothing.
+    environment: what the scheduler will set when it runs the job, if known (a WLA job's parameters).
+    """
     problems = []
     if not job.IsActive:
         problems.append(f"Job '{job.JobKey}' is disabled.")
-    engine = ScopeResolutionEngine(db=db, job_id=job.MasterObject_id, instance_id="CHECK")
+    engine = ScopeResolutionEngine(db=db, job_id=job.MasterObject_id, instance_id="CHECK", environment=environment)
     engine.build_context()
     return problems + prepare_job(db, job, engine)[1]
 
@@ -216,6 +219,8 @@ def _save(db: Session, payload: JobSave, existing_key: Optional[str]) -> JobSave
 @router.post("/preview", response_model=JobPreview)
 def preview_job(payload: JobSave, existing_key: Optional[str] = Query(
         None, description="The key of the job being edited; leave out for a job not yet saved"),
+        scheduler: Optional[str] = Query(None, description="With wla_job: the scheduler the job is edited from"),
+        wla_job: Optional[str] = Query(None, description="The scheduler's job, whose parameters it will run with"),
         db: Session = Depends(get_db)):
     """
     What a job would resolve to if it were saved as submitted: each step's parameters
@@ -225,6 +230,7 @@ def preview_job(payload: JobSave, existing_key: Optional[str] = Query(
     MASK = "********"
     if existing_key is None and not payload.job_key.strip():
         payload = payload.model_copy(update={"job_key": "UNNAMED-JOB"})     # so a new job can be previewed before it is named
+    environment, scheduler_warnings = wla_environment(db, scheduler, wla_job)
     try:
         job, _ = apply_job(db, payload, existing_key, who=EDITOR_NAME)
         secrets = sorted({value for (value,) in db.query(Variable.VarValue).filter(Variable.IsSecret.is_(True)) if value},
@@ -235,8 +241,8 @@ def preview_job(payload: JobSave, existing_key: Optional[str] = Query(
                 text = text.replace(secret, MASK) if text else text
             return text
 
-        problems = [safe(problem) for problem in job_problems(db, job)]
-        engine = ScopeResolutionEngine(db=db, job_id=job.MasterObject_id, instance_id="PREVIEW")
+        problems = [safe(problem) for problem in job_problems(db, job, environment)]
+        engine = ScopeResolutionEngine(db=db, job_id=job.MasterObject_id, instance_id="PREVIEW", environment=environment)
         engine.build_context()
         steps = []
         for step in sorted(job.steps, key=lambda s: (s.StepOrder, s.id)):
@@ -247,7 +253,8 @@ def preview_job(payload: JobSave, existing_key: Optional[str] = Query(
             steps.append({name: FieldPreview(resolved=safe(None if resolved is None else str(resolved)), error=safe(error))
                           for name, (resolved, error) in preview_step(step, handler_cls, engine, db).items()})
         # Tags that disagree about a variable the job does not use: worth saying, but nothing stops
-        warnings = [w for w in tag_store.job_tag_warnings(db, job) if not any(w in problem for problem in problems)]
+        warnings = scheduler_warnings + [
+            w for w in tag_store.job_tag_warnings(db, job) if not any(w in problem for problem in problems)]
         return JobPreview(valid=not problems, problems=problems, warnings=warnings, steps=steps,
                           tags=tag_store.paths_on(job), inherited_variables=inherited_variables(db, job))
     except JobStoreError as e:
@@ -286,7 +293,10 @@ def remove_job(job_key: str, db: Session = Depends(get_db)):
 
 
 @router.get("/{job_key}/check", response_model=JobCheckResult)
-def check_job(job_key: str, db: Session = Depends(get_db)):
+def check_job(job_key: str,
+              scheduler: Optional[str] = Query(None, description="With wla_job: the scheduler that runs the job"),
+              wla_job: Optional[str] = Query(None, description="The scheduler's job, whose parameters it runs with"),
+              db: Session = Depends(get_db)):
     """
     Checks a job without running it: every active step against its step type,
     every placeholder, every file location. Returns each problem found, exactly
@@ -296,5 +306,24 @@ def check_job(job_key: str, db: Session = Depends(get_db)):
     if not job:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"No job with JobKey '{job_key}' exists.")
 
-    problems = job_problems(db, job)
-    return JobCheckResult(job_key=job_key, valid=not problems, problems=problems)
+    environment, warnings = wla_environment(db, scheduler, wla_job)
+    problems = job_problems(db, job, environment)
+    return JobCheckResult(job_key=job_key, valid=not problems, problems=problems, warnings=warnings)
+
+
+def wla_environment(db: Session, scheduler: Optional[str], wla_job: Optional[str]):
+    """
+    The environment a scheduler's job will run with (its parameters, secrets as ********), and
+    any warning about reading it. None, as on the server otherwise, when no WLA job is named
+    or it cannot be read; ${ENV:...} is then left for the run.
+    """
+    if not (scheduler and wla_job):
+        return None, []
+    from app.connectors import ConnectorError
+    from app.routers.schedulers import read_wla_job
+    try:
+        return read_wla_job(db, scheduler, wla_job).environment(), []
+    except ConnectorError as e:
+        return None, [f"The scheduler's parameters for this job could not be read, so they are not checked: {e}"]
+    except HTTPException as e:
+        return None, [str(e.detail)]

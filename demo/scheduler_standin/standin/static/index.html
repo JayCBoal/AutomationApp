@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Stand-in Scheduler</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/autoapp-ui/css/autoapp.css">
+    <link rel="stylesheet" href="standin.css">
+    <script src="standin.js"></script>
+    <script defer src="/autoapp-ui/vendor/alpine-3.17.4.min.js"></script>
+</head>
+<body>
+<header class="sis-header">
+    <span class="product">Stand-in Scheduler</span>
+    <span class="note">Plays a workload automation product's part for AutoApp. Not part of AutoApp.</span>
+</header>
+
+<main x-data="standin()">
+    <p class="message error" id="page-error" x-show="error" x-text="error" role="alert" x-cloak></p>
+    <p class="message saved" id="notice" x-show="notice" x-text="notice" role="status" x-cloak></p>
+
+    <div class="sis-layout">
+        <!-- Its jobs -->
+        <section class="panel" aria-label="Jobs">
+            <div class="steps-head"><h2 class="section" style="margin-top: 0">Jobs</h2></div>
+            <ul class="sis-jobs" id="job-list">
+                <template x-for="job in jobs" :key="job.name">
+                    <li><button type="button" :class="{ chosen: form && chosen === job.name }" @click="choose(job.name)"
+                                x-text="job.name"></button></li>
+                </template>
+            </ul>
+            <p class="muted small" x-show="jobs.length === 0">No jobs yet.</p>
+            <div class="actions"><button type="button" class="secondary" id="new-job" @click="startNew()">New job</button></div>
+        </section>
+
+        <div>
+            <!-- One job: its definition, as a WLA would hold it -->
+            <template x-if="form">
+                <section class="panel" aria-label="Job definition">
+                    <div class="steps-head">
+                        <h2 class="section" style="margin-top: 0" x-text="saved ? 'Job definition' : 'New job definition'"></h2>
+                    </div>
+                    <div class="detail-grid">
+                        <label for="job-name">Name <span class="required">*</span></label>
+                        <input id="job-name" type="text" x-model="form.name" maxlength="100">
+
+                        <label for="job-description">Description</label>
+                        <input id="job-description" type="text" x-model="form.description">
+
+                        <label for="job-business-date">Business date</label>
+                        <div class="create-row">
+                            <input id="job-business-date" type="checkbox" x-model="form.business_date">
+                            <span class="muted small">Give each run today's date as its business date, as Control-M gives an order date.</span>
+                        </div>
+
+                        <label for="autoapp-job-key">AutoApp job</label>
+                        <div class="create-row">
+                            <input id="autoapp-job-key" type="text" x-model="form.autoapp_job_key" maxlength="320"
+                                   placeholder="The AutoApp job this one runs; leave blank to make one" style="max-width: 420px">
+                            <button type="button" class="primary" id="edit-in-autoapp" :disabled="!saved || changed"
+                                    @click="editInAutoApp()">Edit in AutoApp</button>
+                            <span class="muted small" x-show="!saved || changed">Save this job first.</span>
+                        </div>
+                    </div>
+
+                    <h3 class="small">Parameters</h3>
+                    <p class="muted small">Set in the environment when the job runs. AutoApp's steps use them as
+                        <code>${Name}</code> or <code>${ENV:Name}</code>.</p>
+                    <table class="results variables" id="parameters" x-show="form.parameters.length > 0">
+                        <thead><tr><th>Name</th><th>Value</th><th>Secret</th><th></th></tr></thead>
+                        <tbody>
+                            <template x-for="(parameter, index) in form.parameters" :key="parameter.uid">
+                                <tr>
+                                    <td><input type="text" class="parameter-name" x-model="parameter.name" aria-label="Parameter name"></td>
+                                    <td><input :type="parameter.secret ? 'password' : 'text'" class="parameter-value" x-model="parameter.value"
+                                               aria-label="Parameter value" autocomplete="off"
+                                               :placeholder="parameter.secret && parameter.savedSecret ? 'Set. Type a new value to replace it.' : ''"></td>
+                                    <td><input type="checkbox" class="parameter-secret" x-model="parameter.secret" aria-label="Secret"></td>
+                                    <td><button type="button" class="link" @click="form.parameters.splice(index, 1)">Remove</button></td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                    <div class="actions">
+                        <button type="button" class="secondary" id="add-parameter" @click="addParameter()">Add parameter</button>
+                        <span class="spacer"></span>
+                        <button type="button" class="secondary danger" id="delete-job" x-show="saved" @click="remove()">Delete</button>
+                        <button type="button" class="primary" id="save-job" :disabled="busy || !changed" @click="save()">Save</button>
+                        <button type="button" class="primary" id="submit-job" :disabled="busy || changed || !form.autoapp_job_key"
+                                @click="submit()">Submit</button>
+                    </div>
+                </section>
+            </template>
+
+            <!-- Its runs -->
+            <section class="panel" aria-label="Runs" x-show="form && saved">
+                <div class="steps-head"><h2 class="section" style="margin-top: 0">Runs</h2></div>
+                <p class="muted small" x-show="runs.length === 0">Not run yet.</p>
+                <table class="results" id="runs" x-show="runs.length > 0">
+                    <thead><tr><th>Instance</th><th>Status</th><th>Started</th><th>Business date</th><th></th></tr></thead>
+                    <tbody>
+                        <template x-for="run in runs" :key="run.id">
+                            <tr>
+                                <td><code x-text="run.instance_id"></code></td>
+                                <td><span class="status" :class="run.status" x-text="run.status"></span>
+                                    <span class="muted small" x-show="run.exit_code !== null" x-text="'exit ' + run.exit_code"></span></td>
+                                <td class="nowrap" x-text="time(run.started)"></td>
+                                <td x-text="run.business_date || ''"></td>
+                                <td class="nowrap">
+                                    <button type="button" class="link show-output" @click="toggleOutput(run)">Output</button>
+                                    · <button type="button" class="link operations-in-autoapp" @click="operationsInAutoApp(run)">Operations in AutoApp</button>
+                                    <template x-if="outputs[run.id] !== undefined">
+                                        <pre class="sis-output" x-text="outputs[run.id]"></pre>
+                                    </template>
+                                </td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+            </section>
+        </div>
+    </div>
+
+    <!-- AutoApp's pages, embedded, as a WLA would show them -->
+    <dialog class="sis-window" id="autoapp-window" x-ref="window" @close="windowClosed()">
+        <div class="bar">
+            <strong x-text="windowTitle"></strong>
+            <span class="small" id="autoapp-message" x-text="windowMessage"></span>
+            <span class="spacer"></span>
+            <button type="button" class="secondary" id="close-window" @click="$refs.window.close()">Close</button>
+        </div>
+        <iframe id="autoapp-frame" x-ref="frame" title="AutoApp"></iframe>
+    </dialog>
+</main>
+</body>
+</html>

@@ -39,6 +39,11 @@ function jobDetail() {
         key: address.get("key") || "",
         isNew: address.has("new"),
         embedded: AutoApp.EMBEDDED,     // opened from inside a scheduler: one job, no way to wander off to others
+        // Opened for one of a scheduler's jobs (scheduler=...&wla_job=...): the parameters it will run with
+        wla: address.get("scheduler") && address.get("wla_job")
+            ? { scheduler: address.get("scheduler"), job: address.get("wla_job") } : null,
+        wlaJob: null,           // that job as the scheduler gives it, with its parameters
+        wlaError: "",
         job: null,              // the job as last loaded or saved; null for one not yet saved
         form: null,             // what is on screen, edited or not
         saved: "",              // the form's contents when last loaded or saved, to tell whether anything changed
@@ -66,6 +71,7 @@ function jobDetail() {
                 this.error = e.message;
                 return;
             }
+            if (this.wla) await this.loadWlaJob();
             if (this.isNew) {
                 // A scheduler creating a job can suggest its key: job.html?new&key=...
                 this.show({ job_key: this.key, description: "", active: true, steps: [], variables: [], tags: [] });
@@ -87,7 +93,7 @@ function jobDetail() {
             this.error = "";
             try {
                 const path = "/jobs/" + encodeURIComponent(this.key);
-                const [job, check] = await Promise.all([AutoApp.get(path), AutoApp.get(path + "/check")]);
+                const [job, check] = await Promise.all([AutoApp.get(path), AutoApp.get(path + "/check", this.wlaQuery())]);
                 this.job = job;
                 this.check = check;
                 this.show(job);
@@ -122,6 +128,18 @@ function jobDetail() {
             this.tagPreview = null;
             this.refreshTags();
             document.title = `${job.job_key || "New job"} - AutoApp`;
+        },
+
+        /** The scheduler's job, for the preview and the pre-run check: { scheduler, wla_job }, or nothing. */
+        wlaQuery() { return this.wla ? { scheduler: this.wla.scheduler, wla_job: this.wla.job } : {}; },
+
+        /** Reads the scheduler's job through AutoApp's connector for it. A failure is shown, not fatal. */
+        async loadWlaJob() {
+            try {
+                this.wlaJob = await AutoApp.get(`/schedulers/${encodeURIComponent(this.wla.scheduler)}/jobs/${encodeURIComponent(this.wla.job)}`);
+            } catch (e) {
+                this.wlaError = e.message;
+            }
         },
 
         /** The selector: typing narrows the list; choosing a job opens it. */
@@ -308,9 +326,10 @@ function jobDetail() {
          * "${ArchiveFolder}/in". Each is offered as "Add variable ..." beside the value.
          */
         missingVariables(text) {
-            // its own variables, and those its tags give it
+            // its own variables, those its tags give it, and the scheduler's parameters
             const have = new Set(this.form.variables.map(variable => variable.name.trim())
-                .concat(this.tagsView ? this.tagsView.variables.map(variable => variable.name) : []));
+                .concat(this.tagsView ? this.tagsView.variables.map(variable => variable.name) : [])
+                .concat(this.wlaJob ? this.wlaJob.parameters.map(parameter => parameter.name) : []));
             const mentioned = [...String(text || "").matchAll(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g)].map(match => match[1]);
             return [...new Set(mentioned)].filter(name => !have.has(name));
         },
@@ -327,7 +346,8 @@ function jobDetail() {
             clearTimeout(previewTimer);
             previewTimer = setTimeout(async () => {
                 const request = ++previewRequest;
-                const address = "/jobs/preview" + (this.job ? "?" + new URLSearchParams({ existing_key: this.job.job_key }) : "");
+                const query = { ...(this.job ? { existing_key: this.job.job_key } : {}), ...this.wlaQuery() };
+                const address = "/jobs/preview" + (Object.keys(query).length ? "?" + new URLSearchParams(query) : "");
                 let result;
                 try {
                     result = await AutoApp.send("POST", address, JSON.parse(contents));
@@ -451,7 +471,7 @@ function jobDetail() {
         get verdict() { return this.preview || this.check; },
 
         /** What does not stop the job but is worth knowing, as of the latest preview. */
-        get warnings() { return (this.preview && this.preview.warnings) || []; },
+        get warnings() { return (this.verdict && this.verdict.warnings) || []; },
 
         /** What stops the job running, other than its being disabled, which is shown separately. */
         get problems() {

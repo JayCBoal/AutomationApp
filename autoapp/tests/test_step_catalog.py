@@ -312,7 +312,7 @@ def test_checking_a_sound_job_finds_no_problems_and_touches_nothing(client, db, 
     response = client.get("/api/v1/jobs/DEV-LOAD/check")
 
     assert response.status_code == 200
-    assert response.json() == {"job_key": "DEV-LOAD", "valid": True, "problems": []}
+    assert response.json() == {"job_key": "DEV-LOAD", "valid": True, "problems": [], "warnings": []}
     assert not (tmp_path / "work").exists()                      # checking is not running
 
 

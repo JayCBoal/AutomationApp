@@ -113,6 +113,29 @@
                 </div>
                 <p class="message" id="no-variables" x-show="form.variables.length === 0">This job has no variables of its own.</p>
 
+                <!-- Opened for one of a scheduler's jobs: the parameters it sets in the environment when it runs the job -->
+                <template x-if="wla">
+                    <div id="wla-parameters">
+                        <h3 class="small">From the scheduler: <span x-text="wla.scheduler"></span>'s job <code x-text="wla.job"></code></h3>
+                        <p class="message error small" id="wla-error" x-show="wlaError" x-text="wlaError"></p>
+                        <p class="muted small" x-show="wlaJob && wlaJob.parameters.length === 0">It has no parameters.</p>
+                        <table class="results tag-variables compact" x-show="wlaJob && wlaJob.parameters.length > 0">
+                            <thead><tr><th>Name</th><th>Value</th><th></th></tr></thead>
+                            <tbody>
+                                <template x-for="parameter in (wlaJob ? wlaJob.parameters : [])" :key="parameter.name">
+                                    <tr :class="{ overridden: form.variables.some(v => v.name.trim() === parameter.name) }">
+                                        <td><code x-text="parameter.name"></code></td>
+                                        <td><code x-text="parameter.secret ? '********' : parameter.value"></code></td>
+                                        <td class="muted small" x-text="parameter.secret ? 'secret' : ''"></td>
+                                    </tr>
+                                </template>
+                            </tbody>
+                        </table>
+                        <p class="muted small" x-show="wlaJob">Set in the scheduler, not here. They have the lowest priority:
+                            a variable of the same name anywhere in AutoApp wins. <code>${ENV:Name}</code> names one directly.</p>
+                    </div>
+                </template>
+
                 <div class="table-scroll" x-show="form.variables.length > 0">
                     <table class="results variables">
                         <thead>

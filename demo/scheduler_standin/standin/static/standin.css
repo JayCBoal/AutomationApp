@@ -1,0 +1,23 @@
+/* The Stand-in Scheduler borrows AutoApp's stylesheet, then changes its look so the two are never confused */
+:root, :root[data-theme="light"] {
+    --accent: #c8102e;
+    --accent-text: #ffffff;
+    --header: #2b2f36;
+    --page: #eef0f3;
+}
+.sis-header { display: flex; align-items: center; gap: 14px; padding: 10px 20px; background: #c8102e; color: #fff; }
+.sis-header .product { font-weight: 800; letter-spacing: 0.5px; font-size: 18px; }
+.sis-header .note { opacity: 0.85; font-size: 13px; }
+.sis-layout { display: grid; grid-template-columns: 260px 1fr; gap: 16px; align-items: start; }
+.sis-jobs { list-style: none; margin: 0; padding: 0; }
+.sis-jobs li button { width: 100%; text-align: left; background: none; border: 0; padding: 7px 10px; border-radius: 4px;
+                      color: var(--text); cursor: pointer; font: inherit; }
+.sis-jobs li button.chosen { background: var(--accent); color: var(--accent-text); }
+.sis-jobs li button:hover:not(.chosen) { background: var(--row-hover); }
+dialog.sis-window { width: min(1320px, 96vw); height: 88vh; padding: 0; border: 1px solid var(--border); border-radius: 6px; }
+dialog.sis-window .bar { display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: var(--header); color: #fff; }
+dialog.sis-window .bar .spacer { flex: 1; }
+dialog.sis-window iframe { width: 100%; height: calc(100% - 48px); border: 0; background: var(--page); }
+pre.sis-output { background: var(--input); border: 1px solid var(--border); padding: 8px 10px; max-height: 320px; overflow: auto;
+                 white-space: pre-wrap; font-size: 12px; margin: 6px 0 0; }
+dialog.sis-window .bar button { color: #fff; background: transparent; border-color: rgba(255, 255, 255, 0.6); }

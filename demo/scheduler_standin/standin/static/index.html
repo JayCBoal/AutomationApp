@@ -164,8 +164,10 @@
     <!-- RunMyFiles' pages, embedded, as a WLA would show them -->
     <dialog class="sis-window" id="autoapp-window" x-ref="window" @close="windowClosed()">
         <div class="bar">
+            <!-- This bar is the stand-in's, around RunMyFiles' page: its message is what the stand-in heard from RunMyFiles -->
+            <span class="owner">Stand-in Scheduler</span>
             <strong x-text="windowTitle"></strong>
-            <span class="small" id="autoapp-message" x-text="windowMessage"></span>
+            <span class="message-pill" id="autoapp-message" x-show="windowMessage" x-text="windowMessage"></span>
             <span class="spacer"></span>
             <button type="button" class="secondary" id="close-window" @click="$refs.window.close()">Close</button>
         </div>

@@ -111,7 +111,7 @@
                                 <span class="muted small" x-show="kind === 'schedulers'">Keep the credential RunMyFiles uses for its API
                                     here, as a secret variable such as <code>ApiToken</code>.</span>
                             </div>
-                            <p class="message" id="no-variables" x-show="form.variables.length === 0">None.</p>
+                            <p class="message" id="no-variables" x-show="form.variables.length === 0">None of its own.</p>
                             <div class="table-scroll" x-show="form.variables.length > 0">
                                 <table class="results variables">
                                     <thead><tr><th>Name</th><th>Value</th><th>Secret</th><th>Description</th><th></th></tr></thead>
@@ -134,6 +134,9 @@
                                 <button type="button" class="secondary" id="add-variable" @click="addVariable()">Add variable</button>
                             </div>
 
+                            <!-- What the tags it carries give it, just below its own -->
+                            <div data-tags-give></div>
+
                             <!-- A tag's parents' variables, which act as if they were its own unless it has one of the same name -->
                             <div id="inherited-variables" x-show="kind === 'tags' && inherited.length > 0">
                                 <h3 class="small">Inherited from its parents</h3>
@@ -147,6 +150,14 @@
                                     </tbody>
                                 </table>
                             </div>
+                        </section>
+                    </template>
+
+                    <!-- An endpoint has no variables of its own, but its tags can still give it some -->
+                    <template x-if="!spec.variables && spec.carriesTags">
+                        <section class="panel" aria-label="Variables" x-show="tagsView && (tagsView.variables.length > 0 || tagsView.conflicts.length > 0)">
+                            <div class="steps-head"><h2 class="section">Variables</h2></div>
+                            <div data-tags-give></div>
                         </section>
                     </template>
 

@@ -287,7 +287,7 @@ def test_unzip_takes_every_file_out(folders, spool_records):
     result = run_handler(UnzipFilesHandler, spool, {"Source": str(src / "*.zip"), "Dest": str(out)})
 
     assert result["status"] == "SUCCESS"
-    assert "Took 2 files out of 1 archive." in result["result"]["details"]["summary"]
+    assert "Unzipped 2 files from 1 archive." in result["result"]["details"]["summary"]
     assert (out / "a.csv").read_text() == "one"
     assert (out / "reports" / "b.csv").read_text() == "two"
     assert (src / "batch.zip").exists()

@@ -274,12 +274,12 @@ class UnzipFilesHandler(BaseHandler):
                     except Exception as e:
                         self.record_file_operation("UNZIP", "FAILED", archive, target, archive_size,
                                                    error=str(e), started_at=started_at)
-                        job_log.error(f"Could not take '{member.filename}' out of '{archive}': {e}")
+                        job_log.error(f"Could not unzip '{member.filename}' from '{archive}': {e}")
                         raise
                     self.record_file_operation("UNZIP", "SUCCESS", archive, target, archive_size, size,
                                                started_at=started_at)
-                    job_log.detail(f"Took '{member.filename}' out of '{archive}'\n\tto '{target}' ({size} bytes)")
+                    job_log.detail(f"Unzipped '{member.filename}' from '{archive}'\n\tto '{target}' ({size} bytes)")
                     count += 1
         result["details"]["summary"].append(
-            f"Took {plural(count, 'file')} out of {plural(len(archives), 'archive')}.")
+            f"Unzipped {plural(count, 'file')} from {plural(len(archives), 'archive')}.")
         return result

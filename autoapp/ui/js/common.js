@@ -113,11 +113,22 @@ const AutoApp = (() => {
         return String(text).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
     }
 
+    /**
+     * The header stays at the top of the window while the page scrolls, and a detail
+     * page's own header (its name and buttons) stays just under it. The navigation bar
+     * wraps on a narrow window, so its height is kept in --chrome-height for the CSS.
+     */
+    function keepHeightKnown(holder) {
+        const update = () => document.documentElement.style.setProperty("--chrome-height", `${holder.offsetHeight}px`);
+        new ResizeObserver(update).observe(holder);
+    }
+
     function renderChrome() {
         const holder = document.getElementById("app-chrome");
         if (!holder) return;
         // A page shared by several kinds sets window.AUTOAPP_PAGE_TITLE before this runs
         const title = window.AUTOAPP_PAGE_TITLE || holder.dataset.title || "";
+        keepHeightKnown(holder);
 
         if (EMBEDDED) {
             // Inside a scheduler: a thin bar instead of the header and navigation
@@ -581,7 +592,7 @@ const AutoApp = (() => {
             <div class="steps-head">
                 <h2 class="section">Tags</h2>
                 <span class="muted small">A tag's variables, and its parent's, act as if they were here, just below
-                    the ones of its own.</span>
+                    the ones of its own. They are listed under Variables.</span>
             </div>
             <p class="message" id="no-tags" x-show="form.tags.length === 0">None.</p>
             <ul class="tag-list" id="tag-list" x-show="form.tags.length > 0">
@@ -624,9 +635,12 @@ const AutoApp = (() => {
                 </template>
             </div>
 
-            <!-- What the tags it carries give it -->
+        </section>`;
+
+    // What the tags it carries give it: shown in the page's Variables section, where <div data-tags-give></div> is
+    const TAGS_GIVE = `
             <div id="tags-give" x-show="tagsView && (tagsView.variables.length > 0 || tagsView.conflicts.length > 0)" x-cloak>
-                <h3 class="small">What its tags give</h3>
+                <h3 class="small">From its tags</h3>
                 <table class="results tag-variables compact" x-show="tagsView && tagsView.variables.length > 0">
                     <thead><tr><th>Name</th><th>Value</th><th>From tag</th></tr></thead>
                     <tbody>
@@ -643,11 +657,21 @@ const AutoApp = (() => {
                 <template x-for="conflict in (tagsView ? tagsView.conflicts : [])" :key="conflict.name">
                     <p class="message warning small tag-conflict" x-text="conflict.message"></p>
                 </template>
-            </div>
-        </section>`;
+            </div>`;
+
+    /** Replaces each element matching selector with the HTML given, inside templates too. */
+    function fillSlots(root, selector, html) {
+        for (const slot of root.querySelectorAll(selector)) {
+            const holder = document.createElement("template");
+            holder.innerHTML = html;
+            slot.replaceWith(holder.content.cloneNode(true));
+        }
+        for (const template of root.querySelectorAll("template")) fillSlots(template.content, selector, html);
+    }
 
     /**
-     * Puts the Tags panel wherever a page has <div data-tags-panel></div>, including
+     * Puts the Tags panel wherever a page has <div data-tags-panel></div>, and what the
+     * tags give wherever it has <div data-tags-give></div> (in its Variables section), including
      * inside an Alpine <template>. The page calls it from a script at the end of its
      * body, which runs before Alpine starts:
      *
@@ -656,12 +680,8 @@ const AutoApp = (() => {
      * The page's component must include AutoApp.tagEditing(...), and keep the tags in form.tags.
      */
     function fillTagPanels(root = document) {
-        for (const slot of root.querySelectorAll("[data-tags-panel]")) {
-            const holder = document.createElement("template");
-            holder.innerHTML = TAG_PANEL;
-            slot.replaceWith(holder.content.cloneNode(true));
-        }
-        for (const template of root.querySelectorAll("template")) fillTagPanels(template.content);
+        fillSlots(root, "[data-tags-panel]", TAG_PANEL);
+        fillSlots(root, "[data-tags-give]", TAGS_GIVE);
     }
 
     /**

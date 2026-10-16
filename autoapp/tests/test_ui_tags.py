@@ -6,7 +6,7 @@ search pages, and the Settings page. The browser fixtures are in conftest.py.
 """
 import pytest
 
-from app.models import Variable
+from app.models import Tag, Variable
 from conftest import wait_for_search
 
 
@@ -101,6 +101,25 @@ def test_a_detail_page_shows_its_tags_and_what_they_give(page, world):
     rows = {r.locator("td").nth(0).inner_text(): r.locator("td").nth(2).inner_text()
             for r in page.locator("#tags-give tbody tr").all()}
     assert rows == {"Ledger": "Finance", "Region": "Finance / Reporting", "Token": "Finance"}
+    assert page.locator("section[aria-label='Variables'] #tags-give").count() == 1    # listed with its variables
+    assert page.locator("section[aria-label='Tags'] #tags-give").count() == 0
+
+
+def test_the_job_editor_lists_what_its_tags_give_under_variables(page, world):
+    page.goto("/ui/job.html?key=DEV-REPORT")
+    page.locator("section[aria-label='Variables'] #tags-give").wait_for(state="visible")
+
+    assert page.locator("#tags-give h3").inner_text() == "From its tags"
+    assert page.locator("section[aria-label='Tags'] #tags-give").count() == 0
+
+
+def test_an_endpoint_lists_what_its_tags_give_under_variables(page, world, seed, db, tmp_path):
+    seed.attach(db.query(Tag).filter(Tag.Name == "Ops").one(), seed.endpoint("LEDGER_DROP", tmp_path))
+    db.commit()
+    open_detail(page, "endpoints", "LEDGER_DROP")
+
+    page.locator("section[aria-label='Variables'] #tags-give").wait_for(state="visible")
+    assert page.locator("#tags-give tbody tr td").first.inner_text() == "Region"
 
 
 def test_a_tags_variables_are_shown_before_it_is_added(page, world):

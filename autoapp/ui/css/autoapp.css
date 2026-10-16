@@ -63,6 +63,10 @@ a { color: var(--accent); }
 
 /* ---------- Header and navigation bar (on every page) ---------- */
 
+/* They stay at the top of the window while the page scrolls */
+#app-chrome { position: sticky; top: 0; z-index: 30; }
+html { scroll-padding-top: calc(var(--chrome-height, 0px) + 80px); }
+
 .app-header {
     display: flex;
     align-items: baseline;
@@ -132,6 +136,10 @@ input:focus, select:focus, button:focus-visible { outline: 2px solid var(--accen
 
 .actions { display: flex; align-items: center; gap: 10px; margin-top: 14px; }
 .actions .spacer { flex: 1; }
+/* Search criteria folded away: the boxes are hidden, and one line says what is being searched for */
+.criteria-folded .criteria { display: none; }
+.criteria-folded .actions { margin-top: 0; }
+.criteria-summary { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 button.primary, button.secondary {
     border-radius: 4px;
     padding: 6px 16px;
@@ -251,7 +259,10 @@ a.job-key:hover { text-decoration: underline; }
 
 /* ---------- Detail pages ---------- */
 
-.selector { display: flex; align-items: center; gap: 12px; }
+/* A detail page's own header stays under the page header while the page scrolls, so the
+   object's name and its Edit and Submit buttons are always in sight (common.js sets --chrome-height) */
+.selector { display: flex; align-items: center; gap: 12px; position: sticky; top: var(--chrome-height, 0px); z-index: 20;
+            box-shadow: 0 6px 10px -6px rgba(0, 0, 0, 0.45); }
 .selector input { max-width: 520px; }
 .selector .spacer, .steps-head .spacer, .step-head .spacer { flex: 1; }
 .detail-grid { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 10px 14px; align-items: start; }

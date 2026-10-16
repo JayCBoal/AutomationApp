@@ -227,7 +227,9 @@ def test_the_standins_page_opens_autoapps_editor_and_learns_a_new_jobs_key(brows
     frame.locator("#submit-button").click()
 
     page.wait_for_function("() => document.querySelector('#autoapp-job-key').value === 'NEW_ONE'", timeout=15000)
-    page.locator("#notice", has_text="Saved job 'NEW_ONE'").wait_for()      # the stand-in has stored it
+    page.locator("#autoapp-message", has_text="Saved in RunMyFiles").wait_for()   # in the stand-in's own window bar
+    page.locator("#notice", has_text="RunMyFiles saved NEW_ONE").wait_for()       # and on its page, once stored
+    assert "This job now runs it." in page.locator("#notice").inner_text()
     assert call("GET", f"{standin}/api/jobs/NEW_ONE", token=TOKEN)[1]["autoapp_job_key"] == "NEW_ONE"
     context.close()
 

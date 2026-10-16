@@ -14,6 +14,22 @@ const CRITERIA = [
     "job_key", "instance_id", "scheduler",
 ];
 
+// How each criterion is named in the one-line summary shown while the criteria are folded away
+const CRITERIA_LABELS = {
+    date_from: "From", date_to: "To", op_type: "Type", status: "Status", job_key: "Job",
+    instance_id: "Instance ID", scheduler: "Scheduler",
+};
+const criterionLabel = name => CRITERIA_LABELS[name] ||
+    name.replace(/^(source|dest)_(.*)$/, (_, side, field) => `${side === "source" ? "Source" : "Destination"} ${field}`);
+
+// Whether this viewer last left the criteria folded away; a page opened from a scheduler starts folded,
+// since the scheduler has already said what to show
+const FOLDED_KEY = "autoapp.operations.criteriaFolded";
+function startFolded() {
+    if (AutoApp.EMBEDDED) return true;
+    try { return localStorage.getItem(FOLDED_KEY) === "1"; } catch (e) { return false; }
+}
+
 function operationsLog() {
     const search = AutoApp.searchPage({
         criteria: CRITERIA,
@@ -33,6 +49,18 @@ function operationsLog() {
         trace: null,            // the trace being shown, or null
         traceFor: null,         // id of the operation whose Trace link was clicked
         traceError: "",
+        folded: startFolded(),
+
+        fold(folded) {
+            this.folded = folded;
+            if (AutoApp.EMBEDDED) return;
+            try { localStorage.setItem(FOLDED_KEY, folded ? "1" : "0"); } catch (e) { /* not kept; it still folds */ }
+        },
+        criteriaSummary() {
+            const set = CRITERIA.filter(name => this.criteria[name]);
+            if (set.length === 0) return "Everything.";
+            return set.map(name => `${criterionLabel(name)}: ${this.criteria[name]}`).join(" · ");
+        },
 
         init() {
             const address = this.startSearch();

@@ -88,9 +88,12 @@ Still in the RunMyFiles window:
    - **Show:** before it is added, the panel shows what the tag would give, `ReportRetentionDays` = 30 *from Finance*.
    - **Say:** "You see what a tag brings before you add it, and RunMyFiles warns if two tags disagree."
 3. Click **Add tag**, then **Submit**.
-   - **Show:** at the top of the stand-in window, its own message: *Saved in RunMyFiles: ready to run.*
+   - **Show:** two messages, one from each side.
+     - RunMyFiles' own page says what it saved: *Saved. Added tag Finance / Reporting.*
+     - Above it, the stand-in's red window bar says what RunMyFiles told it: *Saved in RunMyFiles: ready to run.*
+   - **Show:** under **Variables**, *From its tags*: ReportRetentionDays.
    - **Say:** "RunMyFiles told the scheduler it saved, and whether the job would run. In RunMyJobs, that message lands in its own edit page."
-4. Click **Close**.
+4. Click **Close**. The stand-in's page keeps the message.
 
 ## 5. Running it from the scheduler (16–19)
 

@@ -60,6 +60,21 @@ Decided and removed from this list: telemetry direction (spool first, delivered 
 
 Ordered toward a demonstration: a job built in the job editor, run by a scheduler, and traced file by file. The job editor and the file trace are the two things to show.
 
+### Where things stand (2026-10-16)
+
+- **The demonstration is ready.** `demo/demo.py setup` and `start` build and run a clean demo, and [demo/DEMO.md](../demo/DEMO.md) is the 30-minute walkthrough.
+- **The presenter deck:**
+  - a Slides artifact, private until shared: https://claude.ai/artifact/KnzHsGAV14Btnwpo3RxqWL;
+  - an offline copy, `demo/output/RunMyFiles_presenter_deck.html`, rebuilt from `demo/output/deck_build/`.
+  - A trimmed version without speaker notes is still to make, for Product Management after the pitch.
+- **The pitch statements** are in a Claude Doc, "RunMyFiles pitch statements".
+- **The name** "RunMyFiles" holds until something better comes along. "Waypoint" is the alternative, and needs a trademark search.
+- **Next for the integration:** confirm the RunMyJobs draft on a dev tenant (its TO CONFIRM list is in [integrations/runmyjobs/README.md](../integrations/runmyjobs/README.md)). A Control-M connector is now possible from BMC's sample formats.
+- **SFTP** (item 1 below) has a plan:
+  - an in-process asyncssh SFTP server for the tests;
+  - a "partner bank" SFTP script for the demo.
+  - It needs `asyncssh` or `paramiko` installed: ask first.
+
 ### Next: more step types, for a fuller demonstration
 
 Every page of the web interface is built. See [UI_VISION.md](UI_VISION.md) for what remains proposed.
@@ -73,6 +88,25 @@ Every page of the web interface is built. See [UI_VISION.md](UI_VISION.md) for w
 
 2. **Scheduler integration.** Decision 7 holds the plan and the user's thoughts; [INTEGRATION.md](INTEGRATION.md) what a WLA plug-in can rely on. Steps 1 to 4 are built: run context, embedded mode and the documented addresses, reading a WLA job's parameters, and the Stand-in Scheduler. Next is a real WLA, when one is available.
 
+### Then: jobs that do more
+
+Two significant features, each worth its own design session before any code.
+
+- **Flow control step types:** If-Then-Else, While, For-Each and the like, as ActiveBatch has. They turn a job's steps into a real scripting language, which is what makes complex jobs possible without scripts.
+  - Questions for the design:
+    - how a block of steps is held in the database and shown in the editor (nesting, and moving steps in and out);
+    - what a condition can test (a variable, a step's result, whether files exist, a count);
+    - how For-Each names the current item (a file, a row, a list value) for the steps inside it;
+    - how loops are limited, so a While cannot run forever;
+    - how the job log and the trace show steps that ran several times, or not at all.
+- **A workflow object type:** a set of jobs with dependencies between them, thought of as a kind of job. This one needs a lot of thought first.
+  - Questions for the design:
+    - how far it overlaps with what the scheduler already does: dependencies are a WLA's core job, so the question is what a RunMyFiles workflow adds, and where the line sits;
+    - whether a workflow runs as one scheduler job or hands each job back to the scheduler;
+    - what the dependencies can be (success, failure, files present, a variable's value);
+    - restarts part-way through;
+    - how a workflow's runs appear in Job History, the Operations Log and the trace.
+
 ### Then: breadth
 
 3. **Runner controls.** Depends on decision 6.
@@ -81,7 +115,7 @@ Every page of the web interface is built. See [UI_VISION.md](UI_VISION.md) for w
 
 - **Exact differences in the audit log.** Each audit row records who changed what, as sentences ("Changed step 2 ('Archive'): parameters."), but not the values before and after. Store a before-and-after list with each row (each field; each step's parameters; steps added, removed or moved; variables, except that a secret variable says only that it changed), and add "Show details" on the Audit Log page. Applies to changes made from then on.
 
-- **Which variables a job can see.** A view listing every variable in reach of a job and where each comes from. Worth building once tags add a second source.
+- **Which variables a job can see.** A view listing every variable in reach of a job and where each comes from. The Job Detail page's Variables section now lists the job's own variables, its tags' and the scheduler's, in that order. Still missing: the application, entity and site variables its endpoints bring, and the order setting applied to all of them.
 
 
 - **A placeholder in a tick-box parameter.** A true-or-false parameter stored as `${...}` is shown as text and can be edited, but the editor offers no way to switch a tick box to a placeholder. Add a "use a variable" switch.

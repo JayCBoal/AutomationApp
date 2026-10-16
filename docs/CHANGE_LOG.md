@@ -4,6 +4,16 @@ Notable structural, schema and design changes to AutoApp, newest first. Line-by-
 
 ---
 
+## 2026-10-16
+
+### Headers that stay put, and tags' variables under Variables
+
+- **Changed:** the page header and navigation stay at the top of the window while a page scrolls. On the Job Detail page and the other detail pages, the object's own header (its name and its Edit, Submit and other buttons) stays just under it.
+- **Changed:** the Operations Log's search criteria scroll away with the page, and **Hide criteria** folds them to one line saying what is being searched for. The page remembers the choice for each viewer, and starts folded when a scheduler opens it.
+- **Changed:** what an object's tags give it is listed in its Variables section, as "From its tags", instead of in the Tags section. On the Job Detail page the order follows priority: the job's own, then its tags', then the scheduler's. An endpoint, which has no variables of its own, gets a Variables section when its tags give it some. The preview of what a tag would give, before it is added, stays in the Tags section.
+- **Changed:** the Unzip Files step's job log says "Unzipped 'name' from 'archive'" (was "Took 'name' out of 'archive'").
+- **Changed:** the Stand-in Scheduler's window around RunMyFiles' pages has the stand-in's red bar and name, so the message there ("Saved in RunMyFiles: ready to run.") is clearly the stand-in's. The stand-in also keeps that message on its own page after the window closes.
+
 ## 2026-10-15
 
 ### AutoApp is now RunMyFiles

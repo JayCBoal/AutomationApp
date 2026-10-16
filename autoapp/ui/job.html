@@ -115,29 +115,6 @@
                 </div>
                 <p class="message" id="no-variables" x-show="form.variables.length === 0">This job has no variables of its own.</p>
 
-                <!-- Opened for one of a scheduler's jobs: the parameters it sets in the environment when it runs the job -->
-                <template x-if="wla">
-                    <div id="wla-parameters">
-                        <h3 class="small">From the scheduler: <span x-text="wla.scheduler"></span>'s job <code x-text="wla.job"></code></h3>
-                        <p class="message error small" id="wla-error" x-show="wlaError" x-text="wlaError"></p>
-                        <p class="muted small" x-show="wlaJob && wlaJob.parameters.length === 0">It has no parameters.</p>
-                        <table class="results tag-variables compact" x-show="wlaJob && wlaJob.parameters.length > 0">
-                            <thead><tr><th>Name</th><th>Value</th><th></th></tr></thead>
-                            <tbody>
-                                <template x-for="parameter in (wlaJob ? wlaJob.parameters : [])" :key="parameter.name">
-                                    <tr :class="{ overridden: form.variables.some(v => v.name.trim() === parameter.name) }">
-                                        <td><code x-text="parameter.name"></code></td>
-                                        <td><code x-text="parameter.secret ? '********' : parameter.value"></code></td>
-                                        <td class="muted small" x-text="parameter.secret ? 'secret' : ''"></td>
-                                    </tr>
-                                </template>
-                            </tbody>
-                        </table>
-                        <p class="muted small" x-show="wlaJob">Set in the scheduler, not here. They have the lowest priority:
-                            a variable of the same name anywhere in RunMyFiles wins. <code>${ENV:Name}</code> names one directly.</p>
-                    </div>
-                </template>
-
                 <div class="table-scroll" x-show="form.variables.length > 0">
                     <table class="results variables">
                         <thead>
@@ -167,6 +144,32 @@
                 <div class="actions" x-show="editing">
                     <button type="button" class="secondary" id="add-variable" @click="addVariable()">Add variable</button>
                 </div>
+
+                <!-- Then what its tags give it, and lowest of all what the scheduler sets -->
+                <div data-tags-give></div>
+
+                <!-- Opened for one of a scheduler's jobs: the parameters it sets in the environment when it runs the job -->
+                <template x-if="wla">
+                    <div id="wla-parameters">
+                        <h3 class="small">From the scheduler: <span x-text="wla.scheduler"></span>'s job <code x-text="wla.job"></code></h3>
+                        <p class="message error small" id="wla-error" x-show="wlaError" x-text="wlaError"></p>
+                        <p class="muted small" x-show="wlaJob && wlaJob.parameters.length === 0">It has no parameters.</p>
+                        <table class="results tag-variables compact" x-show="wlaJob && wlaJob.parameters.length > 0">
+                            <thead><tr><th>Name</th><th>Value</th><th></th></tr></thead>
+                            <tbody>
+                                <template x-for="parameter in (wlaJob ? wlaJob.parameters : [])" :key="parameter.name">
+                                    <tr :class="{ overridden: form.variables.some(v => v.name.trim() === parameter.name) }">
+                                        <td><code x-text="parameter.name"></code></td>
+                                        <td><code x-text="parameter.secret ? '********' : parameter.value"></code></td>
+                                        <td class="muted small" x-text="parameter.secret ? 'secret' : ''"></td>
+                                    </tr>
+                                </template>
+                            </tbody>
+                        </table>
+                        <p class="muted small" x-show="wlaJob">Set in the scheduler, not here. They have the lowest priority:
+                            a variable of the same name anywhere in RunMyFiles wins. <code>${ENV:Name}</code> names one directly.</p>
+                    </div>
+                </template>
                 <p class="muted small" style="margin: 12px 0 0">
                     Always available: <code>${DATE:yyyyMMdd}</code> and other date masks, <code>${SYS:WORKING_FOLDER}</code>
                     and <code>${SYS:INSTANCE_ID}</code>; and in a rename mask, <code>${FILE:NAME}</code>,

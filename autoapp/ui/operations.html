@@ -16,7 +16,7 @@
 <main x-data="operationsLog()">
 
     <!-- Search criteria. Text boxes ignore case and match anywhere in the field. -->
-    <form class="panel" @submit.prevent="search()" aria-label="Search criteria">
+    <form class="panel" @submit.prevent="search()" aria-label="Search criteria" :class="{ 'criteria-folded': folded }">
         <div class="criteria">
             <fieldset>
                 <legend>When and what</legend>
@@ -74,6 +74,9 @@
         <div class="actions">
             <button type="submit" class="primary" :disabled="loading">Search</button>
             <button type="button" class="secondary" @click="clear()" :disabled="loading">Clear</button>
+            <button type="button" class="link" id="fold-criteria" @click="fold(!folded)" :aria-expanded="String(!folded)"
+                    x-text="folded ? 'Show criteria' : 'Hide criteria'"></button>
+            <span class="criteria-summary small" id="criteria-summary" x-show="folded" x-text="criteriaSummary()"></span>
             <span class="spacer"></span>
             <button type="button" class="secondary" @click="exportCsv()" :disabled="rows.length === 0">Export as CSV</button>
         </div>

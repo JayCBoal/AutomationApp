@@ -166,11 +166,17 @@ function standin() {
             if (message.source !== "AutoApp") return;
             if (message.event === "saved") {
                 this.windowMessage = message.valid ? "Saved in RunMyFiles: ready to run." : "Saved in RunMyFiles, with problems to fix before it can run.";
-                if (message.job_key !== this.form.autoapp_job_key) {
+                const learned = message.job_key !== this.form.autoapp_job_key;
+                if (learned) {
                     // A new RunMyFiles job, or a renamed one: this job now runs it
                     this.form.autoapp_job_key = message.job_key;
                     await this.save();
                 }
+                // Said on our own page too, so it is still there once the window is closed
+                this.notice = `RunMyFiles saved ${message.job_key}` +
+                    (message.valid ? ": ready to run." : ", with problems to fix before it can run.") +
+                    (learned ? " This job now runs it." : "");
+                await this.loadAutoApp();
             } else if (message.event === "deleted") {
                 this.windowMessage = "Deleted in RunMyFiles.";
                 this.form.autoapp_job_key = null;

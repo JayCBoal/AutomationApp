@@ -9,7 +9,7 @@ Status: **being designed. Nothing is built.** On 2026-10-17 the session finished
 1. The objects and their names. *Done.*
 2. Dependencies: join rules, branches not taken, final statuses, disabled jobs. *Done.*
 3. Conditions: what they can test, and the language or builder (shortcoming 3). *Language and outputs decided; what else to test, the builder and Explain open.*
-4. Reactions to outcomes: return codes, rerunning upstream (shortcoming 2). *Proposed, widened to time and duration; five questions open.*
+4. Reactions to outcomes: return codes, rerunning upstream (shortcoming 2). *Decided, apart from what a cancelled or killed job ends as.*
 5. Restarts and bypassing. *Net result, Resume and the Rerun menu decided.*
 6. The diagram and editor: cross-workflow links, density, full names (shortcomings 4 and 5).
 7. Run records: Job History, the Operations Log, the trace.
@@ -132,28 +132,48 @@ The owner's idea, starting from the JSON records a run sends for its operation l
   - To work out (topic 5): reusing the first attempt's resolved values (a business date, a timestamp in a file name); a half-done step (a file copied but not recorded, a SQL step partly committed), perhaps with steps declaring that they cannot be resumed and must run again in full; flow control state (which branch an If took, which pass a loop was on); and a runner that was killed, whose spool is left as `.jsonl.tmp` (TO-DO "Killed runs").
 - **In the UI, Resume is the first choice, not a hidden default.** Jobs and workflows alike have a **Rerun ▸** menu: **Resume**, **Restart from beginning**, **Advanced…** (the other restart options, topic 5).
 
+### Reactions (topic 4, 2026-10-17)
+
+The kinds of When, the actions and how they combine are settled; what a cancelled or killed job ends as is still to settle (below).
+
+- **A list on a job or a workflow.** Each entry is a *When* (an event, with a condition in flow control's language about the job: `%{Load.ReturnCode} IN (4, 8)`) and one or more actions.
+- **Kinds of When**, all in the one list and editor; to the user one mechanism, though the code paths differ:
+  - *it ends*: status, return code, outputs, Operations; checked once, at the end;
+  - *it hasn't started by…* and *it hasn't ended by…*: a time of day, or relative ("within 2 hours of the workflow starting"); a watcher with a timer;
+  - *it runs longer than…*: a fixed time, or compared with its own Job History ("50% over its average of the last 10 runs").
+  - This replaces a separate SLA mechanism. RunMyJobs' SLAs are wholly separate from job statuses and very complex; the owner wants the same reach, made user-friendly. Absolute times mean the day the run started until AutoApp has scheduling.
+- **Actions**, offered only where they fit the kind of When:
+  - *decisions*, changing what happens next:
+    - Count as succeeded / Count as failed: an override, shown as both ("Succeeded (return code 4)"), not a seventh status;
+    - Rerun this job: Resume or Restart from beginning, after a wait, at most N times;
+    - Rerun from…: a chosen upstream job and everything between it and this one, at most N times;
+    - Skip…: chosen jobs, or the rest of a branch;
+    - Cancel the workflow (nothing more starts; running jobs finish) and Kill the workflow (nothing more starts; running jobs are ended now), as in RunMyJobs;
+    - Cancel the job (one not yet started will not start) and Kill the job (ends it while running);
+    - Hold for an operator: pauses the workflow until someone chooses what next (Control-M's "leave it waiting", on purpose and visible);
+  - *side effects*, changing nothing in the run: Notify; Mark as late (a flag, not a status, shown on the diagram and in Job History and searchable: the record of a missed deadline); Start a workflow (the one push in the model, drawn as an outside link).
+- **How entries combine:** every entry is judged against a snapshot of what actually happened, so no entry's actions change what a later one sees. Of the matching entries, only the first one's decisions take effect; every matching entry's side effects fire.
+  - Why: a job has one fate, but any number of people can hear about it. Example: A "failed: notify ops", B "return code 8: rerun, at most twice", C "failed: cancel the workflow". On a failure with code 8, ops are notified and the job reruns; C applies when the code is not 8, or once B's reruns are used up. With every match firing (Control-M's On-Do, in order, where an earlier Do can change how a later On evaluates) the rerun and the cancel would compete; with first match only, the notify would have to be copied into B.
+  - In the editor, two sections make the rule visible: **What happens next** (ordered; the first that holds wins, like If/ElseIf) and **Also** (every one that holds fires).
+- Each rerun's N counts per workflow run; when it is used up, the next matching decision applies ("rerun twice, then hold").
+- A workflow's own Reactions decide its final status; by default a workflow with a Failed job is Failed.
+- "Explain" shows which entries matched and which actions took effect.
+- Steps' On failure is expected to become Reactions too, one mechanism for both.
+
+### Success return codes (2026-10-17)
+
+- Every job has **Success return codes**, `0` unless set; lists and ranges (`0, 4`, `0-4`). A code on the list means Succeeded, and is not an override.
+- It becomes meaningful once a step can run a program and pass its return code on; today a job's code is 0 or 1.
+
+### One editor experience (2026-10-17)
+
+- The job editor and the workflow editor should be essentially the same UX: the properties panel, variables, the condition editor with Explain, the Reactions editor and the Rerun ▸ menu are shared. The canvas differs: a tree of steps, a graph of jobs.
+
 ## Proposed, to settle
 
-- **Reactions, topic 4** (proposed 2026-10-17; widened the same day at the owner's request):
-  - a list on a job or a workflow; each entry is *When* (an event, with a condition in flow control's language about the job: `%{Load.ReturnCode} IN (4, 8)`) and *Then* (one or more actions);
-  - **kinds of When**, all in the one list and editor; to the user one mechanism, though the code paths differ:
-    - *it ends*: status, return code, outputs, Operations; checked once, at the end;
-    - *it hasn't started by…* and *it hasn't ended by…*: a time of day, or relative ("within 2 hours of the workflow starting"); a watcher with a timer;
-    - *it runs longer than…*: a fixed time, or compared with its own Job History ("50% over its average of the last 10 runs");
-    - this replaces a separate SLA mechanism. RunMyJobs' SLAs are wholly separate from job statuses and very complex; the owner wants the same reach, made user-friendly. Absolute times mean the day the run started until AutoApp has scheduling;
-  - **actions**, offered only where they fit the kind of When:
-    - *decisions*, changing what happens next: Count as succeeded / failed (the real code and the counted status shown side by side), Rerun this job (Resume or Restart from beginning, after a wait, at most N times), Rerun from… (a chosen upstream job and everything between it and this one, at most N times), Skip… (chosen jobs, or the rest of a branch), Stop the workflow (as failed or succeeded; jobs not started are Not run), Hold for an operator (Control-M's "leave it waiting", on purpose and visible), Cancel the job;
-    - *side effects*, changing nothing in the run: Notify, Mark as late (a flag, not a status, shown on the diagram and in Job History and searchable: the record of a missed deadline), Start a workflow (the one push in the model, drawn as an outside link);
-  - **how entries combine** (a hybrid of first match and Control-M's On-Do): every entry is judged against a snapshot of what actually happened, so no entry's actions change what a later one sees; of the matching entries' decisions, only the first takes effect (the editor warns of one that can never apply); every matching side effect fires. Control-M instead fires every matching On in order, and an earlier Do can change how a later On evaluates;
-  - each rerun's N counts per workflow run; when it is used up, the next matching decision applies ("rerun twice, then hold");
-  - a workflow's own Reactions decide its final status; by default a workflow with a Failed job is Failed;
-  - "Explain" shows which entries matched and which actions took effect.
-  - Questions for the owner:
-    1. the hybrid, or strict On-Do order (does sequential evaluation do something in practice that would be missed);
-    2. the kinds of When: anything missing ("a step reached", "a file arrived");
-    3. an overridden status shown as both ("Succeeded (return code 4)") rather than a seventh status;
-    4. Stop the workflow while jobs run: let them finish or cancel them (proposed: a choice on the action, "let them finish" first);
-    5. whether steps' On failure should become Reactions too, one mechanism for both.
+- **What a cancelled or killed job ends as** (proposed 2026-10-17): keep the six statuses; a killed job is Failed with its reason shown ("Killed by a Reaction"), a cancelled one Not run ("Cancelled"). The alternative is Cancelled and Killed as statuses of their own, as in RunMyJobs.
+- **Success return codes on a use of a shared job** (proposed 2026-10-17): a use in a workflow can override its definition's, as it can its variables.
+- **The two sections of the Reactions editor** (proposed 2026-10-17): What happens next and Also, as above.
 
 ## Open questions, by topic
 
@@ -163,6 +183,7 @@ The owner's idea, starting from the JSON records a run sends for its operation l
 - **Diagram and editor (6):**
   - how prerequisites outside the workflow (like RunMyJobs' Wait and Raise Events) are drawn (shortcoming 4);
   - a dense diagram that shows full names (shortcoming 5);
+  - whether a job's steps (with If and loops) can be drawn as a graph too, so the job and workflow canvases look alike;
   - how embedded and shared jobs are told apart.
 - **Run records (7):**
   - how a workflow's runs appear in Job History, the Operations Log and the trace (perhaps a parent run with each job's run as a child);

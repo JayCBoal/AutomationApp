@@ -8,7 +8,7 @@ Status: **being designed. Nothing is built.** On 2026-10-17 the session finished
 
 1. The objects and their names. *Done.*
 2. Dependencies: join rules, branches not taken, final statuses, disabled jobs. *Done.*
-3. Conditions: what they can test, and the language or builder (shortcoming 3). *Language and outputs decided; what else to test, the builder and Explain open.*
+3. Conditions: what they can test, and the language or builder (shortcoming 3). *Language, outputs, outside targets and which run decided; the rest proposed.*
 4. Reactions to outcomes: return codes, rerunning upstream (shortcoming 2). *Done.*
 5. Restarts and bypassing. *Net result, Resume and the Rerun menu decided.*
 6. The diagram and editor: cross-workflow links, density, full names (shortcomings 4 and 5).
@@ -177,11 +177,35 @@ What a cancelled or killed job ends as: see Reason, below.
   - Against: two more cases in every prerequisite, "ended" test, Reaction and default, almost always "same as Failed" or "same as Not run"; they are kinds of Failed and Not run; their main use in RunMyJobs, standing in for return codes in Status Handlers, goes away when return codes are handled directly.
   - `Reason` keeps the advantages: conditions test it (`%{Extract.Status} = 'FAILED' AND %{Extract.Reason} = 'KILLED'`), Job History filters on it, reports can leave kills out, the diagram marks it, and an RMJ Killed handler translates into that condition. It also names which of their two meanings Not run and Bypassed have.
 
+### Where prerequisites live, and outside targets (2026-10-17)
+
+- **Prerequisites exist only in workflows**, on a job's use there (or an embedded job), never on a job's definition.
+  - The principle: what a job *is* belongs on its definition (its steps, Success return codes, Reactions to its own outcome and timing); how it *fits in* belongs on its use in a workflow. Prerequisites on a definition would give every workflow using it waits not visible where one looks (shortcoming 4 again).
+  - A standalone job that must wait for something is a one-job workflow (which should be cheap to make), or uses flow control inside it (a While around a Check Files step).
+  - Constraints that really belong to the job itself ("never during the database's maintenance window") are closer to resources or blackout windows: a separate idea, for later.
+- **A prerequisite's target can be outside the workflow** (a job in another workflow, an endpoint, a time window), defined on the prerequisite itself. There is no separate object for outside links; a list of them, if shown, is built from the prerequisites.
+- **Conditions name prerequisite targets.** A target gets a name made from it (`MONTH_END.Extract`, `INBOUND_ORDERS`), editable where two clash: `%{MONTH_END.Extract.Status} = 'SUCCESS'`. A condition may name only the workflow's own jobs and the targets of the job's own prerequisites; anything else is an error as it is written. So every outside reference is a prerequisite, and every prerequisite can be drawn.
+
+### Which run of another workflow counts (2026-10-17)
+
+- By default its **current or latest run**: the run executing now if there is one (a prerequisite on a job in it that has not run yet waits; yesterday's success does not count), otherwise its most recent completed run. This is ActiveBatch's "Exact active", under a name that says what it means.
+- Not "today's run": that breaks workflows that cross midnight.
+- Optional limits, off by default, against a stale success: only if that run ended within the last N hours; only a run started after this workflow's run started.
+
 ## Proposed, to settle
+
+- **Topic 3's other loose ends** (proposed 2026-10-17):
+  - *an endpoint as a target* has the outputs `FileCount` and `Bytes` (what matches its path and pattern now), `Files` (a table, like Operations) and `Stable` (no matching file changed for N seconds, so a job does not start on a file still arriving); as a prerequisite it waits, with its time limit. Local endpoints only, until SFTP exists;
+  - *workflow variables*: as in flow control, `${...}` is fixed when the run starts and `%{...}` comes from the run. A workflow has `${...}` variables of its own, inherited by what is embedded in it. Precedence, highest first: a use's overrides, the job's own, the workflow's, tags. Values fixed at the start are also what Resume needs;
+  - *time windows*: a built-in `%{Now...}` (`Time`, `Date`, `Weekday`): `%{Now.Time} BETWEEN '06:00' AND '18:00'`; as a prerequisite it waits until the window opens;
+  - *the builder*: rows of name → output → comparison → value, joined by AND or OR, with grouping, writing the SQL live beneath; text is always one switch away, and back only while the text is in a shape the builder can show (otherwise "edited as text");
+  - *Explain*: against a past run (each value as it was, each part held or not, the result) and now (current values, in the editor), growing from what flow control already logs.
+  - Questions for the owner: the variable precedence; `Stable` for files.
 
 ## Open questions, by topic
 
-- **Conditions (3):** what else a condition can test: files present for an endpoint (perhaps `files('INBOUND_ORDERS')`), workflow variables, a time window, a job in another workflow; the builder; "Explain" against a past run.
+- **Conditions (3):** see the proposal above.
+- **Reactions on a use** (raised 2026-10-17): whether a use can add Reactions of its own to its definition's (proposed: yes, the use's looked at first).
 - **Reactions (4):** see the proposal above; also, for an outside prerequisite that times out, whether the job counts as failed or not run.
 - **Restarts (5):** each job's attempts kept, so a restart resets only the jobs chosen; restarting from the point of failure, from a chosen job, or bypassing one; what Advanced… offers; the open points of resuming (above).
 - **Diagram and editor (6):**
@@ -200,4 +224,5 @@ What a cancelled or killed job ends as: see Reason, below.
 ## Later
 
 - Scheduling in AutoApp, perhaps improving on RunMyJobs' Time Window and Submit Frame pair.
+- Constraints that belong to a job itself, such as blackout windows or resources ("never during the database's maintenance window").
 - With scheduling: what an outside prerequisite with no time limit means when there is no daily cycle (like Control-M's New Day Process) to end its wait.

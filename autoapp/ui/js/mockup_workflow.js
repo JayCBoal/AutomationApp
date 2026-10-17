@@ -48,7 +48,7 @@
         ["Check_inputs", "Confirm_cutoff"], ["Check_inputs", "Refresh_FX_rates"], ["Check_inputs", "Extract_US"],
         ["Check_inputs", "Extract_EU"], ["Check_inputs", "Extract_APAC"], ["Check_inputs", "Rebuild_EU_cache", "OTHER", "SKIPPED or SUCCESS"],
         ["Extract_US", "Legacy_feed", "FAILED"], ["Extract_EU", "Send_EU_extract_to_partner"],
-        ["Extract_US", "Transform/Stage"], ["Extract_EU", "Transform/Stage"], ["Extract_APAC", "Transform/Stage"],
+        ["Extract_US", "Transform"], ["Extract_EU", "Transform"], ["Extract_APAC", "Transform"],
         ["Transform/Stage", "Transform/Validate"], ["Transform/Validate", "Transform/Enrich", "RC", "RC 0-4"],
         ["Refresh_FX_rates", "Transform/Enrich", "ENDED"],
         ["Confirm_cutoff", "Approve_invoices"], ["Transform", "Approve_invoices"],
@@ -69,7 +69,9 @@
         { id: "out:audit", side: "out", type: "start", label: "AUDIT_PACK", from: "Transform/Validate", test: "START",
           detail: "Started by a Reaction of Transform / Validate" },
     ];
-    const RERUNS = [{ from: "Transform/Validate", to: "Extract_EU", label: "RC 8: rerun from here, at most 2" }];
+    const RERUNS = [{ from: "Transform/Validate", to: "Extract_EU", label: "↺ RC 8: rerun from here, at most 2",
+                      words: "A Reaction of Transform / Validate: on return code 8, rerun from Extract_EU, at most 2 times" }];
+    const REACTION_DASH = "9 3 2 3";
 
     // A moment in a run, for "A run in progress"
     const RUN = {
@@ -80,7 +82,7 @@
         "Legacy_feed": ["NOT_RUN", "Not run: its prerequisites can't be met"],
         "Send_EU_extract_to_partner": ["DISABLED", "Disabled: PARTNER_SEND is disabled"],
         "Rebuild_EU_cache": ["SKIPPED", "Skipped by a Reaction of Check_inputs"],
-        "Transform/Stage": ["WAITING", "Waiting for Extract_EU"],
+        "Transform/Stage": ["WAITING", "Waiting: Transform waits for Extract_EU"],
     };
 
     // ---------- Settings, kept in the address bar's absence by these variables ----------
@@ -251,13 +253,32 @@
         return { id: item.path, width: model.width, height: model.height };
     }
 
+    const edgeWords = new Map();         // edge id: what pointing at the line says
+
+    function nameOf(path) {
+        const stub = OUTSIDE.find(s => s.id === path);
+        return stub ? stub.label : displayPath(path);
+    }
+
+    function describeEdge(from, to, test, label) {
+        const target = OUTSIDE.find(s => s.id === to);
+        if (target && target.type === "start") return `${nameOf(from)} starts the workflow ${target.label} (a Reaction)`;
+        if (target) return `${target.label} waits until ${nameOf(from)} ${lineStyle(test).words.replace(" (the default)", "")}`;
+        const source = OUTSIDE.find(s => s.id === from);
+        if (source && source.type === "endpoint") return `${nameOf(to)} waits for files at ${source.label}: ${source.detail.toLowerCase()}`;
+        const what = test === "RC" || test === "OTHER" ? `${label.startsWith("RC") ? "gave return codes " + label.slice(3) : "was " + label}` : lineStyle(test).words.replace(" (the default)", "");
+        return `${nameOf(to)} waits until ${nameOf(from)} ${what}`;
+    }
+
     function elkEdges() {
         const seen = new Set(), edges = [];
+        edgeWords.clear();
         const add = (from, to, test, label, kind = "prereq") => {
             const key = `${from}>${to}>${test}`;
             if (from === to || seen.has(key)) return;
             seen.add(key);
             const labels = label ? [{ text: label, width: textWidth(label, SMALL_FONT) + 10, height: 16 }] : [];
+            edgeWords.set(`e${edges.length}`, describeEdge(from, to, test, label));
             edges.push({ id: `e${edges.length}`, sources: [from], targets: [to], labels, test, kind });
         };
         for (const p of PREREQS) add(visiblePath(p.from), visiblePath(p.to), p.test, p.label);
@@ -282,6 +303,8 @@
                 "elk.algorithm": "layered", "elk.direction": state.direction,
                 "elk.hierarchyHandling": "INCLUDE_CHILDREN", "elk.edgeRouting": "ORTHOGONAL",
                 "elk.layered.nodePlacement.strategy": "NETWORK_SIMPLEX",
+                "elk.layered.considerModelOrder.strategy": "NODES_AND_EDGES",
+                "elk.layered.crossingMinimization.forceNodeModelOrder": "true",
                 "elk.spacing.nodeNode": "16", "elk.layered.spacing.nodeNodeBetweenLayers": "44",
                 "elk.spacing.edgeNode": "12", "elk.layered.spacing.edgeNodeBetweenLayers": "14",
                 "elk.edgeLabels.placement": "CENTER", "elk.padding": "[top=24,left=24,bottom=24,right=24]",
@@ -350,7 +373,7 @@
             svg("path", { d: "M0 0 10 5 0 10z", fill: lineStyle(test).color }, m);
         }
         const m = svg("marker", { id: "a-RERUN", viewBox: "0 0 10 10", refX: 9, refY: 5, markerWidth: 7, markerHeight: 7, orient: "auto" }, defs);
-        svg("path", { d: "M0 0 10 5 0 10z", fill: css("--wf-rc") }, m);
+        svg("path", { d: "M0 0 10 5 0 10z", fill: css("--muted") }, m);
     }
 
     // ---------- Drawing ----------
@@ -386,6 +409,12 @@
         if (state.selected === item.path) svg("rect", { x: at.x - 2, y: at.y - 2, width: at.width + 4, height: at.height + 4, rx: 8, fill: "none", stroke: css("--text"), "stroke-width": 1, "stroke-dasharray": "3 2" }, g);
         drawBoxText(g, item, at, model, look);
         svg("title", {}, g).textContent = displayPath(item.path);
+        if (item.kind === "workflow") {         // folded: ▸ unfolds it (so does a double-click)
+            const unfold = svg("g", { "data-toggle": item.path, cursor: "pointer" }, g);
+            svg("rect", { x: at.x + at.width - 22, y: at.y + 2, width: 20, height: 20, fill: "transparent" }, unfold);
+            svg("text", { x: at.x + at.width - 16, y: at.y + 16, fill: css("--muted"), style: `font: ${NAME_FONT}` }, unfold).textContent = "▸";
+            svg("title", {}, unfold).textContent = "Unfold";
+        }
     }
 
     function drawBoxText(g, item, at, model, look) {
@@ -431,11 +460,12 @@
         icon(title, shared ? "lock" : "workflow", at.x + 24, at.y + 8, css("--muted"), shared ? "Shared, read-only here" : "An embedded workflow");
         frameTitleLines(item).forEach((line, i) =>
             svg("text", { x: at.x + 44, y: at.y + 19 + i * LINE, fill: css("--text"), style: `font: ${NAME_FONT}` }, title).textContent = line);
-        svg("title", {}, title).textContent = "Fold or unfold";
+        svg("title", {}, title).textContent = "Fold";
     }
 
     function drawStub(layer, stub, at, model) {
-        const g = svg("g", { class: "wf-stub" }, layer);
+        const g = svg("g", { class: "wf-stub", "data-path": stub.id, cursor: "pointer" }, layer);
+        if (state.selected === stub.id) svg("rect", { x: at.x - 2, y: at.y - 2, width: at.width + 4, height: at.height + 4, rx: 8, fill: "none", stroke: css("--text"), "stroke-width": 1, "stroke-dasharray": "3 2" }, g);
         svg("rect", { x: at.x, y: at.y, width: at.width, height: at.height, rx: 6, fill: "none", stroke: css("--muted"), "stroke-dasharray": "4 3" }, g);
         let x = at.x + PAD;
         if (stub.type === "endpoint") { icon(g, "file", x, at.y + PAD + 1, css("--muted"), "An endpoint"); x += ICON + 4; }
@@ -451,10 +481,12 @@
     function drawEdge(layer, edge, positions) {
         const offset = positions.get(edge.container || "root") || { x: 0, y: 0 };
         const style = lineStyle(edge.test);
+        const g = svg("g", {}, layer);
         for (const section of edge.sections || []) {
             const points = [section.startPoint, ...(section.bendPoints || []), section.endPoint];
             const d = points.map((p, i) => `${i ? "L" : "M"}${p.x + offset.x} ${p.y + offset.y}`).join(" ");
-            svg("path", { d, fill: "none", stroke: style.color, "stroke-width": 1.6, "stroke-dasharray": style.dash, "marker-end": `url(#a-${edge.test})` }, layer);
+            svg("path", { d, fill: "none", stroke: style.color, "stroke-width": 1.6, "stroke-dasharray": style.dash, "marker-end": `url(#a-${edge.test})` }, g);
+            hoverArea(g, d, edgeWords.get(edge.id));
         }
         for (const label of edge.labels || []) {
             const x = label.x + offset.x, y = label.y + offset.y;
@@ -463,11 +495,19 @@
         }
     }
 
+    /** A wide, invisible copy of a line, so it is easy to point at; pointing at it says what the line means. */
+    function hoverArea(group, d, words) {
+        const area = svg("path", { d, fill: "none", stroke: "transparent", "stroke-width": 10, "pointer-events": "stroke" }, group);
+        svg("title", {}, area).textContent = words;
+    }
+
     function drawAnyMarker(layer, at) {
         const across = state.direction === "RIGHT";
         const x = across ? at.x - 30 : at.x + at.width / 2 - 14, y = across ? at.y + at.height / 2 - 8 : at.y - 26;
-        svg("rect", { x, y, width: 28, height: 16, rx: 8, fill: css("--page"), stroke: css("--text") }, layer);
-        svg("text", { x: x + 14, y: y + 12, "text-anchor": "middle", fill: css("--text"), style: `font: ${SMALL_FONT}; font-weight: 700` }, layer).textContent = "ANY";
+        const g = svg("g", {}, layer);
+        svg("rect", { x, y, width: 28, height: 16, rx: 8, fill: css("--page"), stroke: css("--text") }, g);
+        svg("text", { x: x + 14, y: y + 12, "text-anchor": "middle", fill: css("--text"), style: `font: ${SMALL_FONT}; font-weight: 700` }, g).textContent = "ANY";
+        svg("title", {}, g).textContent = "Any: starts when any one of the lines into it is satisfied, not all of them";
     }
 
     function rerunRoom() {
@@ -485,11 +525,15 @@
         const edge = across ? -42 : -rerunRoom() + 20;    // in the room kept above (or to the left of) the diagram
         const d = across ? `M${a.x} ${a.y} V${edge} H${b.x} V${b.y}` : `M${a.x} ${a.y} H${edge} V${b.y} H${b.x}`;
         // Beneath the boxes, so it passes behind them rather than through their names
-        svg("path", { d, fill: "none", stroke: css("--wf-rc"), "stroke-width": 1.6, "stroke-dasharray": "5 4", "stroke-linejoin": "round", "marker-end": "url(#a-RERUN)" }, under);
+        const g = svg("g", {}, under);
+        svg("path", { d, fill: "none", stroke: css("--muted"), "stroke-width": 1.6, "stroke-dasharray": REACTION_DASH, "stroke-linejoin": "round", "marker-end": "url(#a-RERUN)" }, g);
+        hoverArea(g, d, rerun.words);
         const w = textWidth(rerun.label, SMALL_FONT) + 10;
         const mx = across ? (a.x + b.x) / 2 : edge + w / 2 - 6, my = across ? edge : (a.y + b.y) / 2;
-        svg("rect", { x: mx - w / 2, y: my - 9, width: w, height: 16, rx: 3, fill: css("--page"), stroke: css("--wf-rc") }, layer);
-        svg("text", { x: mx, y: my + 3, "text-anchor": "middle", fill: css("--wf-rc"), style: `font: ${SMALL_FONT}` }, layer).textContent = rerun.label;
+        const label = svg("g", {}, layer);
+        svg("rect", { x: mx - w / 2, y: my - 9, width: w, height: 16, rx: 3, fill: css("--page"), stroke: css("--muted"), "stroke-dasharray": REACTION_DASH }, label);
+        svg("text", { x: mx, y: my + 3, "text-anchor": "middle", fill: css("--text"), style: `font: ${SMALL_FONT}` }, label).textContent = rerun.label;
+        svg("title", {}, label).textContent = rerun.words;
     }
 
     function drawMatchCounts(layer, positions) {
@@ -556,9 +600,23 @@
 
     // ---------- The side panel, Find and the key ----------
 
+    function renderStubSide(side, stub) {
+        const kinds = { job: "A job in another workflow", endpoint: "An endpoint", needed: "A job in another workflow that waits for this one",
+                        start: "A workflow started by a Reaction in this one" };
+        const linked = stub.side === "in" ? `Waited for by ${displayPath(stub.to)}` : `${stub.type === "start" ? "Started by" : "Waits for"} ${displayPath(stub.from)}`;
+        side.innerHTML = `<div class="wf-outside">${iconHtml("lock", "Outside")} Outside this workflow</div>
+            <h2>${esc(stub.label)}</h2><div>${esc(kinds[stub.type])}</div>
+            <h3>${stub.side === "in" ? "This workflow waits for it" : "It depends on this workflow"}</h3><div>${esc(stub.detail)}</div><div class="muted">${esc(linked)}</div>
+            ${state.mode === "run" && stub.run ? `<h3>Now</h3><div>${esc(stub.run)}</div>` : ""}
+            <p style="margin-top: 14px"><a href="#" onclick="return false">Open ${esc(stub.type === "endpoint" ? "the endpoint" : stub.label.split(" / ")[0])}</a> <span class="muted">(not in the mockup)</span></p>
+            <p class="muted">Defined in this workflow's prerequisites${stub.type === "start" ? " (here, a Reaction)" : ""}; it is edited there, not here.</p>`;
+    }
+
     function renderSide() {
         const item = BY_PATH.get(state.selected);
         const side = document.getElementById("side");
+        const stub = OUTSIDE.find(s => s.id === state.selected);
+        if (stub) { renderStubSide(side, stub); return; }
         if (!item) { side.innerHTML = `<p class="muted">Select a box to see it here.</p>`; return; }
         const kind = item.kind === "workflow" ? (item.origin === "shared" ? `Shared workflow: uses ${item.def}` : "Embedded workflow")
                                               : (item.origin === "shared" ? `Shared job: uses ${item.def}` : "Embedded job");
@@ -638,7 +696,7 @@
                        ["clock", "a time window"], ["calendar", "a date"], ["var", "a test on a variable"], ["file", "an endpoint"], ["pause", "held"], ["lock", "read-only here"]];
         legend.insertAdjacentHTML("beforeend", `<div class="item"><span>Markers: ${marks.map(([n, w]) => `${iconHtml(n, w)} ${esc(w)}`).join(" · ")}.
             <span style="color: var(--failure)">${iconHtml("late", "late")}</span> late. Point at a marker on a box to read its exact condition.
-            Dashed boxes at the edges are outside the workflow; the dashed purple arc over the top is a Reaction that reruns upstream.</span></div>`);
+            Dashed boxes at the edges are outside the workflow. A dash-dot line marked ↺ is a Reaction that reruns upstream. Point at any line to read what it means.</span></div>`);
     }
 
     // ---------- Putting it together ----------

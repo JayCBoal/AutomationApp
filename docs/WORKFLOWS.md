@@ -11,7 +11,7 @@ Status: **being designed. Nothing is built.** On 2026-10-17 the session finished
 3. Conditions: what they can test, and the language or builder (shortcoming 3). *Done.*
 4. Reactions to outcomes: return codes, rerunning upstream (shortcoming 2). *Done.*
 5. Restarts and bypassing. *Done.*
-6. The diagram and editor: cross-workflow links, density, full names (shortcomings 4 and 5).
+6. The diagram and editor: cross-workflow links, density, full names (shortcomings 4 and 5). *Proposed.*
 7. Run records: Job History, the Operations Log, the trace.
 8. The first slice to build: the smallest thing that shows the idea.
 
@@ -224,15 +224,23 @@ What a cancelled or killed job ends as: see Reason, below.
 
 ## Proposed, to settle
 
+- **Topic 6, the diagram and the editor** (proposed 2026-10-17):
+  - *layout*: left to right (columns are the levels of the graph; parallel jobs stack down a column, compact for wide fan-outs); a job is a one-line box that grows to fit its name and wraps to a second line past about 40 characters, never truncated; laid out automatically (no dragging; pinning perhaps later);
+  - *a box*: a status colour, the name, and markers (shared or embedded, has Reactions, disabled here or elsewhere, late, attempt number from 2); everything else in the side panel on selection, the same panel as the job editor;
+  - *lines*: arrows are prerequisites in the workflow, unlabelled for the default ("succeeded"), else labelled (`ended`, `RC 4`, `FAILED`); *any* marked where arrows enter a job; Rerun from… Reactions as a dashed arrow back upstream;
+  - *embedded workflows*: a frame around their jobs, collapsible to one box with a summary ("Extract: 12 jobs"; in a run "2 running, 1 failed"); *shared* ones a single box, opening read-only;
+  - *outside dependencies, both ways* (shortcoming 4): what this workflow waits for as dashed boxes at the left edge (`⇢ MONTH_END / Extract`, linking there; an endpoint as a file marker; a time window as a clock on the job); what waits for this workflow as dashed boxes at the right edge (`Needed by ⇢ BILLING / Load`); Start a workflow Reactions as right-edge stubs;
+  - *in a run*: the same diagram, coloured by state and updating; Not run hollow grey, Skipped grey stripes, Disabled crossed out, Bypassed a dashed outline with an arrow through, late a red clock, held a pause marker; Rerun ▸ on every box;
+  - *editing*: + Job (New job here, Use an existing job…); drag from box to box to make a prerequisite, select an arrow to change its test; Disable here and Rerun ▸ on each box's menu;
+  - *other views*: an outline (an indented list, embedded workflows nested, prerequisites under each job), for very large workflows and screen readers; a job's steps as graph or tree; zoom, fit, find a job by name;
+  - *layout engine*: elkjs (Eclipse Layout Kernel, MIT), vendored like Alpine, for positions only, AutoApp drawing the SVG; it handles nested graphs, which embedded workflows need. Needs the owner's approval (a new package). The alternative, a layered layout of our own, is a few hundred lines of tricky code and usually worse with nested frames.
+  - Questions for the owner: elkjs; left to right or top to bottom; automatic layout only to start; "Needed by" at the right edge; a clickable mockup to judge it by eye.
+
 ## Open questions, by topic
 
 - **Reactions on a use** (raised 2026-10-17): whether a use can add Reactions of its own to its definition's (proposed: yes, the use's looked at first).
 - **Reactions (4):** see the proposal above; also, for an outside prerequisite that times out, whether the job counts as failed or not run.
-- **Diagram and editor (6):**
-  - how prerequisites outside the workflow (like RunMyJobs' Wait and Raise Events) are drawn (shortcoming 4);
-  - a dense diagram that shows full names (shortcoming 5);
-  - how a job's steps (with If and loops) are drawn as a graph, and switching between graph and tree;
-  - how embedded and shared jobs are told apart.
+- **Diagram and editor (6):** see the proposal above; also how a job's steps (with If and loops) are drawn as a graph.
 - **Run records (7):**
   - how a workflow's runs appear in Job History, the Operations Log and the trace (perhaps a parent run with each job's run as a child);
   - showing each job's state in a workflow run without a run record for jobs that have not started;

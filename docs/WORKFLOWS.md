@@ -276,13 +276,27 @@ To be judged again in practice once built, above all the outside dependencies.
 - Phase 1's plan: [WORKFLOWS_PHASE1.md](WORKFLOWS_PHASE1.md).
 
 
-## Proposed, to settle
+### Prerequisites that aren't satisfied (2026-10-17)
 
-- **Prerequisites that aren't satisfied** (proposed 2026-10-17). Already decided: one that can never hold makes the job Not run, cascading; one outside the workflow waits, with an optional limit. The rest, in two levels:
-  - *on each prerequisite*, how long to wait and whether it is required: wait with no limit (the default inside a workflow), up to N minutes, or until a time ("until 02:00"); if it isn't met in time, **required** (the default: the job can't start) or **optional** (go ahead without it: "use today's FX rates if they arrive by 02:00, otherwise carry on");
-  - *on the job*, what "can't start" means: **Not run** (the default, cascading), **Fail** (Failed, Reason `PREREQUISITES_NOT_MET` or `TIMED_OUT`, so failure paths and Reactions take over), or **Hold for an operator**.
-  - Why two levels: patience belongs to each thing waited for (the file has until 02:00, the other workflow until 03:00); the consequence belongs to the job, which has one fate however it failed to start, as with Reactions' decisions. A time-based Reaction ("not started by 03:00") sits beside this as a side effect (notify, mark as late), not deciding the job's fate.
-  - Questions for the owner: is this the right split; anything missing.
+- Already decided before: one that can never hold makes the job Not run, cascading; one outside the workflow waits, with an optional limit. The rest, in two levels:
+- *on each prerequisite*, how long to wait and whether it is required: wait with no limit (the default inside a workflow), up to N minutes, or until a time ("until 02:00"); if it isn't met in time, **required** (the default: the job can't start) or **optional** (go ahead without it: "use today's FX rates if they arrive by 02:00, otherwise carry on");
+- *on the job*, what "can't start" means: **Not run** (the default, cascading), **Fail** (Failed, Reason `PREREQUISITES_NOT_MET` or `TIMED_OUT`, so failure paths and Reactions take over), or **Hold for an operator**.
+- Why two levels: patience belongs to each thing waited for (the file has until 02:00, the other workflow until 03:00); the consequence belongs to the job, which has one fate however it failed to start, as with Reactions' decisions. A time-based Reaction ("not started by 03:00") sits beside this as a side effect (notify, mark as late), not deciding the job's fate.
+- Built with outside dependencies (Phase 5).
+
+### A workflow is a kind of Job (2026-10-17)
+
+- Every executable object is a Job, with a `JobType`: *steps* (as now) or *workflow*. A workflow is not a separate kind of definition. RunMyJobs makes chains a kind of job definition too, clumsily; ActiveBatch makes Plans a separate object.
+- What it gives: one set of keys, used the same way (a workflow is used in a workflow like a job, and a scheduler could start one by its key); everything common written once (description, variables, tags, the Audit Log, search, Reactions, Success return codes, Disable, Rerun ▸); a workflow's run *is* a job run, each child run pointing to its parent run; embedded objects are jobs owned by a workflow (a parent column), hidden from lists.
+- How it avoids the clumsiness: a common core in Jobs, and type-specific content beside it, never forced into one shape: steps for a steps job (JobSteps, as now), items and prerequisites for a workflow (their own tables). Pages and runners choose by type: a workflow's page shows the outline or diagram, never an empty steps editor; its run goes to the workflow runner; it has no working folder.
+- **No other job types for now.** "What kind of work" is a step type (handlers, help, preview, outputs, operation records and masking already exist for those), and a job of one step costs nothing. Job types differ only in structure.
+- **The Simulate step type** (the owner's idea from testing RunMyJobs chains with a configurable dummy job): logs given lines, waits a given time, exits with a given return code, optionally fails with a given message. For building and testing workflows without real jobs.
+
+### Where workflows run (2026-10-17)
+
+- The workflow runner works on the database directly, beside the server, not on an agent. In ActiveBatch terms, workflows run on the server's own virtual queue, the natural home if queues ever come.
+
+## Proposed, to settle
 
 ## Open questions, by topic
 

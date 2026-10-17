@@ -47,6 +47,7 @@ class Executor:
         self.context = RunContext()
         self.loops: List[LoopFolder] = []       # the folders of the For Each File loops the run is inside
         self.passes: List[Tuple[str, str]] = [] # each of those loops' pass: ("File 2 of 5: a.csv", "2")
+        self.job_return_code: Optional[int] = None  # the last return code a step set for the job, if any did
 
     # ---------- Running steps ----------
 
@@ -124,6 +125,8 @@ class Executor:
                 handler.run(resolved.params)
         finally:
             own.update(handler.outputs)
+            if handler.job_return_code is not None:
+                self.job_return_code = handler.job_return_code
             # Send what this step recorded; a failure here never affects the job
             self.after_step()
 

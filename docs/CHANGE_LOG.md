@@ -6,6 +6,20 @@ Notable structural, schema and design changes to AutoApp, newest first. Line-by-
 
 ## 2026-10-17
 
+### Workflows, Phase 1: jobs that run other jobs
+
+The design is in [WORKFLOWS.md](WORKFLOWS.md), this phase's plan in [WORKFLOWS_PHASE1.md](WORKFLOWS_PHASE1.md).
+
+- **Added:** workflows. A workflow is a job of type WORKFLOW, made of other jobs (each under a name of its own in it) and the prerequisites between them: a job starts when the jobs it waits for have succeeded, failed, ended whatever happened, or given chosen return codes; all of them by default, or any one. Everything else runs in parallel.
+- **Added:** the workflow page (`workflow.html`), in the Outline view: add jobs, say what each waits for, save, Run, and watch the run, each job with its state and its log. **Cancel run** starts nothing more; the jobs running finish. The job page sends a workflow there. **Workflows** in the navigation bar, a Type filter and **New workflow** on Job Search.
+- **Added:** running a workflow (`engine/workflow_runner.py`). A workflow is started like any job, by its key, from the Run Job page or a scheduler. A job whose prerequisites can never hold is Not run, saying why ("it waits for 'Load' to succeed, and 'Load' failed"), and that cascades. The workflow fails if any of its jobs failed.
+- **Added:** Job History shows workflow runs and the job runs inside them: Type and Within run filters, a link from a workflow run to "this run and its jobs", and from each job run to its workflow run. Every run now shows its return code.
+- **Added:** the **Simulate** step type, for trying workflows before the real jobs exist: it writes given lines to the job log, waits, and ends with a chosen return code, or fails on purpose.
+- **Added:** **Success return codes** on every job (`0` unless set; `0, 4` or `0-4`). A step can set the job's return code (Simulate does); a job whose code is not a success code fails, with Reason `RETURN_CODE`. The runner's exit code stays 0 or 1; the return code is recorded with the run.
+- **Added:** the sample workflow `DEV-MONTH_END_SAMPLE` in the seed data: the four sample jobs, then a ledger check (return code 4), a failure path and a return-code branch, made of Simulate stand-ins.
+- **Changed:** a job used by a workflow cannot be deleted until it is taken out of it. A job's type cannot be changed.
+- **Migration:** `SQL/migrate_workflows.py` adds `Jobs.JobType`, `Jobs.Owner_MasterObject_id` and `Jobs.SuccessReturnCodes`; `JobRuns.ReturnCode`, `Reason`, `JobType`, `ParentRun_id`, `WorkflowPath`, `Attempt` and `CancelRequestedDateTime`; and the tables `WorkflowItems`, `WorkflowPrerequisites` and `WorkflowRunItems`. Existing jobs become STEPS jobs, and finished runs get the return code their status implies. It keeps all data and can be run again safely.
+
 ### Flow control: If, For Each File, While, step outputs and On failure
 
 Brought over from RunMyFiles, where it was designed with the owner and built on 2026-10-16 (its commit e68675c), after the fork. The design is in [FLOW_CONTROL.md](FLOW_CONTROL.md).

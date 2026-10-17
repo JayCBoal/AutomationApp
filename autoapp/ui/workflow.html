@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Workflow - AutoApp</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="css/autoapp.css">
+    <script src="js/common.js"></script>
+    <script src="js/workflow.js"></script>
+    <script defer src="vendor/alpine-3.17.4.min.js"></script>
+</head>
+<body>
+<div id="app-chrome" data-title="Workflow" data-nav="jobs.html"></div>
+
+<main x-data="workflowDetail()">
+
+    <!-- Selector and the page's buttons. The page arrives locked; Edit unlocks it. -->
+    <div class="panel selector">
+        <label for="workflow-selector">Workflow</label>
+        <input id="workflow-selector" type="text" list="workflow-keys" x-model="chosen" @change="choose()"
+               placeholder="Type to find a workflow" autocomplete="off" :disabled="editing">
+        <datalist id="workflow-keys">
+            <template x-for="k in workflowKeys" :key="k"><option :value="k"></option></template>
+        </datalist>
+        <datalist id="job-keys">
+            <template x-for="k in jobKeys" :key="k"><option :value="k"></option></template>
+        </datalist>
+        <span class="spacer"></span>
+        <a class="button secondary" href="workflow.html?new" x-show="!editing">New workflow</a>
+        <button type="button" class="secondary" id="run-button" x-show="job && !editing" :disabled="busy" @click="start()">Run</button>
+        <button type="button" class="secondary" id="edit-button" x-show="form && !editing" @click="edit()">Edit</button>
+        <button type="button" class="secondary danger" id="delete-button" x-show="editing && job" :disabled="busy"
+                @click="remove()">Delete workflow</button>
+        <button type="button" class="secondary" id="cancel-button" x-show="editing" :disabled="busy" @click="cancel()">Cancel</button>
+        <button type="button" class="primary" id="submit-button" x-show="editing" :disabled="busy || !changed"
+                @click="submit()">Submit</button>
+    </div>
+
+    <p class="message error" id="page-error" x-show="error" x-text="error" role="alert" x-cloak></p>
+    <p class="message saved" id="save-notice" x-show="notice" x-text="notice" role="status" x-cloak></p>
+    <p class="message" x-show="!form && !error && !key" x-cloak>Choose a workflow above, or find one on the
+        <a href="jobs.html?job_type=WORKFLOW">Job Search</a> page.</p>
+
+    <!-- A run, shown in the same outline -->
+    <template x-if="run">
+        <section class="panel wf-run" aria-label="Run" id="run-panel">
+            <div class="steps-head">
+                <h2 class="section" style="margin-top: 0">Run <span class="muted small" x-text="run.instance_id"></span></h2>
+                <span class="status" :class="run.status" id="run-status" x-text="runWords(run)"></span>
+                <span class="muted small" x-show="run.started" x-text="'started ' + time(run.started)"></span>
+                <span class="muted small" x-show="run.ended" x-text="'ended ' + time(run.ended)"></span>
+                <span class="spacer"></span>
+                <button type="button" class="secondary danger" id="cancel-run-button"
+                        x-show="run.status === 'RUNNING' && !run.cancel_requested" @click="cancelRun()"
+                        title="Start nothing more. The jobs running now finish.">Cancel run</button>
+                <span class="muted small" x-show="run.cancel_requested && run.status === 'RUNNING'">Cancelling: waiting for the running jobs to finish</span>
+                <a x-show="run.run_id" :href="logLink(run.run_id)">The workflow's log</a>
+                <button type="button" class="link" @click="closeRun()">Close</button>
+            </div>
+            <p class="error-text" x-show="run.error" x-text="run.error"></p>
+            <ul class="wf-outline" id="run-items">
+                <template x-for="item in run.items" :key="item.path">
+                    <li class="wf-row" :data-name="item.name">
+                        <span class="wf-state" :class="item.status" x-text="stateWords(item)"></span>
+                        <span class="wf-name" x-text="item.name"></span>
+                        <span class="muted small" x-text="'job ' + item.job_key"></span>
+                        <span class="muted small" x-show="item.attempt > 1" x-text="'attempt ' + item.attempt"></span>
+                        <a x-show="item.run_id" :href="logLink(item.run_id)">Log</a>
+                    </li>
+                </template>
+            </ul>
+        </section>
+    </template>
+
+    <template x-if="form">
+        <div>
+            <section class="panel" aria-label="Workflow">
+                <div class="detail-grid">
+                    <label for="workflow-key">Workflow key <span class="required" title="Required">*</span></label>
+                    <div>
+                        <input id="workflow-key" type="text" x-model="form.job_key" :disabled="!editing" maxlength="320"
+                               placeholder="For example MONTH_END_BILLING">
+                        <span class="muted small" x-show="editing">Its name, like a job's: a scheduler starts a workflow
+                            by its key, as it starts a job.</span>
+                    </div>
+                    <label for="workflow-description">Description</label>
+                    <textarea id="workflow-description" rows="2" x-model="form.description" :disabled="!editing"></textarea>
+                    <label for="workflow-enabled">Enabled</label>
+                    <div><input id="workflow-enabled" type="checkbox" x-model="form.active" :disabled="!editing"></div>
+                    <span class="label">Would it run?</span>
+                    <div id="runnability">
+                        <span class="ready-text" x-show="check && check.valid">Ready to run</span>
+                        <span class="muted" x-show="!job">Not yet saved</span>
+                        <span class="muted small" x-show="changed">(as last saved, not as it is on screen)</span>
+                        <ul class="problems" x-show="problems.length">
+                            <template x-for="problem in problems"><li x-text="problem"></li></template>
+                        </ul>
+                    </div>
+                </div>
+            </section>
+
+            <!-- The outline: each job, and what it waits for -->
+            <section class="panel" aria-label="Jobs">
+                <div class="steps-head">
+                    <h2 class="section" style="margin-top: 0">Jobs</h2>
+                    <span class="muted small">They run in parallel unless one waits for another. The order here is only
+                        the order they are shown in.</span>
+                </div>
+                <p class="muted" x-show="!form.items.length && !editing">No jobs yet. Edit the workflow to add the jobs it should run.</p>
+                <ul class="wf-outline" id="outline">
+                    <template x-for="(item, index) in form.items" :key="item.uid">
+                        <li class="wf-item" :data-name="nameOf(item.uid)">
+                            <!-- Locked: the outline in words -->
+                            <template x-if="!editing">
+                                <div>
+                                    <div class="wf-row">
+                                        <span class="wf-name" x-text="nameOf(item.uid)"></span>
+                                        <a class="small" :href="jobLink(item)" x-text="'job ' + item.job_key"></a>
+                                        <span class="tag" x-show="item.join === 'ANY'" title="Starts when any one of its prerequisites holds">Any</span>
+                                    </div>
+                                    <div class="wf-needs muted small" x-text="needs(item)"></div>
+                                </div>
+                            </template>
+                            <!-- Editing -->
+                            <template x-if="editing">
+                                <div class="wf-edit">
+                                    <div class="wf-row">
+                                        <button type="button" class="tool" title="Up" @click="moveItem(index, -1)" :disabled="index === 0">▲</button>
+                                        <button type="button" class="tool" title="Down" @click="moveItem(index, 1)"
+                                                :disabled="index === form.items.length - 1">▼</button>
+                                        <label>Job <input type="text" class="item-job" list="job-keys" x-model="item.job_key"
+                                                          placeholder="Type to find a job" autocomplete="off"></label>
+                                        <label>Named <input type="text" class="item-name" x-model="item.name" maxlength="100"
+                                                            :placeholder="placeholder(item)"></label>
+                                        <label title="ALL: it starts when all its prerequisites hold; ANY: when any one does">Starts when
+                                            <select class="item-join" x-model="item.join">
+                                                <option value="ALL">all</option><option value="ANY">any</option>
+                                            </select> of these hold:</label>
+                                        <span class="spacer"></span>
+                                        <button type="button" class="link small remove-item" @click="removeItem(index)">Remove</button>
+                                    </div>
+                                    <ul class="wf-prerequisites">
+                                        <template x-for="(p, pIndex) in item.prerequisites" :key="p.uid">
+                                            <li class="wf-row">
+                                                <select class="prereq-target" x-model.number="p.target">
+                                                    <template x-for="other in others(item)" :key="other.uid">
+                                                        <option :value="other.uid" x-text="nameOf(other.uid) || '(unnamed)'"
+                                                                :selected="other.uid === p.target"></option>
+                                                    </template>
+                                                </select>
+                                                <select class="prereq-test" x-model="p.test">
+                                                    <option value="SUCCESS">succeeded</option>
+                                                    <option value="FAILED">failed</option>
+                                                    <option value="ENDED">ended, whatever happened</option>
+                                                    <option value="RC">gave return codes</option>
+                                                </select>
+                                                <input type="text" class="prereq-codes" x-show="p.test === 'RC'" x-model="p.return_codes"
+                                                       placeholder="0, 4 or 0-4" maxlength="100" style="max-width: 140px">
+                                                <button type="button" class="link small" @click="removePrerequisite(item, pIndex)">Remove</button>
+                                            </li>
+                                        </template>
+                                        <li x-show="!item.prerequisites.length" class="muted small">Starts when the workflow starts</li>
+                                        <li><button type="button" class="link small add-prerequisite" @click="addPrerequisite(item)"
+                                                    :disabled="form.items.length < 2">+ Wait for another job</button></li>
+                                    </ul>
+                                </div>
+                            </template>
+                        </li>
+                    </template>
+                </ul>
+                <button type="button" class="secondary" id="add-job" x-show="editing" @click="addItem()">+ Add a job</button>
+            </section>
+
+            <!-- Its recent runs -->
+            <section class="panel" aria-label="Runs" x-show="job">
+                <h2 class="section" style="margin-top: 0">Recent runs</h2>
+                <p class="muted" x-show="!runs.length">It has not run yet.</p>
+                <table class="results" x-show="runs.length" id="runs">
+                    <thead><tr><th>Started</th><th>Status</th><th>Instance</th><th>Ended</th><th></th></tr></thead>
+                    <tbody>
+                        <template x-for="r in runs" :key="r.run_id">
+                            <tr>
+                                <td class="nowrap" x-text="time(r.started)"></td>
+                                <td><span class="status" :class="r.status" x-text="r.status"></span>
+                                    <span class="muted small" x-show="r.reason" x-text="r.reason"></span></td>
+                                <td x-text="r.instance_id"></td>
+                                <td class="nowrap" x-text="time(r.ended) || '—'"></td>
+                                <td><button type="button" class="link" @click="showRun(r.run_id)">Show</button></td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+            </section>
+        </div>
+    </template>
+</main>
+</body>
+</html>

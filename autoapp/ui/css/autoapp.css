@@ -386,3 +386,24 @@ body.embedded main { padding-top: 12px; }
 .summary-steps { margin: 10px 0; padding-left: 22px; }
 .summary-steps li { padding: 3px 0; }
 .summary-steps li .tag { margin: 0 6px; }
+
+/* ---------- Workflows (workflow.html) ---------- */
+
+.wf-outline { list-style: none; margin: 0; padding: 0; }
+.wf-outline > li { padding: 7px 0; border-bottom: 1px solid var(--border); }
+.wf-outline > li:last-child { border-bottom: 0; }
+.wf-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+.wf-row label { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); }
+.wf-row input[type=text] { width: auto; min-width: 180px; }
+.wf-name { font-weight: 600; overflow-wrap: anywhere; }
+.wf-needs { margin-top: 2px; }
+.wf-prerequisites { list-style: none; margin: 6px 0 0 58px; padding: 0; display: grid; gap: 4px; }
+.wf-prerequisites select, .wf-prerequisites input { width: auto; }
+.wf-state { display: inline-block; min-width: 110px; font-size: 12px; padding: 1px 8px; border-radius: 10px;
+            border: 1px solid var(--border); color: var(--muted); }
+.wf-state.SUCCESS { color: var(--success); border-color: var(--success); }
+.wf-state.FAILED { color: var(--failure); border-color: var(--failure); }
+.wf-state.RUNNING { color: var(--accent); border-color: var(--accent); }
+.wf-state.WAITING { color: var(--warning); border-color: var(--warning); }
+.wf-state.NOT_RUN { border-style: dashed; }
+.status.RUNNING { color: var(--accent); }

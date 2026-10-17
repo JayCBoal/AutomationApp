@@ -38,6 +38,9 @@ def job_problems(db: Session, job: Job, environment: Optional[Dict[str, str]] = 
     environment: what the scheduler will set when it runs the job, if known (a WLA job's parameters).
     warnings: given a list, what is worth knowing but does not stop the job is added to it.
     """
+    if job.JobType == "WORKFLOW":
+        from app.workflow_store import workflow_problems
+        return workflow_problems(db, job)
     problems = []
     if not job.IsActive:
         problems.append(f"Job '{job.JobKey}' is disabled.")
@@ -53,6 +56,7 @@ def list_jobs(
     active: Optional[bool] = Query(None, description="true for enabled jobs only, false for disabled only"),
     endpoint: Optional[str] = Query(None, description="Part of the name of an endpoint one of the job's steps uses"),
     tag: Optional[str] = Query(None, description="Part of a tag's path: jobs carrying that tag, or one under it"),
+    job_type: Optional[str] = Query(None, description="STEPS for jobs made of steps, WORKFLOW for workflows"),
     limit: int = Query(MAX_RESULTS, ge=1, le=MAX_RESULTS),
     db: Session = Depends(get_db),
 ):
@@ -63,7 +67,9 @@ def list_jobs(
     """
     endpoint_param = JobStepParameter.ParamName.like(f"%{ENDPOINT_SUFFIX}")
 
-    query = db.query(Job)
+    query = db.query(Job).filter(Job.Owner_MasterObject_id.is_(None))      # embedded jobs show in their workflow
+    if job_type:
+        query = query.filter(Job.JobType == job_type.strip().upper())
     if job_key:
         query = query.filter(Job.JobKey.ilike(f"%{job_key}%"))
     if description:
@@ -124,6 +130,8 @@ def list_jobs(
     return [
         JobSummary(
             job_key=job.JobKey,
+            job_type=job.JobType or "STEPS",
+            item_count=len(job.items) if job.JobType == "WORKFLOW" else 0,
             description=job.Description,
             active=bool(job.IsActive),
             step_count=step_counts[job.MasterObject_id][0],

@@ -21,7 +21,8 @@ from sqlalchemy.orm import Session, object_session
 
 from app.models import Audit, Job, JobRun, JobStep, JobStepParameter, StepType, Variable, utcnow
 from app.schemas import JobDetail, JobSave, JobStepOut, JobStepSave, VariableOut
-from engine import step_tree
+from app import workflow_store
+from engine import return_codes, step_tree
 from engine.handlers import HANDLER_REGISTRY
 from engine.handlers.flow import BRANCH_NAMES, BRANCHES, structure_problems, top_level_problems
 
@@ -80,8 +81,10 @@ def describe_job(job: Job) -> JobDetail:
     db = object_session(job)
     return JobDetail(
         job_key=job.JobKey,
+        job_type=job.JobType or "STEPS",
         description=job.Description,
         active=bool(job.IsActive),
+        success_return_codes=job.SuccessReturnCodes,
         created=job.CreatedDateTime,
         created_by=job.CreatedBy,
         modified=job.ModifiedDateTime,
@@ -95,6 +98,7 @@ def describe_job(job: Job) -> JobDetail:
         ],
         tags=tag_store.paths_on(job),
         inherited_variables=inherited_variables(db, job) if db is not None else [],
+        items=workflow_store.describe_items(job) if job.JobType == "WORKFLOW" else [],
     )
 
 
@@ -366,6 +370,8 @@ def apply_job(db: Session, payload: JobSave, existing_key: Optional[str], who: s
     if (creating or new_key != job.JobKey) and db.query(Job.MasterObject_id).filter(Job.JobKey == new_key).first():
         raise JobStoreError(f"A job with JobKey '{new_key}' already exists.", status=409)
 
+    job_type = _check_type(payload, job)
+    success_codes = _success_codes(payload)
     step_types = {t.HandlerClass: t for t in db.query(StepType)}
     entries = _flatten(payload.steps)
     _check_submitted(entries, step_types)
@@ -373,10 +379,11 @@ def apply_job(db: Session, payload: JobSave, existing_key: Optional[str], who: s
     changes: List[str] = []
     try:
         if creating:
-            job = Job(JobKey=new_key, Description=payload.description, IsActive=payload.active, CreatedBy=who)
+            job = Job(JobKey=new_key, JobType=job_type, Description=payload.description, IsActive=payload.active,
+                      SuccessReturnCodes=success_codes, CreatedBy=who)
             db.add(job)
             db.flush()
-            changes.append(f"Created job '{new_key}'.")
+            changes.append(f"Created {'workflow' if job_type == 'WORKFLOW' else 'job'} '{new_key}'.")
         else:
             if new_key != job.JobKey:
                 changes.append(f"Renamed from '{job.JobKey}' to '{new_key}'.")
@@ -387,10 +394,19 @@ def apply_job(db: Session, payload: JobSave, existing_key: Optional[str], who: s
             if payload.active != bool(job.IsActive):
                 changes.append("Enabled the job." if payload.active else "Disabled the job.")
                 job.IsActive = payload.active
+            if success_codes != job.SuccessReturnCodes:
+                changes.append(f"Success return codes are now {success_codes or '0'}.")
+                job.SuccessReturnCodes = success_codes
     except ValueError as e:                 # the JobKey is not a usable name
         raise JobStoreError(str(e))
 
-    changes += _apply_steps(job, entries, step_types, creating)
+    if job_type == "WORKFLOW":
+        try:
+            changes += workflow_store.apply_items(db, job, payload.items, creating)
+        except workflow_store.WorkflowError as e:
+            raise JobStoreError(str(e))
+    else:
+        changes += _apply_steps(job, entries, step_types, creating)
 
     if payload.variables is not None:
         changes += apply_variables(job, payload.variables, creating)
@@ -408,11 +424,38 @@ def apply_job(db: Session, payload: JobSave, existing_key: Optional[str], who: s
     return job, changes
 
 
+def _check_type(payload: JobSave, job: Optional[Job]) -> str:
+    """The job's type: as submitted for a new job; a saved job's type never changes."""
+    job_type = (payload.job_type or "STEPS").strip().upper()
+    if job_type not in Job.TYPES:
+        raise JobStoreError(f"'{payload.job_type}' is not a type of job. A job is STEPS or WORKFLOW.")
+    if job is not None and job_type != (job.JobType or "STEPS"):
+        raise JobStoreError(f"'{job.JobKey}' is a {'workflow' if job.JobType == 'WORKFLOW' else 'job made of steps'}, "
+                            f"and a job's type cannot be changed. Make a new one instead.")
+    if job_type == "WORKFLOW" and payload.steps:
+        raise JobStoreError("A workflow is made of jobs, not steps. Put the steps in a job and add that job to the workflow.")
+    if job_type == "STEPS" and payload.items:
+        raise JobStoreError("Only a workflow is made of other jobs. Create a workflow to run jobs together.")
+    return job_type
+
+
+def _success_codes(payload: JobSave) -> Optional[str]:
+    problem = return_codes.problem(payload.success_return_codes) if (payload.success_return_codes or "").strip() else None
+    if problem:
+        raise JobStoreError(f"Success return codes: {problem}")
+    return return_codes.normal(payload.success_return_codes)
+
+
 def delete_job(db: Session, job_key: str, who: str) -> None:
-    """Deletes a job that has never run. Raises JobStoreError for one with run history."""
+    """Deletes a job that has never run and that no workflow uses. Raises JobStoreError otherwise."""
     job = db.query(Job).filter(Job.JobKey == job_key).first()
     if not job:
         raise JobStoreError(f"No job with JobKey '{job_key}' exists.", status=404)
+    using = workflow_store.workflows_using(db, job)
+    if using:
+        raise JobStoreError(f"Job '{job_key}' is used by the workflow{'s' if len(using) > 1 else ''} "
+                            f"{', '.join(repr(k) for k in using)}, so it cannot be deleted. Take it out of "
+                            f"{'them' if len(using) > 1 else 'it'} first.", status=409)
     runs = db.query(JobRun).filter((JobRun.Job_MasterObject_id == job.MasterObject_id) | (JobRun.JobKey == job_key)).count()
     if runs:
         raise JobStoreError(

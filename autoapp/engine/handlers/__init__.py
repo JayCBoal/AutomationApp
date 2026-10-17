@@ -1,11 +1,12 @@
 from engine.handlers.file_handler import FileOpHandler
 from engine.handlers.file_tools import CheckFilesHandler, DeleteFilesHandler, UnzipFilesHandler, ZipFilesHandler
 from engine.handlers.flow import FLOW_HANDLERS
+from engine.handlers.simulate import SimulateHandler
 from engine.handlers.sql_handler import RunSqlHandler
 
 # Every step type AutoApp can run. Adding a handler here adds it to the catalog the job editor reads.
 HANDLERS = [FileOpHandler, DeleteFilesHandler, CheckFilesHandler, ZipFilesHandler, UnzipFilesHandler,
-            RunSqlHandler] + FLOW_HANDLERS
+            RunSqlHandler, SimulateHandler] + FLOW_HANDLERS
 
 HANDLER_REGISTRY = {handler.CODE: handler for handler in HANDLERS}
 

@@ -1,8 +1,9 @@
 """
 The records of what happened: job runs, and changes to definitions.
 
-    GET /api/v1/runs             Job History: one row per run of a job
-    GET /api/v1/runs/{run_id}    one run, with its job log
+    GET /api/v1/runs             Job History: one row per run of a job or a workflow
+    GET /api/v1/runs/{run_id}    one run, with its job log, and a workflow run's jobs
+    POST /api/v1/runs/{run_id}/cancel   asks a workflow run to start nothing more
     GET /api/v1/audits    Audit Log: one row per change to a job, endpoint, application, entity or site
 """
 import json
@@ -15,7 +16,7 @@ from sqlalchemy import case, func
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import Audit, JobRun, JobRunLog, Operation
+from app.models import Audit, JobRun, JobRunLog, Operation, WorkflowRunItem, utcnow
 
 MAX_RESULTS = 500
 router = APIRouter(tags=["History"])
@@ -37,6 +38,12 @@ class RunOut(BaseModel):
     operations: int
     failed_operations: int
     has_log: bool = False
+    job_type: str = "STEPS"
+    return_code: Optional[int] = None
+    reason: Optional[str] = None
+    parent_run_id: Optional[str] = None
+    workflow_path: Optional[str] = None
+    attempt: int = 1
 
 
 @router.get("/api/v1/runs", response_model=List[RunOut])
@@ -47,11 +54,17 @@ def list_runs(
     status: Optional[str] = Query(None, description="SUCCESS, FAILED or RUNNING"),
     date_from: Optional[datetime] = Query(None, description="Runs that started at or after this time (UTC)"),
     date_to: Optional[datetime] = Query(None, description="Runs that started at or before this time (UTC)"),
+    job_type: Optional[str] = Query(None, description="STEPS for job runs, WORKFLOW for workflow runs"),
+    within: Optional[str] = Query(None, description="A run's RunID: that run and the runs inside it, however deep"),
     limit: int = Query(MAX_RESULTS, ge=1, le=MAX_RESULTS),
     db: Session = Depends(get_db),
 ):
     """Job History: every run AutoApp has a record of, newest first, with how many files each handled."""
     query = db.query(JobRun)
+    if job_type:
+        query = query.filter(JobRun.JobType == job_type.strip().upper())
+    if within:
+        query = query.filter(JobRun.id.in_(_run_and_inside(db, within)))
     if job_key:
         query = query.filter(JobRun.JobKey.ilike(f"%{job_key}%"))
     if instance_id:
@@ -78,10 +91,26 @@ def list_runs(
     if runs:
         logged = {run_id for (run_id,) in db.query(JobRunLog.JobRun_id).filter(
             JobRunLog.JobRun_id.in_([run.id for run in runs])).distinct()}
-    return [_describe(run, counts.get(run.id, (0, 0)), run.id in logged) for run in runs]
+    parents = _parent_run_ids(db, runs)
+    return [_describe(run, counts.get(run.id, (0, 0)), run.id in logged, parents.get(run.ParentRun_id)) for run in runs]
 
 
-def _describe(run: JobRun, counts, has_log: bool) -> RunOut:
+def _run_and_inside(db: Session, run_id: str) -> List[int]:
+    """The ids of a run and of every run inside it: a workflow's job runs, and theirs if they are workflows."""
+    top = db.query(JobRun.id).filter(JobRun.RunID == run_id).first()
+    found, frontier = ([top[0]] if top else []), ([top[0]] if top else [])
+    while frontier:
+        frontier = [i for (i,) in db.query(JobRun.id).filter(JobRun.ParentRun_id.in_(frontier))]
+        found += frontier
+    return found
+
+
+def _parent_run_ids(db: Session, runs) -> dict:
+    ids = {run.ParentRun_id for run in runs if run.ParentRun_id}
+    return dict(db.query(JobRun.id, JobRun.RunID).filter(JobRun.id.in_(ids)).all()) if ids else {}
+
+
+def _describe(run: JobRun, counts, has_log: bool, parent_run_id: Optional[str] = None) -> RunOut:
     return RunOut(
         run_id=run.RunID, job_key=run.JobKey, instance_id=run.SchedulerInstanceID, run_number=run.RunNumber,
         scheduler=run.SchedulerName, business_date=run.BusinessDate, host=run.Host, status=run.Status,
@@ -90,11 +119,29 @@ def _describe(run: JobRun, counts, has_log: bool) -> RunOut:
         duration_seconds=(run.EndedDateTime - run.StartedDateTime).total_seconds()
         if run.StartedDateTime and run.EndedDateTime else None,
         error=run.ErrorMessage, operations=counts[0], failed_operations=counts[1], has_log=has_log,
+        job_type=run.JobType or "STEPS", return_code=run.ReturnCode, reason=run.Reason, parent_run_id=parent_run_id,
+        workflow_path=run.WorkflowPath, attempt=run.Attempt or 1,
     )
+
+
+class RunItemOut(BaseModel):
+    """One job of a workflow run, and where it stands, whether or not it has started."""
+    name: str
+    path: str
+    job_key: str
+    status: str = "PENDING"
+    reason: Optional[str] = None
+    return_code: Optional[int] = None
+    attempt: int = 0
+    run_id: Optional[str] = None
+    started: Optional[datetime] = None
+    ended: Optional[datetime] = None
 
 
 class RunDetail(RunOut):
     log: List[str] = []
+    items: List[RunItemOut] = []
+    cancel_requested: bool = False
 
 
 @router.get("/api/v1/runs/{run_id}", response_model=RunDetail)
@@ -111,7 +158,35 @@ def get_run(run_id: str, db: Session = Depends(get_db)):
                      .filter(Operation.JobRun_id == run.id).one())
     chunks = db.query(JobRunLog.LogText).filter(JobRunLog.JobRun_id == run.id).order_by(JobRunLog.Seq).all()
     lines = [line for (text,) in chunks for line in text.split("\n")]
-    return RunDetail(**_describe(run, (total or 0, int(failed or 0)), bool(chunks)).model_dump(), log=lines)
+    parent = db.get(JobRun, run.ParentRun_id).RunID if run.ParentRun_id and db.get(JobRun, run.ParentRun_id) else None
+    return RunDetail(**_describe(run, (total or 0, int(failed or 0)), bool(chunks), parent).model_dump(), log=lines,
+                     items=_run_items(db, run), cancel_requested=run.CancelRequestedDateTime is not None)
+
+
+def _run_items(db: Session, run: JobRun) -> List[RunItemOut]:
+    rows = db.query(WorkflowRunItem).filter(WorkflowRunItem.WorkflowRun_id == run.id).order_by(WorkflowRunItem.ItemOrder)
+    return [RunItemOut(name=r.ItemName, path=r.Path, job_key=r.JobKey, status=r.Status, reason=r.Reason,
+                       return_code=r.ReturnCode, attempt=r.Attempt, run_id=r.child_run.RunID if r.child_run else None,
+                       started=r.StartedDateTime, ended=r.EndedDateTime) for r in rows]
+
+
+@router.post("/api/v1/runs/{run_id}/cancel", response_model=RunDetail)
+def cancel_run(run_id: str, db: Session = Depends(get_db)):
+    """
+    Asks a workflow run that is still going to start nothing more. The jobs running now
+    finish; those not started will not run. (Cancelling a single job comes later.)
+    """
+    run = db.query(JobRun).filter(JobRun.RunID == run_id).first()
+    if run is None:
+        raise HTTPException(404, f"AutoApp has no record of run '{run_id}'.")
+    if run.JobType != "WORKFLOW":
+        raise HTTPException(422, f"Run '{run_id}' is a job's run. Only a workflow run can be cancelled for now.")
+    if run.Status != "RUNNING":
+        raise HTTPException(409, f"Workflow '{run.JobKey}' has already ended ({run.Status}), so there is nothing to cancel.")
+    if run.CancelRequestedDateTime is None:
+        run.CancelRequestedDateTime = utcnow()
+        db.commit()
+    return get_run(run_id, db)
 
 
 class AuditOut(BaseModel):

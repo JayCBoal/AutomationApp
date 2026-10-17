@@ -51,6 +51,7 @@ def ingest_batch(db: Session, batch: TelemetryBatch) -> TelemetryIngestResult:
                     result.duplicates_skipped += 1
                     continue
                 job = db.query(Job).filter(Job.JobKey == record.JobKey).first()
+                parent = find_run(record.ParentRunID) if record.ParentRunID else None
                 run = JobRun(
                     RunID=record.RunID,
                     JobKey=record.JobKey,
@@ -62,6 +63,9 @@ def ingest_batch(db: Session, batch: TelemetryBatch) -> TelemetryIngestResult:
                     Host=record.Host,
                     Status="RUNNING",
                     StartedDateTime=_naive_utc(record.StartedAtUtc),
+                    ParentRun_id=parent.id if parent else None,
+                    WorkflowPath=record.WorkflowPath,
+                    Attempt=record.Attempt,
                 )
                 db.add(run)
                 db.flush()
@@ -121,6 +125,8 @@ def ingest_batch(db: Session, batch: TelemetryBatch) -> TelemetryIngestResult:
                     continue
                 run.Status = record.Status
                 run.ErrorMessage = record.Error
+                run.ReturnCode = record.ReturnCode
+                run.Reason = record.Reason
                 run.EndedDateTime = _naive_utc(record.EndedAtUtc)
                 result.runs_ended += 1
 

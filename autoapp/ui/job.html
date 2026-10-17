@@ -69,6 +69,14 @@
                     <label for="job-enabled">Enabled</label>
                     <div><input id="job-enabled" type="checkbox" x-model="form.active" :disabled="!editing"></div>
 
+                    <label for="job-success-codes">Success return codes</label>
+                    <div>
+                        <input id="job-success-codes" type="text" x-model="form.success_return_codes" :disabled="!editing"
+                               placeholder="0" maxlength="100" style="max-width: 200px">
+                        <span class="muted small" x-show="editing">The return codes that mean the job succeeded, as 0, or
+                            0, 4, or 0-4. Empty means 0. A step such as Simulate sets the job's return code.</span>
+                    </div>
+
                     <span class="label">Would it run?</span>
                     <div id="runnability">
                         <span class="muted" x-show="!form.active">Disabled. The runner refuses a disabled job.</span>

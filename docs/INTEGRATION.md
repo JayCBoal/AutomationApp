@@ -15,6 +15,7 @@ python3 -m engine.runner --job-key <JobKey> --instance-id <the WLA's ID for this
 ```
 
 - **Exit code:** `0` if every step succeeded, `1` if the job failed, `2` if the command line was wrong.
+- **A workflow** (a job of type WORKFLOW, since 2026-10-17) is run with the same command and its key. Its exit code is `0` if it succeeded, `1` if it failed. The return code a job's steps set is recorded with the run; the exit code stays `0` or `1`.
 - **Job log:** printed on stdout, with errors on stderr, for the WLA to keep as the job's output. RunMyFiles keeps a copy with the run.
 - **The job's own variables:** whatever the WLA sets in the environment of the process it starts. A step's `${Name}` finds them when nothing in RunMyFiles defines that name, and `${ENV:Name}` names one directly.
 - **`--business-date`:** for a WLA that has one, such as Control-M's order date. Steps use it as `${BUSINESS_DATE:yyyyMMdd}`.

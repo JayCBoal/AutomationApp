@@ -5,6 +5,12 @@ AutoApp execution runner.
 Runs the active steps of one Job, in order (with its If, For Each File and While steps
 deciding which of the steps inside them run, and how often: engine/executor.py), and
 returns an OS exit code (0 = the job succeeded, 1 = it failed) for the calling WLA scheduler.
+
+The job's return code is 0 unless a step sets another (the Simulate step does); the job
+succeeded if its steps did and that code is one of its Success return codes ("0" unless set).
+The code is recorded with the run; the exit code stays 0 or 1 (docs/INTEGRATION.md).
+
+A job that is a workflow is handed to engine/workflow_runner.py, so it is started the same way.
 """
 import argparse
 import os
@@ -17,7 +23,7 @@ from sqlalchemy.orm import Session
 
 from app.database import SessionLocal
 from app.models import Job, Variable
-from engine import job_log
+from engine import job_log, return_codes
 from engine.executor import Executor
 from engine.preflight import describe_problems, prepare_job
 from engine.scope_engine import ScopeResolutionEngine
@@ -26,7 +32,8 @@ from engine.telemetry_client import LocalSpoolTelemetryClient
 def run_job(db: Session, job_key: str, instance_id: str, spool_dir: str,
             working_root: Optional[str] = None, run_number: int = 1,
             scheduler: Optional[str] = None, api_url: Optional[str] = None, run_id: Optional[str] = None,
-            business_date: Optional[date] = None, environment: Optional[Dict[str, str]] = None) -> int:
+            business_date: Optional[date] = None, environment: Optional[Dict[str, str]] = None,
+            parent_run_id: Optional[str] = None, workflow_path: Optional[str] = None, attempt: int = 1) -> int:
     """
     Executes the job and returns the exit code to hand back to the scheduler.
     environment is what ${ENV:...} and the ENV level read: this process's own, unless given.
@@ -38,20 +45,22 @@ def run_job(db: Session, job_key: str, instance_id: str, spool_dir: str,
             # The job log goes with the run's records, so it can be read with the run
             telemetry.log_lines(job_log.take_lines())
 
-        telemetry.start_run(job_key, run_number=run_number, scheduler=scheduler, business_date=business_date)
+        telemetry.start_run(job_key, run_number=run_number, scheduler=scheduler, business_date=business_date,
+                            parent_run_id=parent_run_id, workflow_path=workflow_path, attempt=attempt)
         job_log.summary(f"Job '{job_key}', instance {instance_id}, run number {run_number}"
                         + (f", business date {business_date.isoformat()}" if business_date else ""))
         job_log.debug(f"Run ID {telemetry.run_id}; spool file {telemetry.active_file_path}")
         send_log()
         telemetry.deliver()         # so the run shows as running straight away
 
+        executor, success_codes = None, None
         try:
             job = db.query(Job).filter(Job.JobKey == job_key).first()
             if not job:
                 raise ValueError(f"No job with JobKey '{job_key}' exists.")
             if not job.IsActive:
                 raise ValueError(f"Job '{job_key}' is disabled.")
-            job_id = job.MasterObject_id
+            job_id, success_codes = job.MasterObject_id, job.SuccessReturnCodes
 
             global_config = {"WORKING_ROOT": working_root} if working_root else {}
             scope_engine = ScopeResolutionEngine(
@@ -73,18 +82,32 @@ def run_job(db: Session, job_key: str, instance_id: str, spool_dir: str,
                 send_log()
                 telemetry.deliver()
 
-            Executor(db, scope_engine, telemetry, after_step).run_all(prepared_steps)
+            executor = Executor(db, scope_engine, telemetry, after_step)
+            executor.run_all(prepared_steps)
 
         except Exception as e:
             job_log.error(f"Job '{job_key}' failed: {e}")
             send_log()
-            telemetry.end_run("FAILED", error=str(e))
+            code = executor.job_return_code if executor and executor.job_return_code is not None else 1
+            telemetry.end_run("FAILED", error=str(e), return_code=code, reason="ERROR")
             return 1
+        return _finish(job_key, executor.job_return_code, success_codes, telemetry, send_log)
 
-        job_log.summary(f"Job '{job_key}' completed successfully.")
+
+def _finish(job_key: str, code: Optional[int], success_codes: Optional[str], telemetry, send_log) -> int:
+    """Ends a job whose steps all went as they should: it succeeded if its return code is a success code."""
+    code = 0 if code is None else code
+    if not return_codes.matches(code, success_codes):
+        message = (f"Job '{job_key}' ended with return code {code}, which its Success return codes "
+                   f"({success_codes or return_codes.DEFAULT_SUCCESS}) do not include.")
+        job_log.error(message)
         send_log()
-        telemetry.end_run("SUCCESS")
-        return 0
+        telemetry.end_run("FAILED", error=message, return_code=code, reason="RETURN_CODE")
+        return 1
+    job_log.summary(f"Job '{job_key}' completed successfully" + (f", return code {code}." if code else "."))
+    send_log()
+    telemetry.end_run("SUCCESS", return_code=code)
+    return 0
 
 
 def business_date_argument(text: str) -> date:
@@ -122,6 +145,10 @@ def main():
     parser.add_argument("--run-id", type=uuid.UUID, default=None,
                         help="The ID to record the run under (default: a new one). AutoApp's own Run Job page "
                              "passes one, so it can follow the run; a scheduler leaves it out.")
+    parser.add_argument("--parent-run-id", default=None,
+                        help="Given by the workflow runner: the workflow run this job runs in")
+    parser.add_argument("--workflow-path", default=None, help="Given by the workflow runner: the job's place in it")
+    parser.add_argument("--attempt", type=int, default=1, help="Given by the workflow runner: which attempt this is")
     parser.add_argument("--log-level", default=os.getenv("AUTOAPP_LOG_LEVEL", job_log.DEFAULT_LEVEL),
                         type=str.upper, choices=list(job_log.LEVELS),
                         help="How much the job log says: DETAIL (default) logs every action, SUMMARY one line "
@@ -135,12 +162,29 @@ def main():
         secrets = [value for (value,) in db.query(Variable.VarValue).filter(Variable.IsSecret.is_(True))]
         secrets += [os.environ[name.strip()] for name in args.mask_env.split(",") if name.strip() in os.environ]
         job_log.configure(args.log_level, secrets=secrets)
-        exit_code = run_job(db, args.job_key, args.instance_id, args.spool_dir, args.working_root,
-                            run_number=args.run_number, scheduler=args.scheduler, api_url=args.api_url,
-                            run_id=str(args.run_id) if args.run_id else None, business_date=args.business_date)
+        job = db.query(Job).filter(Job.JobKey == args.job_key).first()
+        if job is not None and job.JobType == "WORKFLOW":
+            exit_code = start_workflow(db, job, args)
+        else:
+            exit_code = run_job(db, args.job_key, args.instance_id, args.spool_dir, args.working_root,
+                                run_number=args.run_number, scheduler=args.scheduler, api_url=args.api_url,
+                                run_id=str(args.run_id) if args.run_id else None, business_date=args.business_date,
+                                parent_run_id=args.parent_run_id, workflow_path=args.workflow_path,
+                                attempt=args.attempt)
     finally:
         db.close()
     sys.exit(exit_code)
+
+
+def start_workflow(db: Session, workflow: Job, args) -> int:
+    from engine.workflow_runner import RunOptions, run_workflow
+    options = RunOptions(instance_id=args.instance_id, spool_dir=args.spool_dir,
+                         run_id=str(args.run_id) if args.run_id else None, run_number=args.run_number,
+                         scheduler=args.scheduler, api_url=args.api_url,
+                         working_root=args.working_root or os.getenv("AUTOAPP_WORKING_ROOT"),
+                         business_date=args.business_date, log_level=args.log_level,
+                         parent_run_id=args.parent_run_id, workflow_path=args.workflow_path, attempt=args.attempt)
+    return run_workflow(db, workflow, options)
 
 
 if __name__ == "__main__":

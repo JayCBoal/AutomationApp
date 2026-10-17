@@ -8,7 +8,7 @@
  */
 function jobSearch() {
     const search = AutoApp.searchPage({
-        criteria: ["job_key", "description", "active", "endpoint", "tag"],
+        criteria: ["job_key", "description", "job_type", "active", "endpoint", "tag"],
         path: "/jobs",
         noun: "job",
         order: "in name order",
@@ -26,6 +26,7 @@ function jobSearch() {
         time: AutoApp.formatTime,
 
         steps(job) {
+            if (job.job_type === "WORKFLOW") return `${job.item_count} job${job.item_count === 1 ? "" : "s"}`;
             const enabled = `${job.step_count} step${job.step_count === 1 ? "" : "s"}`;
             return job.disabled_step_count ? `${enabled} (+${job.disabled_step_count} disabled)` : enabled;
         },
@@ -35,7 +36,7 @@ function jobSearch() {
         },
 
         detailLink(job) {
-            return "job.html?" + new URLSearchParams({ key: job.job_key });
+            return (job.job_type === "WORKFLOW" ? "workflow.html?" : "job.html?") + new URLSearchParams({ key: job.job_key });
         },
 
         operationsLink(job) {
@@ -44,7 +45,8 @@ function jobSearch() {
 
         exportCsv() {
             const csv = AutoApp.toCsv(this.rows, [
-                ["Job", j => j.job_key], ["Description", j => j.description],
+                ["Job", j => j.job_key], ["Type", j => j.job_type === "WORKFLOW" ? "Workflow" : "Job"],
+                ["Description", j => j.description], ["Jobs in it", j => j.job_type === "WORKFLOW" ? j.item_count : ""],
                 ["Enabled", j => j.active ? "Yes" : "No"],
                 ["Enabled steps", j => j.step_count], ["Disabled steps", j => j.disabled_step_count],
                 ["Endpoints", j => j.endpoints.join("; ")],

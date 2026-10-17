@@ -58,8 +58,11 @@ class LocalSpoolTelemetryClient:
         self._undelivered.append(record)
 
     def start_run(self, job_key: str, run_number: int = 1, scheduler: Optional[str] = None,
-                  business_date=None) -> None:
-        self._write("RUN_START", {
+                  business_date=None, parent_run_id: Optional[str] = None, workflow_path: Optional[str] = None,
+                  attempt: int = 1) -> None:
+        # A job run inside a workflow run says which, where in the workflow it is, and which attempt
+        workflow = {"ParentRunID": parent_run_id, "WorkflowPath": workflow_path, "Attempt": attempt} if parent_run_id else {}
+        self._write("RUN_START", {**workflow,
             "JobKey": job_key,
             "InstanceID": self.instance_id,
             "RunNumber": run_number,
@@ -122,8 +125,10 @@ class LocalSpoolTelemetryClient:
         if lines:
             self._write("LOG", {"Lines": list(lines)})
 
-    def end_run(self, status: str, error: Optional[str] = None) -> None:
-        self._write("RUN_END", {"Status": status, "Error": error, "EndedAtUtc": utc_now_iso()})
+    def end_run(self, status: str, error: Optional[str] = None, return_code: Optional[int] = None,
+                reason: Optional[str] = None) -> None:
+        self._write("RUN_END", {"Status": status, "Error": error, "ReturnCode": return_code, "Reason": reason,
+                                "EndedAtUtc": utc_now_iso()})
 
     def deliver(self) -> bool:
         """

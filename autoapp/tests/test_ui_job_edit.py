@@ -553,7 +553,7 @@ def test_the_step_type_list_shows_each_types_name(page, job):
 
     # The parts of an If (Then, Else If, Else) are never offered on their own
     assert [option.inner_text() for option in chooser.locator("option").all()] == [
-        "Check Files", "Copy Files", "Delete Files", "For Each File", "If", "Run SQL", "Unzip Files", "While",
+        "Check Files", "Copy Files", "Delete Files", "For Each File", "If", "Run SQL", "Simulate", "Unzip Files", "While",
         "Zip Files"]
     assert chooser.evaluate("e => e.options[e.selectedIndex].text") == "Copy Files"
     assert chooser.input_value() == "COPY_FILES"

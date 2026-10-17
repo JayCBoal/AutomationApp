@@ -102,6 +102,10 @@ function jobDetail() {
             try {
                 const path = "/jobs/" + encodeURIComponent(this.key);
                 const [job, check] = await Promise.all([AutoApp.get(path), AutoApp.get(path + "/check", this.wlaQuery())]);
+                if (job.job_type === "WORKFLOW") {          // a workflow has its own page
+                    location.replace("workflow.html?" + address.toString());
+                    return;
+                }
                 this.job = job;
                 this.check = check;
                 this.show(job);
@@ -119,6 +123,7 @@ function jobDetail() {
                 job_key: job.job_key,
                 description: job.description || "",
                 active: job.active,
+                success_return_codes: job.success_return_codes || "",
                 steps: job.steps.map(step => this.stepForm(step)),
                 variables: (job.variables || []).map(variable => ({
                     uid: nextUid++,
@@ -323,6 +328,7 @@ function jobDetail() {
                 job_key: this.form.job_key.trim(),
                 description: this.form.description.trim() || null,
                 active: this.form.active,
+                success_return_codes: this.form.success_return_codes.trim() || null,
                 steps: this.form.steps.map(step => this.stepPayload(step)),
                 variables: this.form.variables.map(variable => ({
                     name: variable.name.trim(),

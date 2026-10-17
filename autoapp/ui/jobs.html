@@ -22,6 +22,13 @@
                 <legend>Job</legend>
                 <label>Job key <input type="text" x-model="criteria.job_key" name="job_key" data-lookup="jobs"></label>
                 <label>Description <input type="text" x-model="criteria.description" name="description"></label>
+                <label>Type
+                    <select x-model="criteria.job_type" name="job_type">
+                        <option value="">Any</option>
+                        <option value="STEPS">Jobs</option>
+                        <option value="WORKFLOW">Workflows</option>
+                    </select>
+                </label>
                 <label>Status
                     <select x-model="criteria.active" name="active">
                         <option value="">Any</option>
@@ -43,6 +50,7 @@
             <button type="button" class="secondary" @click="clear()" :disabled="loading">Clear</button>
             <span class="spacer"></span>
             <a class="button secondary" href="job.html?new">New job</a>
+            <a class="button secondary" href="workflow.html?new">New workflow</a>
             <button type="button" class="secondary" @click="exportCsv()" :disabled="rows.length === 0">Export as CSV</button>
         </div>
     </form>
@@ -61,7 +69,7 @@
                     <tr>
                         <th>Job</th>
                         <th>Status</th>
-                        <th>Steps</th>
+                        <th>Contents</th>
                         <th>Endpoints used</th>
                         <th>Tags</th>
                         <th>Last run</th>
@@ -74,6 +82,7 @@
                         <tr>
                             <td>
                                 <a class="job-key" :href="detailLink(job)" x-text="job.job_key"></a>
+                                <template x-if="job.job_type === 'WORKFLOW'"><span class="tag">Workflow</span></template>
                                 <div class="muted small" x-text="job.description"></div>
                             </td>
                             <td>

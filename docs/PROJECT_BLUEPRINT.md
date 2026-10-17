@@ -102,7 +102,24 @@ Jobs are deliberately **not** linked to an Application or Entity. A job may touc
 
 ### Jobs and JobKey
 
-The job is the core unit, as it is in every scheduler: the set of steps that run together in one place. There is no level above it. Grouping related jobs, and deciding the order they run in, is the scheduler's business. (A `Processes` level existed until 2026-10-11; see the change log.)
+The job is the core unit, as it is in every scheduler: anything that runs. `Jobs.JobType` says what it is made of: `STEPS`, the steps that run together in one place, or `WORKFLOW`, other jobs with dependencies between them (below). Since AutoApp became a demonstrator of scheduler features (2026-10-16), deciding the order jobs run in is AutoApp's business too. (A `Processes` level existed until 2026-10-11; see the change log.)
+
+What every job shares lives in `Jobs`: its key, description, whether it is enabled, its type, `SuccessReturnCodes` (the return codes that mean it succeeded: `0`, `0, 4` or `0-4`; empty means 0), and `Owner_MasterObject_id`, the workflow an embedded job belongs to (empty until embedded jobs are built). What belongs to one type lives in that type's tables.
+
+### Workflows
+
+A workflow is a job of type `WORKFLOW` (the design: [WORKFLOWS.md](WORKFLOWS.md); Phase 1: [WORKFLOWS_PHASE1.md](WORKFLOWS_PHASE1.md)).
+
+**Built**
+
+- `WorkflowItems`: each job a workflow uses, under a name of its own in it (letters, digits, `_` and `-`; unique within the workflow), so the same job can be used more than once. A name left out is made from the job's key. `JoinRule` is `ALL` (it starts when all its prerequisites hold) or `ANY`; `ItemOrder` is its place in the outline, which does not affect when it runs.
+- `WorkflowPrerequisites`: what an item waits for: another item of the workflow, and a test: `SUCCESS` (the default), `FAILED`, `ENDED` (whatever happened, Not run included) or `RC` (one of `ReturnCodes`). `Condition`, for conditions written in SQL, is for a later phase.
+- Saving checks: names unique, no job waiting for itself, no loops ("'A', which waits for 'C', which waits for 'B', which waits for 'A'"), every job used exists, and a workflow never uses itself, even through another. A job a workflow uses cannot be deleted. A job's type cannot be changed once it is created.
+- A workflow's pre-run check is its own (disabled, empty) and its jobs' (the first problem of each job that would not run).
+- Running: `engine/workflow_runner.py`, started by `engine.runner` when the job is a workflow, so a scheduler and the Run Job page start it as they start any job. It works on the database directly. It reads the workflow once, at the start; then, about every second, it starts each job whose prerequisites hold (each in a job runner of its own, as the scheduler "AutoApp workflow"), marks Not run each job whose prerequisites can never hold (which can cascade), and records each job's state in `WorkflowRunItems`. It ends Failed if any job failed (Reason `JOB_FAILED`) or it was cancelled (`CANCELLED`), otherwise Succeeded. A job runner whose records did not arrive through the API has its spool loaded straight into the database.
+- Cancel (`POST /api/v1/runs/{run_id}/cancel`): starts nothing more; the jobs running finish; those not started are Not run (Reason `CANCELLED`).
+
+**Planned**: the later phases in WORKFLOWS.md (the diagram, Reactions, conditions, outside dependencies, embedded workflows, restarts, time-based Reactions).
 
 `Jobs.JobKey` is the job's unique name. It is human-readable, independent of environment, and what the scheduler passes. The numeric primary key differs between databases and is never used outside RunMyFiles. Because the key also names the job's working folder, it is limited to letters, digits, `-`, `_` and `.`.
 
@@ -155,6 +172,9 @@ An endpoint has no direction. The same folder can be a destination for one job a
   - `RunNumber`, for schedulers that keep one instance ID across restarts or cyclic runs (Control-M's run count, ActiveBatch's restart count). Defaults to 1.
   - `SchedulerName`, optional, for sites with more than one scheduler.
   - `JobKey`, start and end time, status and the error message.
+  - `ReturnCode` (0 unless a step set one) and `Reason`: why it ended as it did (`ERROR`, `RETURN_CODE`, `JOB_FAILED`, `CANCELLED`).
+  - `JobType`, and for a run inside a workflow run: `ParentRun_id`, `WorkflowPath` (its place in the workflow) and `Attempt`. A workflow's own run is a `JobRuns` row too.
+- `WorkflowRunItems`: one row per job of a workflow run, with its state (`PENDING`, `WAITING`, `RUNNING`, `SUCCESS`, `FAILED`, `NOT_RUN`), Reason, return code and its job run. A job that never started has no job run, so this is where the run says so.
 - `Operations`: a register of what steps actually did. It points at its `JobRuns` row.
   - For a file step, one row per file: a source side and a destination side (endpoint if registered, path, filename, size), the operation type, status, error, times, and an optional SHA-256 checksum.
   - A step that only looks at a file (`CHECK`) or removes it (`DELETE`) fills in the source side only.
@@ -293,6 +313,8 @@ This is what makes a file trace possible: an operation that reads from an endpoi
   - `Dest` may name a new filename only when one file is taken. Several files aimed at one filename fail the step before anything is copied.
   - `RenameMask` gives each file a new name on the way: `${FILE:STEM}_${DATE:yyyyMMdd}${FILE:EXT}` turns `Legal_Batch_1.csv` into `Legal_Batch_1_20261013.csv`. `${FILE:NAME}` is the file's own name, `${FILE:STEM}` its name without the extension, `${FILE:EXT}` its extension with the full stop. It works whether the destination is a folder or an endpoint. A mask that would give two files the same name fails the step before anything is copied, and a mistake in a mask is found before the job starts.
   - A step parameter can be declared as holding per-file placeholders. Those are left for the handler to fill in for each file; anywhere else, `${FILE:...}` is an unresolved placeholder.
+- `engine/handlers/simulate.py`: step type `SIMULATE` (Simulate), for building and trying workflows before the real jobs exist. It writes the `Messages` it is given to the job log at `MessageLevel`, takes `WaitSeconds`, sets the job's return code to `ReturnCode`, and with `Fail` fails with `FailMessage`. Operation type `SIMULATE`, one row per step.
+- A step can set the job's return code (`job_return_code` on its handler; Simulate does). The last one set counts; otherwise it is 0, or 1 when a step failed. The job succeeded if its steps did and the code is one of its Success return codes; if not, it fails with Reason `RETURN_CODE`. The runner's exit code stays 0 or 1 (docs/INTEGRATION.md); the code is recorded with the run.
 - `engine/handlers/file_tools.py`: four more file steps. Each records every file it handles, and each fails when it finds nothing unless `AllowNoFiles=True` (Check Files counts instead).
   - `DELETE_FILES` (Delete Files): removes the matching files, or with `OlderThanDays` only those last changed more than that many days ago. Operation type `DELETE`.
   - `CHECK_FILES` (Check Files): fails the job unless the files look right: at least `MinCount` (default 1) and at most `MaxCount`, none empty unless `AllowEmpty`, none older than `MaxAgeHours`. It lists every problem at once and touches nothing. Operation type `CHECK`.

@@ -4,12 +4,15 @@ actually run. The seed is loaded into a database built from the models, its
 file locations are pointed at the test's temp folder, and the sample jobs are
 run with the real runner.
 """
+import subprocess
+import sys
 from datetime import date
 
 from sqlalchemy import text
 
 from app.catalog import sync_catalog
-from app.models import Endpoint, Job, StepType, Variable
+from app.models import Endpoint, Job, JobRun, StepType, Variable, WorkflowRunItem
+from conftest import AUTOAPP_DIR, subprocess_env
 from create_dev_db import create_sales_db, load_seed
 from engine.handlers import HANDLER_REGISTRY
 
@@ -96,6 +99,34 @@ def test_the_sample_export_holds_back_a_batch_that_fails_its_check(db, run_runne
     assert sorted(p.name for p in held.iterdir()) == [
         f"Open_Invoices_{today}.csv", f"Payments_{today}.csv", f"Stray_{today}.csv"]
     assert not (tmp_path / "finance_app" / "inbox").exists() or not list((tmp_path / "finance_app" / "inbox").iterdir())
+
+
+def test_the_sample_workflow_runs_its_jobs_in_order_and_takes_the_return_code_branch(db, db_url, tmp_path):
+    """DEV-MONTH_END_SAMPLE: both pairs of jobs, then the ledger check (return code 4), Reconcile and Clean_up."""
+    load_seed(db)
+    for root in db.query(Variable).filter(Variable.VarName == "Root"):
+        root.VarValue = root.VarValue.replace("/tmp/autoapp_sample", str(tmp_path))
+    create_sales_db(tmp_path / "sales.db")
+    db.query(Variable).filter(Variable.VarName == "SalesDbUrl").one().VarValue = f"sqlite:///{tmp_path / 'sales.db'}"
+    outbox = tmp_path / "legal_app" / "outbox"
+    outbox.mkdir(parents=True)
+    (outbox / "Legal_Batch_001.csv").write_text("client,amount\nACME,100\n")
+    db.commit()
+
+    result = subprocess.run([sys.executable, "-m", "engine.runner", "--job-key", "DEV-MONTH_END_SAMPLE",
+                             "--instance-id", "2001", "--spool-dir", str(tmp_path / "spool"),
+                             "--working-root", str(tmp_path / "work")],
+                            cwd=AUTOAPP_DIR, env={**subprocess_env(db_url), "AUTOAPP_WORKFLOW_POLL_SECONDS": "0.2"},
+                            capture_output=True, text=True, timeout=180)
+
+    assert result.returncode == 0, result.stdout[-3000:]
+    db.expire_all()
+    run = db.query(JobRun).filter(JobRun.JobKey == "DEV-MONTH_END_SAMPLE").one()
+    items = {i.ItemName: (i.Status, i.ReturnCode) for i in db.query(WorkflowRunItem).filter_by(WorkflowRun_id=run.id)}
+    assert items == {"Collect_legal": ("SUCCESS", 0), "Export_invoices": ("SUCCESS", 0), "Load_billing": ("SUCCESS", 0),
+                     "Load_reports": ("SUCCESS", 0), "Check_ledger": ("SUCCESS", 4), "Alert_finance": ("NOT_RUN", None),
+                     "Reconcile": ("SUCCESS", 0), "Clean_up": ("SUCCESS", 0)}
+    assert (tmp_path / "work" / "DEV-BILLING-LOAD" / "to_load" / "Legal_Batch_001.csv").exists()
 
 
 def test_rows_inserted_by_plain_sql_get_the_schema_defaults(db):

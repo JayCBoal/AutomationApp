@@ -10,13 +10,17 @@ function utcCriteria(values) {
 
 function jobHistory() {
     const search = AutoApp.searchPage({
-        criteria: ["job_key", "instance_id", "scheduler", "status", "date_from", "date_to"],
+        criteria: ["job_key", "job_type", "within", "instance_id", "scheduler", "status", "date_from", "date_to"],
         path: "/runs", noun: "run", order: "newest first", toApi: utcCriteria,
     });
     return Object.assign(search, {
         init() { this.startSearch(); },
         time: AutoApp.formatTime,
-        jobLink(run) { return "job.html?" + new URLSearchParams({ key: run.job_key }); },
+        jobLink(run) {
+            return run.job_type === "WORKFLOW" ? "workflow.html?" + new URLSearchParams({ key: run.job_key, run: run.run_id })
+                                               : "job.html?" + new URLSearchParams({ key: run.job_key });
+        },
+        withinLink(runId) { return "history.html?" + new URLSearchParams({ within: runId }); },
         logLink(run) { return "log.html?" + new URLSearchParams({ run: run.run_id }); },
         operationsLink(run) {
             return "operations.html?" + new URLSearchParams({ job_key: run.job_key, instance_id: run.instance_id });
@@ -28,7 +32,10 @@ function jobHistory() {
         },
         exportCsv() {
             AutoApp.download("autoapp_job_history.csv", AutoApp.toCsv(this.rows, [
-                ["Job", r => r.job_key], ["Status", r => r.status], ["Started (UTC)", r => r.started],
+                ["Job", r => r.job_key], ["Type", r => r.job_type === "WORKFLOW" ? "Workflow" : "Job"],
+                ["Status", r => r.status], ["Return code", r => r.return_code], ["Reason", r => r.reason],
+                ["Within run", r => r.parent_run_id], ["Path in workflow", r => r.workflow_path],
+                ["Started (UTC)", r => r.started],
                 ["Ended (UTC)", r => r.ended], ["Seconds", r => r.duration_seconds], ["Instance ID", r => r.instance_id],
                 ["Run number", r => r.run_number], ["Scheduler", r => r.scheduler], ["Host", r => r.host],
                 ["Operations", r => r.operations], ["Failed operations", r => r.failed_operations],

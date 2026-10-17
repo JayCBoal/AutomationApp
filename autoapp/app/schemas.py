@@ -99,6 +99,8 @@ class JobSummary(BaseModel):
     job_key: str
     description: Optional[str] = None
     active: bool
+    job_type: str = "STEPS"
+    item_count: int = Field(0, description="For a workflow: how many jobs it uses")
     step_count: int = Field(..., description="Steps that are enabled")
     disabled_step_count: int
     endpoints: List[str] = Field(..., description="Names of the endpoints the job's steps read from or write to")
@@ -151,11 +153,30 @@ class JobStepOut(BaseModel):
     children: List["JobStepOut"] = Field(default_factory=list, description="The steps inside it, in order")
 
 
+class PrerequisiteOut(BaseModel):
+    """What a workflow's job waits for: another of the workflow's jobs, and how that one must have ended."""
+    target: str = Field(..., description="The name, in the workflow, of the job it waits for")
+    test: str = Field(..., description="SUCCESS, FAILED, ENDED (whatever happened) or RC (one of return_codes)")
+    return_codes: Optional[str] = Field(None, description="For RC: the codes, as 0, 4 or 0-4")
+
+
+class WorkflowItemOut(BaseModel):
+    """One job a workflow uses, under its name in the workflow."""
+    id: int
+    name: str
+    job_key: str = Field(..., description="The job it runs")
+    job_type: str = Field(..., description="STEPS or WORKFLOW: the type of the job it runs")
+    join: str = Field("ALL", description="ALL: it starts when all its prerequisites hold; ANY: when any one does")
+    prerequisites: List[PrerequisiteOut] = Field(default_factory=list)
+
+
 class JobDetail(BaseModel):
     """One job with its steps and their parameters, as the job editor shows it."""
     job_key: str
+    job_type: str = Field("STEPS", description="STEPS (a job made of steps) or WORKFLOW (made of other jobs)")
     description: Optional[str] = None
     active: bool
+    success_return_codes: Optional[str] = Field(None, description="The return codes that mean success; empty means 0")
     created: Optional[datetime] = None
     created_by: Optional[str] = None
     modified: Optional[datetime] = None
@@ -165,6 +186,22 @@ class JobDetail(BaseModel):
     tags: List[str] = Field(default_factory=list, description="Paths of the tags the job carries")
     inherited_variables: List[InheritedVariableOut] = Field(
         default_factory=list, description="What the job's tags give it, in name order")
+    items: List[WorkflowItemOut] = Field(default_factory=list, description="A workflow's jobs, in outline order")
+
+
+class PrerequisiteSave(BaseModel):
+    target: str = Field(..., max_length=100, description="The name, in the workflow, of the job it waits for")
+    test: str = Field("SUCCESS", description="SUCCESS, FAILED, ENDED or RC")
+    return_codes: Optional[str] = Field(None, max_length=100, description="For RC: the codes, as 0, 4 or 0-4")
+
+
+class WorkflowItemSave(BaseModel):
+    id: Optional[int] = Field(None, description="The item's id when changing an existing one; leave out for a new one")
+    name: Optional[str] = Field(None, max_length=100, description=(
+        "Its name in the workflow: letters, digits, '_' and '-'. Left out, it is made from the job key"))
+    job_key: str = Field(..., max_length=320, description="The job it runs")
+    join: str = Field("ALL", description="ALL or ANY")
+    prerequisites: List[PrerequisiteSave] = Field(default_factory=list)
 
 
 class JobStepSave(BaseModel):
@@ -185,9 +222,12 @@ class JobStepSave(BaseModel):
 class JobSave(BaseModel):
     """A whole job as the editor submits it. The steps run in the order given."""
     job_key: str = Field(..., max_length=320)
+    job_type: str = Field("STEPS", description="STEPS or WORKFLOW. It cannot be changed once the job is created")
     description: Optional[str] = None
     active: bool = True
+    success_return_codes: Optional[str] = Field(None, max_length=100, description="Empty means 0")
     steps: List[JobStepSave] = Field(default_factory=list)
+    items: List[WorkflowItemSave] = Field(default_factory=list, description="A workflow's jobs, in outline order")
     variables: Optional[List[VariableSave]] = Field(
         None, description="The job's own variables. Leave out to keep them as they are; send a list to replace them")
     tags: Optional[List[str]] = Field(
@@ -245,6 +285,9 @@ class RunStartRecord(BaseModel):
     BusinessDate: Optional[date] = Field(None, description="The date the run is for, if the scheduler gave one")
     Host: Optional[str] = Field(None, max_length=255)
     StartedAtUtc: datetime
+    ParentRunID: Optional[str] = Field(None, max_length=36, description="The workflow run this job run is part of")
+    WorkflowPath: Optional[str] = Field(None, max_length=1000, description="Its place in that workflow: Transform/Stage")
+    Attempt: int = 1
 
 
 class OperationRecord(BaseModel):
@@ -278,6 +321,8 @@ class RunEndRecord(BaseModel):
     Seq: int
     Status: str = Field(..., max_length=20)
     Error: Optional[str] = None
+    ReturnCode: Optional[int] = Field(None, description="The job's return code: 0 unless a step set one")
+    Reason: Optional[str] = Field(None, max_length=40, description="Why it failed: ERROR or RETURN_CODE")
     EndedAtUtc: datetime
 
 

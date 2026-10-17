@@ -19,6 +19,13 @@
             <fieldset>
                 <legend>Run</legend>
                 <label>Job <input type="text" x-model="criteria.job_key" name="job_key" data-lookup="jobs"></label>
+                <label>Type
+                    <select x-model="criteria.job_type" name="job_type">
+                        <option value="">Any</option><option value="STEPS">Jobs</option><option value="WORKFLOW">Workflows</option>
+                    </select>
+                </label>
+                <label title="A run's ID: that run and the runs inside it, as a workflow's job runs">Within run
+                    <input type="text" x-model="criteria.within" name="within"></label>
                 <label>Status
                     <select x-model="criteria.status" name="status">
                         <option value="">Any</option><option>SUCCESS</option><option>FAILED</option><option>RUNNING</option>
@@ -55,9 +62,19 @@
                 <tbody>
                     <template x-for="run in rows" :key="run.run_id">
                         <tr>
-                            <td><a class="job-key" :href="jobLink(run)" x-text="run.job_key"></a></td>
+                            <td>
+                                <a class="job-key" :href="jobLink(run)" x-text="run.job_key"></a>
+                                <template x-if="run.job_type === 'WORKFLOW'"><span class="tag">Workflow</span></template>
+                                <div class="small" x-show="run.job_type === 'WORKFLOW'">
+                                    <a class="inside-link" :href="withinLink(run.run_id)">This run and its jobs</a></div>
+                                <div class="muted small" x-show="run.parent_run_id">
+                                    in a <a class="parent-link" :href="withinLink(run.parent_run_id)">workflow run</a>
+                                    as <span x-text="run.workflow_path"></span></div>
+                            </td>
                             <td>
                                 <span class="status" :class="run.status" x-text="run.status"></span>
+                                <span class="muted small" x-show="run.return_code !== null && run.return_code !== undefined"
+                                      x-text="'return code ' + run.return_code"></span>
                                 <div class="error-text small" x-show="run.error" x-text="run.error"></div>
                             </td>
                             <td class="nowrap" x-text="time(run.started)"></td>

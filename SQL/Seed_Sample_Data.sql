@@ -58,6 +58,9 @@ WHERE NOT EXISTS (SELECT 1 FROM StepTypes WHERE Code = 'ELSE');
 INSERT INTO StepTypes (Name, Code, Description)
 SELECT 'For Each File', 'FOR_EACH_FILE', 'Runs its steps once for each file at a location'
 WHERE NOT EXISTS (SELECT 1 FROM StepTypes WHERE Code = 'FOR_EACH_FILE');
+INSERT INTO StepTypes (Name, Code, Description)
+SELECT 'Simulate', 'SIMULATE', 'Stands in for real work while a workflow is built and tried: writes what it is told to the job log, waits, and ends with a chosen return code'
+WHERE NOT EXISTS (SELECT 1 FROM StepTypes WHERE Code = 'SIMULATE');
 
 -- The parameters each step type takes are not listed here. They are declared by the handlers
 -- in the code and copied into the StepDefinitions table by:  python3 -m app.catalog
@@ -87,7 +90,12 @@ INSERT INTO MasterObjects (id, ObjectType) VALUES
 (17, 'TAG'),
 (18, 'TAG'),
 (19, 'SCHEDULER'),
-(20, 'SCHEDULER');
+(20, 'SCHEDULER'),
+(21, 'JOB'),
+(22, 'JOB'),
+(23, 'JOB'),
+(24, 'JOB'),
+(25, 'JOB');
 
 INSERT INTO Applications (MasterObject_id, Name, Abbr, Description) VALUES
 (1, 'LEGAL_APP',   'LGL', 'Legal case management system'),
@@ -127,6 +135,33 @@ INSERT INTO Jobs (MasterObject_id, JobKey, Description) VALUES
 (6, 'DEV-BILLING-LOAD',              'Picks up the files delivered to billing'),
 (13, 'DEV-BILLING-INVOICE_EXPORT',   'Exports open invoices and payments from the sales database and sends them to finance as one archive'),
 (15, 'DEV-FINANCE-LOAD_REPORTS',     'Picks up the billing archive, unpacks it, checks the reports and keeps a month of archives');
+
+-- Stand-ins for jobs not built yet, for the sample workflow (section 5): each is one Simulate step.
+-- The ledger check ends with return code 4, "differences found", which its Success return codes accept.
+INSERT INTO Jobs (MasterObject_id, JobKey, Description, SuccessReturnCodes) VALUES
+(21, 'DEV-SIM-CHECK_LEDGER',  'Stand-in: compares what billing loaded with the finance reports. Return code 4: differences found', '0, 4'),
+(22, 'DEV-SIM-ALERT_FINANCE', 'Stand-in: tells finance the ledger check failed', NULL),
+(23, 'DEV-SIM-RECONCILE',     'Stand-in: reconciles the differences the ledger check found', NULL),
+(24, 'DEV-SIM-CLEANUP',       'Stand-in: tidies up after the month end', NULL);
+
+INSERT INTO JobSteps (id, Job_MasterObject_id, StepType_id, StepOrder, StepTitle, StepName)
+SELECT 21, 21, id, 1, 'Compare the ledgers', 'Compare_the_ledgers' FROM StepTypes WHERE Code = 'SIMULATE';
+INSERT INTO JobSteps (id, Job_MasterObject_id, StepType_id, StepOrder, StepTitle, StepName)
+SELECT 22, 22, id, 1, 'Tell finance', 'Tell_finance' FROM StepTypes WHERE Code = 'SIMULATE';
+INSERT INTO JobSteps (id, Job_MasterObject_id, StepType_id, StepOrder, StepTitle, StepName)
+SELECT 23, 23, id, 1, 'Reconcile', 'Reconcile' FROM StepTypes WHERE Code = 'SIMULATE';
+INSERT INTO JobSteps (id, Job_MasterObject_id, StepType_id, StepOrder, StepTitle, StepName)
+SELECT 24, 24, id, 1, 'Tidy up', 'Tidy_up' FROM StepTypes WHERE Code = 'SIMULATE';
+
+INSERT INTO JobStepParameters (JobStep_id, ParameterName, ParameterValue) VALUES
+(21, 'Messages',    'Comparing what billing loaded with the finance reports
+Found 3 differences to reconcile'),
+(21, 'WaitSeconds', '2'),
+(21, 'ReturnCode',  '4'),
+(22, 'Messages',    'Telling finance the ledger check failed'),
+(23, 'Messages',    'Reconciling the 3 differences'),
+(23, 'WaitSeconds', '1'),
+(24, 'Messages',    'Tidying up after the month end');
 
 INSERT INTO JobSteps (id, Job_MasterObject_id, StepType_id, StepOrder, StepTitle, StepName)
 SELECT 1, 5, id, 1, 'Collect extracts',   'Collect_extracts' FROM StepTypes WHERE Code = 'COPY_FILES';
@@ -281,3 +316,30 @@ INSERT INTO TagAssignments (Tag_MasterObject_id, Target_MasterObject_id) VALUES
 (8, 1),
 (8, 5),
 (18, 15);
+
+-- ----------------------------------------------------------------------------
+-- 5. A sample workflow (docs/WORKFLOWS.md): the two pairs of jobs side by side, then the
+--    stand-ins. The ledger check waits for both loads; on failure finance is alerted; on
+--    return code 4 the differences are reconciled; then a clean-up runs whatever happened.
+-- ----------------------------------------------------------------------------
+INSERT INTO Jobs (MasterObject_id, JobKey, JobType, Description) VALUES
+(25, 'DEV-MONTH_END_SAMPLE', 'WORKFLOW', 'Sample workflow: legal and billing files, the finance reports, then a ledger check and what follows from it');
+
+INSERT INTO WorkflowItems (id, Workflow_MasterObject_id, ItemName, Job_MasterObject_id, JoinRule, ItemOrder) VALUES
+(1, 25, 'Collect_legal',   5,  'ALL', 1),
+(2, 25, 'Export_invoices', 13, 'ALL', 2),
+(3, 25, 'Load_billing',    6,  'ALL', 3),
+(4, 25, 'Load_reports',    15, 'ALL', 4),
+(5, 25, 'Check_ledger',    21, 'ALL', 5),
+(6, 25, 'Alert_finance',   22, 'ALL', 6),
+(7, 25, 'Reconcile',       23, 'ALL', 7),
+(8, 25, 'Clean_up',        24, 'ALL', 8);
+
+INSERT INTO WorkflowPrerequisites (id, Item_id, TargetItem_id, Test, ReturnCodes) VALUES
+(1, 3, 1, 'SUCCESS', NULL),
+(2, 4, 2, 'SUCCESS', NULL),
+(3, 5, 3, 'SUCCESS', NULL),
+(4, 5, 4, 'SUCCESS', NULL),
+(5, 6, 5, 'FAILED',  NULL),
+(6, 7, 5, 'RC',      '4'),
+(7, 8, 7, 'ENDED',   NULL);

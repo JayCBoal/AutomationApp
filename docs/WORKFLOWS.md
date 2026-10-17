@@ -2,12 +2,12 @@
 
 The design record for AutoApp's workflows, built up in design sessions with the owner. What a workflow is for, and the RunMyJobs shortcomings it answers, are in [PROJECT_GOALS.md](PROJECT_GOALS.md) goal 2. This page holds everything else: the starting point, what is decided, what is proposed, and the open questions.
 
-Status: **being designed. Nothing is built.** The session reached topic 2 of the agenda on 2026-10-17.
+Status: **being designed. Nothing is built.** On 2026-10-17 the session finished topic 2 of the agenda, apart from two proposals.
 
 ## Agenda
 
 1. The objects and their names. *Done.*
-2. Dependencies: join rules, branches not taken. *Proposed; three questions open.*
+2. Dependencies: join rules, branches not taken. *Done, except final statuses and disabled jobs (proposed).*
 3. Conditions: what they can test, and the language or builder (shortcoming 3).
 4. Reactions to outcomes: return codes, rerunning upstream (shortcoming 2).
 5. Restarts and bypassing.
@@ -72,18 +72,28 @@ The owner found it intuitive. A place to start, not to copy as-is.
 - What happens after a job ends, chosen by its outcome, such as a specific return code (shortcoming 2). Examples: rerun from a chosen job at most N times, stop the workflow, skip the rest of a branch.
 - The difference from a Prerequisite: a Prerequisite is a gate *before* a job starts; a Reaction is an action *after* it ends. Reactions are the only "push" in the model. Their details are topic 4.
 
+### Dependencies (2026-10-17)
+
+- A prerequisite tests, by default, that the other job **succeeded**. It can test instead for any final status (so that, for example, Skipped has an explicit handler), for "ended" (any final status), or for specific return codes.
+- A job's prerequisites must **all** hold by default; *any* is the alternative. Anything finer is an expression (topic 3).
+- A prerequisite that can never hold makes the job **Not run** ("its prerequisites can't be met"), cascading downstream. Jobs are not left waiting.
+  - Why: Control-M can leave such a job waiting because its New Day Process cleans up yesterday's jobs, and an operator can add the missing condition by hand to release it. In AutoApp the workflow run is the scope: cascading lets a run end cleanly, and "release it anyway" becomes bypassing or restarting part of the run (topic 5).
+- A prerequisite outside the workflow cannot be known impossible: it waits, with an optional time limit.
+- The workflow ends when every job has a final status.
+- Each kind of job that did not run (Not run, Skipped, Disabled, Bypassed) has its own visual cue (how: topic 6).
+
 ## Proposed, to settle
 
-- **Topic 2, dependencies** (proposed 2026-10-17):
-  - a prerequisite tests, by default, that the other job succeeded; or that it ended, failed, or gave specific return codes;
-  - a job's prerequisites combine as *all* by default, or *any*; anything finer is an expression (topic 3);
-  - a prerequisite that can never hold (the other job failed, or was itself not run) makes the job "Not run: its prerequisites can't be met", cascading downstream; a prerequisite testing "ended" counts a job not run as ended, so clean-up jobs still run;
-  - a prerequisite outside the workflow cannot be known impossible: it waits, with an optional time limit;
-  - the workflow ends when every job has succeeded, failed or not run.
-  - Questions for the owner:
-    1. are *all* and "succeeded" the right defaults;
-    2. is cascading "not run" right, rather than jobs left waiting as in RunMyJobs and Control-M;
-    3. should a job not run because its prerequisites can't be met look different from one skipped on purpose by a Reaction.
+- **Final statuses** (proposed 2026-10-17):
+  - *Succeeded*; *Failed*;
+  - *Skipped*: skipped on purpose by a Reaction;
+  - *Not run*: its prerequisites can't be met;
+  - *Disabled*: disabled as a hard stop, so what needs it to succeed is Not run;
+  - *Bypassed*: treated as succeeded without running (disabled as a pass-through, or marked done by hand).
+- **Disabled jobs** (proposed 2026-10-17). ActiveBatch made a disabled job a hard stop, and added Soft Disable (a pass-through) later. AutoApp offers both from the start:
+  - disabling a job *in a workflow* affects only that use of it: "stop here" (Disabled) or "pass through" (Bypassed);
+  - disabling a *shared definition* means it can run nowhere: a hard stop, shown on the diagram as disabled elsewhere.
+  - Question for the owner: is that split right?
 
 ## Open questions, by topic
 
@@ -110,3 +120,4 @@ The owner found it intuitive. A place to start, not to copy as-is.
 ## Later
 
 - Scheduling in AutoApp, perhaps improving on RunMyJobs' Time Window and Submit Frame pair.
+- With scheduling: what an outside prerequisite with no time limit means when there is no daily cycle (like Control-M's New Day Process) to end its wait.

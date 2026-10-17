@@ -2,13 +2,13 @@
 
 The design record for AutoApp's workflows, built up in design sessions with the owner. What a workflow is for, and the RunMyJobs shortcomings it answers, are in [PROJECT_GOALS.md](PROJECT_GOALS.md) goal 2. This page holds everything else: the starting point, what is decided, what is proposed, and the open questions.
 
-Status: **being designed. Nothing is built.** On 2026-10-17 the session finished topic 2 of the agenda, apart from two proposals.
+Status: **being designed. Nothing is built.** On 2026-10-17 the session finished topic 2 of the agenda and proposed topic 3.
 
 ## Agenda
 
 1. The objects and their names. *Done.*
-2. Dependencies: join rules, branches not taken. *Done, except final statuses and disabled jobs (proposed).*
-3. Conditions: what they can test, and the language or builder (shortcoming 3).
+2. Dependencies: join rules, branches not taken, final statuses, disabled jobs. *Done.*
+3. Conditions: what they can test, and the language or builder (shortcoming 3). *Proposed; three questions open.*
 4. Reactions to outcomes: return codes, rerunning upstream (shortcoming 2).
 5. Restarts and bypassing.
 6. The diagram and editor: cross-workflow links, density, full names (shortcomings 4 and 5).
@@ -82,24 +82,38 @@ The owner found it intuitive. A place to start, not to copy as-is.
 - The workflow ends when every job has a final status.
 - Each kind of job that did not run (Not run, Skipped, Disabled, Bypassed) has its own visual cue (how: topic 6).
 
+### Final statuses (2026-10-17)
+
+- *Succeeded*; *Failed*;
+- *Skipped*: skipped on purpose by a Reaction;
+- *Not run*: its prerequisites can't be met;
+- *Disabled*: disabled as a hard stop, so what needs it to succeed is Not run;
+- *Bypassed*: treated as succeeded without running (disabled as a pass-through, or marked done by hand).
+
+### Disabled jobs (2026-10-17)
+
+- ActiveBatch made a disabled job a hard stop, and added Soft Disable (a pass-through) later. AutoApp offers both from the start.
+- Disabling a job *in a workflow* affects only that use of it: "stop here" (Disabled) or "pass through" (Bypassed). The workflow editor offers this on the job itself ("Disable here"), separately from disabling the definition, which is done on the job's own page.
+- Disabling a *shared definition* means it can run nowhere: a hard stop, shown on each workflow's diagram as disabled elsewhere.
+- Whenever a shared job is disabled, from a workflow that uses it or on its own page, the user is warned which workflows use it and what will happen in each.
+
 ## Proposed, to settle
 
-- **Final statuses** (proposed 2026-10-17):
-  - *Succeeded*; *Failed*;
-  - *Skipped*: skipped on purpose by a Reaction;
-  - *Not run*: its prerequisites can't be met;
-  - *Disabled*: disabled as a hard stop, so what needs it to succeed is Not run;
-  - *Bypassed*: treated as succeeded without running (disabled as a pass-through, or marked done by hand).
-- **Disabled jobs** (proposed 2026-10-17). ActiveBatch made a disabled job a hard stop, and added Soft Disable (a pass-through) later. AutoApp offers both from the start:
-  - disabling a job *in a workflow* affects only that use of it: "stop here" (Disabled) or "pass through" (Bypassed);
-  - disabling a *shared definition* means it can run nowhere: a hard stop, shown on the diagram as disabled elsewhere.
-  - Question for the owner: is that split right?
+- **Topic 3, conditions** (proposed 2026-10-17):
+  - what a condition can test: another job's final status and return code (by its name in the workflow); files present for an endpoint, and how many; a workflow variable or an earlier job's output (AutoApp jobs have no outputs yet); a time window; the same for a job in another workflow;
+  - text is the source of truth, written in words: `Extract.status is Succeeded and Load.returncode in 0..4`, `files("INBOUND_ORDERS") > 0`;
+  - a builder (job, test, value) writes the text, which stays editable for what the builder cannot express;
+  - checked as it is typed, with plain messages for unknown names and mismatched values;
+  - "Explain": evaluated against a past workflow run, showing each part's value and whether it held;
+  - read with Python's standard `ast` module, accepting only these forms (no new package).
+  - Questions for the owner:
+    1. is that the right set of things to test; do jobs need output values (like RunMyJobs' Out parameters);
+    2. text first with a builder, or builder first with text as the fallback;
+    3. words (`and`, `or`, `not`) rather than symbols (`&&`, `||`).
 
 ## Open questions, by topic
 
-- **Conditions (3):**
-  - what prerequisites and Reactions can test: status, specific return codes and ranges, files present, a value from an earlier job, a time window;
-  - a typed language or a builder with a readable text form; how a condition is validated as it is written, and evaluated against a past run to see why it came out as it did (shortcoming 3).
+- **Conditions (3):** see the proposal above.
 - **Reactions (4):**
   - "go back upstream and rerun" as an action rather than an arrow (a graph has no cycles), with a limit on how many times;
   - when a workflow with a failed job counts as failed;

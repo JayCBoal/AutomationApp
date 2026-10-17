@@ -275,6 +275,7 @@ To be judged again in practice once built, above all the outside dependencies.
 - The owner may change the order of Phases 3 to 8 later.
 - Each phase is planned in detail just before it is built. The mockup was made alongside planning Phase 1: `autoapp/ui/mockup_workflow.html` (open it from the running server at `/ui/mockup_workflow.html`; it is not in the navigation bar).
 - Phase 1's plan: [WORKFLOWS_PHASE1.md](WORKFLOWS_PHASE1.md).
+- Phase 2's plan: [WORKFLOWS_PHASE2.md](WORKFLOWS_PHASE2.md).
 
 
 ### Prerequisites that aren't satisfied (2026-10-17)

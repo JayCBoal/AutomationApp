@@ -1,10 +1,10 @@
 -- ============================================================================
--- RunMyFiles schema for MariaDB
+-- AutoApp schema for MariaDB
 --
 -- Generated from autoapp/app/models.py by SQL/generate_ddl.py.
 -- Do not edit by hand: change the models and run the script.
 --
--- WARNING: this drops every RunMyFiles table, and the data in it, before
+-- WARNING: this drops every AutoApp table, and the data in it, before
 -- creating the tables again.
 -- ============================================================================
 

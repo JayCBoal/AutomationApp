@@ -100,7 +100,7 @@ class RunSqlHandler(BaseHandler):
         try:
             engine = create_engine(url, poolclass=NullPool)
         except (ArgumentError, ValueError, ImportError) as e:
-            raise ValueError(failed(f"'Database' is not a database URL RunMyFiles can use: {e}")) from None
+            raise ValueError(failed(f"'Database' is not a database URL AutoApp can use: {e}")) from None
 
         job_log.detail(f"Running on {hidden}:\n\t{statement}")
         rows, columns, affected = [], [], None

@@ -2,56 +2,45 @@
 
 ## Vision
 
-RunMyFiles is a lightweight execution framework and metadata store for batch jobs that works with any workload automation (WLA) scheduler, and ultimately inside it: the people who build, administer and operate jobs should not have to leave their scheduler to use RunMyFiles.
+AutoApp is a testbed and demonstrator for scheduler features the owner would like to see in RunMyJobs (Redwood). Each feature is built far enough to show how it would look and behave, and to check that it behaves as intended.
 
-It separates **payload logic** (parameters, steps, credentials, logging) from **sequencing logic** (schedules, dependencies, SLAs). The scheduler owns sequencing. RunMyFiles owns the payload. This removes lock-in to a particular scheduler such as ActiveBatch, Control-M or AutoSys.
+AutoApp began as the product now called RunMyFiles. On 2026-10-16 that product was forked into its own project (`~/projects/RunMyFiles`), and the two share nothing. RunMyFiles leaves sequencing to the scheduler; AutoApp plays the scheduler, so sequencing is exactly what it demonstrates.
 
 These are goals. For what is actually built, see [PROJECT_BLUEPRINT.md](PROJECT_BLUEPRINT.md).
 
 ## Goals
 
-### 1. Scheduler independence
+### 1. Show a better design, not a product
 
-- The scheduler passes minimal runtime metadata: a job key and an instance ID.
-- Parameters, endpoints, credentials and step definitions are read from the RunMyFiles database at run time.
-- Switching or upgrading schedulers requires no change to job logic.
+- The point of each feature is its design: the model, the editor, and how it reads on screen. A feature is finished when it shows the idea convincingly.
+- AutoApp runs what it designs only as far as needed to prove the design behaves as intended. Execution is a means of validation, not an end.
+- With no real WLA to integrate with, AutoApp runs its own workflows itself.
 
-### 2. Works inside the scheduler, not just beside it
+### 2. Workflows: the first feature
 
-- Making job developers, WLA administrators and operators work in two separate applications is a barrier to adoption. The end state is that RunMyFiles' functions are reached from within the scheduling product.
-- Job steps, parameters, variables and endpoints can be viewed and edited from the scheduler's own interface.
-- Run results, operation history and file traces are visible where operators already look at job output.
-- Everything RunMyFiles does is therefore available through its API. RunMyFiles' own web interface is one client of that API, not the only way in.
-- Running standalone, beside a scheduler that has no integration, remains supported.
+A workflow is a set of jobs with dependencies between them, designed in AutoApp and run by it. It answers these shortcomings of RunMyJobs job chains, in priority order:
 
-### 3. Standard execution
+1. **Flexible dependencies.** A chain's stepwise model fits many workflows badly and forces workarounds for complex dependencies, especially in migrations from other products. Workflows express dependencies directly between jobs.
+2. **Granular decisions downstream.** Status handlers act only on a job's status (Completed, Error and so on). Workflows can act on more, such as specific return codes, including going back upstream to rerun part or all of the flow.
+3. **Conditions people can read and write.** Precondition expressions in REL are hard to read, harder to write, poorly documented, have no helpers in the UI, and cannot be validated or debugged. Workflow conditions come with help, validation and a way to see why they evaluated as they did.
+4. **Every dependency visible.** A Wait Event in one chain that depends on a Raise Event in another is invisible in RunMyJobs' UI. Workflows show cross-workflow dependencies on screen.
+5. **A compact, complete picture.** RunMyJobs' chain diagrams waste space yet still hide crucial information, such as cross-chain dependencies and call names truncated well before the 80-character limit. Workflow diagrams are dense and show full names.
+6. **Structure that stays with its parent.** Sub-chains created only to model dependency structure get generic system names, are not linked to their parent, and turn up in queries and reports. Any grouping inside a workflow belongs to it, is named for it, and stays out of lists of jobs and workflows.
 
-- One runner script executes most jobs, dispatching each step to a handler for its step type.
-- New step types are added by writing a handler, without touching the runner.
-- Values are bound late: paths, patterns and credentials are resolved when the job runs, through scoped variables.
+Restarting part-way through (at the point of failure, from a chosen job, or bypassing a job fixed by hand) is part of the design too.
 
-### 4. Standard logging and file traceability
+### 3. Build on what exists
 
-- Every operation (copy, transfer, SQL, API call) is recorded as structured data, not just console output.
-- A register of endpoints records where files enter and leave, and which application or external entity each belongs to.
-- Together these answer: where did this file come from, what handled it, and where was it delivered?
+- AutoApp's jobs, steps, endpoints, variables, Job History, the Operations Log and the trace are already built. Workflows reuse them rather than replacing them.
+- The Stand-in Scheduler (`demo/scheduler_standin`) remains available to launch runs.
 
-### 5. Asynchronous process support
+### 4. Easy to show
 
-- Long-running external tasks and third-party callbacks are tracked without holding a scheduler thread.
-- Polling jobs and callbacks detect completion and trigger downstream work.
-
-### 6. Central metadata management
-
-- A relational database holds applications, entities, sites, credentials, jobs, steps, endpoints, variables and tags.
-- A web interface lets users search, view and edit job definitions and operational history.
-- Non-technical users can request automation through the interface.
-
-### 7. Safe by default
-
-- Secrets are encrypted at rest or held in an external vault, and never returned in plain text.
-- Agents in restricted network zones do not connect directly to the database.
+- A feature can be demonstrated from a clean setup in a few minutes, with sample data that shows its point.
+- What is on screen uses plain words, as a WLA operator would.
 
 ## Non-goals
 
-- Replacing the scheduler. RunMyFiles does not decide when jobs run or in what order.
+- Production use. Security hardening, scale and operational robustness matter only as far as a demonstration needs them.
+- Integration with a real WLA product.
+- Keeping step with RunMyFiles. A feature proved here may be ported there, but AutoApp is not required to stay compatible with it.

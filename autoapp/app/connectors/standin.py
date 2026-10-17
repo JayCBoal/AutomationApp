@@ -19,7 +19,7 @@ class StandinConnector(Connector):
                 return json.loads(response.read().decode("utf-8"))
         except urllib.error.HTTPError as e:
             if e.code == 401:
-                raise ConnectorError(f"Scheduler '{self.scheduler.Name}' refused RunMyFiles' credential. "
+                raise ConnectorError(f"Scheduler '{self.scheduler.Name}' refused AutoApp's credential. "
                                      f"Check its ApiToken variable.") from None
             if e.code == 404:
                 return None

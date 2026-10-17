@@ -1,12 +1,10 @@
-# RunMyFiles (formerly AutoApp)
+# AutoApp
 
-*Renamed on 2026-10-15. The name people read is RunMyFiles; the code keeps its original names (the `autoapp` folder and Python package, the `AUTOAPP_...` settings, the databases), which may follow later.*
+AutoApp is a testbed and demonstrator for scheduler features worth having in RunMyJobs (Redwood). Each feature is built far enough to show how it would look and behave, and to check that it does. The first is workflows: jobs with dependencies between them, designed and run in AutoApp. See [docs/PROJECT_GOALS.md](docs/PROJECT_GOALS.md).
 
-RunMyFiles is a batch-processing execution framework that keeps *what a job does* separate from *when it runs*.
+AutoApp's foundation is its jobs: defined steps instead of scripts, with a structured record of every file operation, tied to a register of the places files come from and go to, so a file's path through the system can be traced.
 
-A workload automation scheduler (Control-M, AutoSys, ActiveBatch, RunMyJobs, cron) decides when a job runs and passes RunMyFiles two things: a job key and its own instance ID. RunMyFiles looks up the job's steps and parameters in its own database, runs them, and returns an exit code. Because the job definitions live outside the scheduler, changing schedulers does not mean rewriting jobs.
-
-It also keeps a structured record of every file operation, tied to a register of the places files come from and go to, so a file's path through the system can be traced.
+On 2026-10-16 that foundation was forked into a separate product, RunMyFiles, which leaves sequencing to an existing scheduler. AutoApp plays the scheduler instead. Some pages of the documentation still describe it as RunMyFiles, from before the fork.
 
 ## Status
 
@@ -57,7 +55,7 @@ python3 create_dev_db.py
 
 This creates `autoapp/autoapp.db` (SQLite) with the sample data from `SQL/Seed_Sample_Data.sql`: three applications, four endpoints and two pairs of jobs. One pair copies a file from one application to another. The other queries a sample sales database, zips the results, sends them on and unpacks them at the other end. The sales database (`SQL/Sample_Sales_Data.sql`) is built as SQLite at `/tmp/autoapp_sample/sales.db`. It prints the commands to run the jobs and look at the result. It never overwrites an existing database.
 
-After updating RunMyFiles, an existing development database may lack tables or columns the new version needs. The server says exactly what is missing, in its log when it starts and on any page that fails. The simplest fix is to delete `autoapp.db` and run `create_dev_db.py` again.
+After updating AutoApp, an existing development database may lack tables or columns the new version needs. The server says exactly what is missing, in its log when it starts and on any page that fails. The simplest fix is to delete `autoapp.db` and run `create_dev_db.py` again.
 
 For MariaDB, run `SQL/Create_Tables.sql` and then `SQL/Seed_Sample_Data.sql`, and point `DATABASE_URL` at the database, for example `mysql+pymysql://user:password@dbhost/autoapp`. For the sales database, create a database (e.g. `autoapp_sales`), run `SQL/Sample_Sales_Data.sql` in it, and set the `SalesDbUrl` variable of `BILLING_APP` to its URL. The list of step types and their parameters is filled in when the API server starts, or by `python3 -m app.catalog`. After changing the models, regenerate the table script with `python3 SQL/generate_ddl.py`.
 
@@ -139,9 +137,9 @@ What to look at afterwards:
 
 If the server was not running, the runs' records are waiting in `autoapp/spool/`. Start the server and run `python3 -m engine.spool_delivery`, or load them straight into the database with `env -u AUTOAPP_API_URL python3 -m engine.spool_delivery`.
 
-## Using RunMyFiles from a scheduler
+## Using AutoApp from a scheduler
 
-[docs/INTEGRATION.md](docs/INTEGRATION.md) describes how a workload automation product runs RunMyFiles jobs, the RunMyFiles pages it can open inside its own interface (add `embed=1` to the address), the messages those pages send it, and how RunMyFiles reads a WLA job's parameters.
+[docs/INTEGRATION.md](docs/INTEGRATION.md) describes how a workload automation product runs AutoApp jobs, the AutoApp pages it can open inside its own interface (add `embed=1` to the address), the messages those pages send it, and how AutoApp reads a WLA job's parameters.
 
 [integrations/runmyjobs](integrations/runmyjobs/README.md) is a draft of the RunMyJobs side, written from Redwood's public documentation and not yet tried on RunMyJobs.
 

@@ -1,12 +1,14 @@
 # CLAUDE.md
 
-Notes for Claude Code on this project. The why behind the product is in docs/PROJECT_GOALS.md and docs/PROJECT_BLUEPRINT.md; open work is in docs/TO-DO.md.
+Notes for Claude Code on this project. The why behind the project is in docs/PROJECT_GOALS.md and docs/PROJECT_BLUEPRINT.md; open work is in docs/TO-DO.md.
 
-## The product
+## The project
 
-- **RunMyFiles** (formerly AutoApp): file-moving jobs made of defined steps instead of scripts, run by an existing scheduler (WLA), with every file operation recorded and traceable.
-- The rename covers user-facing text only. These keep the old name on purpose: the `autoapp` folder and package, `AUTOAPP_*` environment variables, database names, the JS namespace `AutoApp`, and messages' `source: "AutoApp"` (a documented contract, docs/INTEGRATION.md). Past CHANGE_LOG entries keep the old name too.
-- RunMyJobs (Redwood) is the integration that matters most. Control-M and others come later.
+- **AutoApp is a testbed and demonstrator** for scheduler features the owner would like to see in RunMyJobs (Redwood). The first is workflows: jobs with dependencies between them, designed and run in AutoApp (docs/PROJECT_GOALS.md lists the RunMyJobs shortcomings they answer).
+- AutoApp plays the scheduler. There is no real WLA to integrate with, so AutoApp runs its own workflows. Execution matters only as far as it proves a design behaves as intended; the design (model, editor, diagrams) is the point.
+- **RunMyFiles** (`~/projects/RunMyFiles`) is a fork made on 2026-10-16, a separate product with its own names, databases and ports. Nothing is shared between the two. Its principle that "the scheduler owns sequencing" does not apply here.
+- Some docs from before the fork still describe RunMyFiles: PROJECT_BLUEPRINT.md, INTEGRATION.md, demo/DEMO.md and demo/scheduler_standin/README.md. Read them with that in mind. The pages, messages and README.md say AutoApp again (since 2026-10-16); past CHANGE_LOG entries stay as written.
+- Internal names are `autoapp` throughout: the folder and package, `AUTOAPP_*` variables, databases, the JS namespace `AutoApp`, messages' `source: "AutoApp"`.
 - The owner is a WLA expert and still learning Python, so explain Python choices in plain terms.
 
 ## Layout

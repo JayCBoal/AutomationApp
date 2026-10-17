@@ -446,4 +446,4 @@ def test_the_server_address_alone_opens_the_web_interface(page, db):
 
     page.wait_for_selector(".index-card")
     assert page.url.endswith("/ui/")
-    assert page.title() == "RunMyFiles"
+    assert page.title() == "AutoApp"

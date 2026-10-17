@@ -1,15 +1,15 @@
 """
 The Stand-in Scheduler.
 
-A deliberately small workload automation product, for trying RunMyFiles'
+A deliberately small workload automation product, for trying AutoApp's
 scheduler integration without a real one. It is a separate application with its
-own database, as a real WLA would be, and it only talks to RunMyFiles the way a
+own database, as a real WLA would be, and it only talks to AutoApp the way a
 real one would:
 
-  - it runs RunMyFiles jobs by starting RunMyFiles' runner as an OS job, with the
+  - it runs AutoApp jobs by starting AutoApp's runner as an OS job, with the
     job's parameters in the environment (docs/INTEGRATION.md, section 1);
-  - its pages open RunMyFiles' pages embedded (section 2);
-  - it has an API, which RunMyFiles' connector for it reads a job's parameters from.
+  - its pages open AutoApp's pages embedded (section 2);
+  - it has an API, which AutoApp's connector for it reads a job's parameters from.
 
 Run it from demo/scheduler_standin:
 
@@ -19,12 +19,12 @@ Settings, from the environment:
 
     STANDIN_DATABASE_URL   its own database (default: SQLite file standin.db beside this folder)
     STANDIN_TOKEN          the token its API wants (default: standin-dev-token)
-    STANDIN_NAME           what RunMyFiles calls it: the runner's --scheduler (default: STANDIN)
-    STANDIN_AUTOAPP_URL    the RunMyFiles server, for its pages and the runner's --api-url (default: http://localhost:8000)
-    STANDIN_AUTOAPP_DIR    RunMyFiles' code, where the runner is (default: the autoapp folder of this repository)
+    STANDIN_NAME           what AutoApp calls it: the runner's --scheduler (default: STANDIN)
+    STANDIN_AUTOAPP_URL    the AutoApp server, for its pages and the runner's --api-url (default: http://localhost:8000)
+    STANDIN_AUTOAPP_DIR    AutoApp's code, where the runner is (default: the autoapp folder of this repository)
 
 The runner it starts gets the rest of this process's environment, including
-DATABASE_URL and AUTOAPP_WORKING_ROOT, so start it where RunMyFiles' settings are
+DATABASE_URL and AUTOAPP_WORKING_ROOT, so start it where AutoApp's settings are
 loaded (dev_env.sh).
 """
 import json
@@ -71,7 +71,7 @@ class Job(Base):
     __tablename__ = "jobs"
     id = Column(Integer, primary_key=True)
     name = Column(String(100), unique=True, nullable=False)
-    autoapp_job_key = Column(String(320), nullable=True)     # the RunMyFiles job this one runs; set when it is first saved there
+    autoapp_job_key = Column(String(320), nullable=True)     # the AutoApp job this one runs; set when it is first saved there
     description = Column(Text, nullable=True)
     business_date = Column(Boolean, nullable=False, default=False)   # give each run today's date as its business date
     parameters = relationship("Parameter", cascade="all, delete-orphan", order_by="Parameter.name")
@@ -115,10 +115,10 @@ def get_db():
 
 def authorised(authorization: Optional[str] = Header(None), sec_fetch_site: Optional[str] = Header(None)):
     """
-    Another program, such as RunMyFiles' connector, must send 'Authorization: Bearer <token>',
+    Another program, such as AutoApp's connector, must send 'Authorization: Bearer <token>',
     as a real WLA's API would want a credential. The Stand-in's own pages are let through:
     a browser marks their requests Sec-Fetch-Site: same-origin, which no other site's page
-    can do. Like RunMyFiles' own pages, they have no user accounts; it is a stand-in.
+    can do. Like AutoApp's own pages, they have no user accounts; it is a stand-in.
     """
     if authorization == f"Bearer {TOKEN}" or sec_fetch_site == "same-origin":
         return
@@ -197,12 +197,12 @@ def find_job(db: Session, name: str) -> Job:
 
 # ---------- The API ----------
 
-app = FastAPI(title="Stand-in Scheduler", description="Plays a WLA's part for RunMyFiles. See the module's docstring.")
+app = FastAPI(title="Stand-in Scheduler", description="Plays a WLA's part for AutoApp. See the module's docstring.")
 
 
 @app.get("/api/config")
 def config():
-    """What the pages need to know: where RunMyFiles is, and what RunMyFiles calls this scheduler. Needs no token."""
+    """What the pages need to know: where AutoApp is, and what AutoApp calls this scheduler. Needs no token."""
     return {"autoapp_url": AUTOAPP_URL, "scheduler_name": NAME}
 
 
@@ -213,7 +213,7 @@ def list_jobs(db: Session = Depends(get_db)):
 
 @app.get("/api/jobs/{name}", response_model=JobOut, dependencies=[Depends(authorised)])
 def get_job(name: str, db: Session = Depends(get_db)):
-    """One job with its parameters. This is what RunMyFiles' connector reads. Secret values are not given."""
+    """One job with its parameters. This is what AutoApp's connector reads. Secret values are not given."""
     return describe_job(find_job(db, name))
 
 
@@ -283,13 +283,13 @@ def _finish(run_id: int, process: subprocess.Popen) -> None:
 @app.post("/api/jobs/{name}/submit", response_model=RunOut, status_code=202, dependencies=[Depends(authorised)])
 def submit(name: str, db: Session = Depends(get_db)):
     """
-    Runs the job now: starts RunMyFiles' runner as an OS job, the way a WLA would.
+    Runs the job now: starts AutoApp's runner as an OS job, the way a WLA would.
     The job's parameters go into its environment; the names of the secret ones go
     in AUTOAPP_MASK_ENV, so the runner masks their values in the job log.
     """
     job = find_job(db, name)
     if not job.autoapp_job_key:
-        raise HTTPException(422, f"Job '{name}' has no RunMyFiles job yet. Edit it in RunMyFiles first.")
+        raise HTTPException(422, f"Job '{name}' has no AutoApp job yet. Edit it in AutoApp first.")
     run = Run(job=job, instance_id="pending", command="", business_date=date.today() if job.business_date else None)
     db.add(run)
     db.flush()
@@ -317,7 +317,7 @@ def submit(name: str, db: Session = Depends(get_db)):
 @app.get("/api/jobs/{name}/autoapp", dependencies=[Depends(authorised)])
 def autoapp_summary(name: str, db: Session = Depends(get_db)):
     """
-    The RunMyFiles job this one runs, as RunMyFiles describes it for a scheduler
+    The AutoApp job this one runs, as AutoApp describes it for a scheduler
     (GET /api/v1/jobs/{key}/summary), asked by this server the way a real WLA's
     plug-in would ask from its server. Gives {"summary": ...} or {"error": "..."}.
     """
@@ -334,9 +334,9 @@ def autoapp_summary(name: str, db: Session = Depends(get_db)):
             detail = json.loads(e.read().decode("utf-8")).get("detail")
         except ValueError:
             detail = None
-        return {"summary": None, "error": detail or f"RunMyFiles answered {e.code}."}
+        return {"summary": None, "error": detail or f"AutoApp answered {e.code}."}
     except (urllib.error.URLError, OSError, ValueError) as e:
-        return {"summary": None, "error": f"Could not reach RunMyFiles at {AUTOAPP_URL}: {e}"}
+        return {"summary": None, "error": f"Could not reach AutoApp at {AUTOAPP_URL}: {e}"}
 
 
 @app.get("/api/runs", response_model=List[RunOut], dependencies=[Depends(authorised)])
@@ -358,7 +358,7 @@ def get_run(run_id: int, db: Session = Depends(get_db)):
 # ---------- Its pages ----------
 
 app.mount("/ui", StaticFiles(directory=HERE / "static", html=True), name="ui")
-# The look is borrowed from RunMyFiles, then changed (standin.css), so the two are never mistaken for each other
+# The look is borrowed from AutoApp, then changed (standin.css), so the two are never mistaken for each other
 app.mount("/autoapp-ui", StaticFiles(directory=AUTOAPP_DIR / "ui"), name="autoapp-ui")
 
 

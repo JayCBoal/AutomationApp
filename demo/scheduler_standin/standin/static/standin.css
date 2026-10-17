@@ -1,4 +1,4 @@
-/* The Stand-in Scheduler borrows RunMyFiles's stylesheet, then changes its look so the two are never confused */
+/* The Stand-in Scheduler borrows AutoApp's stylesheet, then changes its look so the two are never confused */
 :root, :root[data-theme="light"] {
     --accent: #c8102e;
     --accent-text: #ffffff;

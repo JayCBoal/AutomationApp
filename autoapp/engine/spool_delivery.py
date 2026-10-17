@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Delivers telemetry spool files to RunMyFiles.
+Delivers telemetry spool files to AutoApp.
 
 The runner posts its records as it goes. This module holds the posting code it
 uses, and a command that sends whatever was left behind, for example because
@@ -27,7 +27,7 @@ DELIVERED_FOLDER = "delivered"
 
 
 class DeliveryError(Exception):
-    """The records did not reach RunMyFiles, or were refused."""
+    """The records did not reach AutoApp, or were refused."""
 
 
 def post_records(api_url: str, records: List[Dict[str, Any]], timeout: float = 10) -> Dict[str, Any]:
@@ -43,9 +43,9 @@ def post_records(api_url: str, records: List[Dict[str, Any]], timeout: float = 1
             return json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
         body = e.read().decode("utf-8", errors="replace")
-        raise DeliveryError(f"RunMyFiles refused the records (HTTP {e.code}): {body}") from e
+        raise DeliveryError(f"AutoApp refused the records (HTTP {e.code}): {body}") from e
     except (urllib.error.URLError, OSError, ValueError) as e:
-        raise DeliveryError(f"Could not reach RunMyFiles at {api_url}: {e}") from e
+        raise DeliveryError(f"Could not reach AutoApp at {api_url}: {e}") from e
 
 
 def read_spool_file(path: Path) -> List[Dict[str, Any]]:
@@ -93,10 +93,10 @@ def load_into_database(records: List[Dict[str, Any]]) -> None:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Deliver RunMyFiles telemetry spool files")
+    parser = argparse.ArgumentParser(description="Deliver AutoApp telemetry spool files")
     parser.add_argument("--spool-dir", default="./spool", help="Folder holding the spool files")
     parser.add_argument("--api-url", default=os.getenv("AUTOAPP_API_URL"),
-                        help="Address of the RunMyFiles API (default: the AUTOAPP_API_URL environment variable). "
+                        help="Address of the AutoApp API (default: the AUTOAPP_API_URL environment variable). "
                              "If neither is set, records are loaded directly into the database.")
     args = parser.parse_args()
 

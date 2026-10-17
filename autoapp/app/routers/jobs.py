@@ -359,7 +359,7 @@ class SummaryRun(BaseModel):
 
 
 class JobSummaryForHost(BaseModel):
-    """What a scheduler needs to show a RunMyFiles job in its own interface. Links are full addresses."""
+    """What a scheduler needs to show a AutoApp job in its own interface. Links are full addresses."""
     job_key: str
     description: Optional[str] = None
     active: bool
@@ -372,7 +372,7 @@ class JobSummaryForHost(BaseModel):
     run: Optional[SummaryRun] = Field(None, description="The run asked for with instance_id, or else the latest")
     modified: Optional[datetime] = None
     modified_by: Optional[str] = None
-    links: Dict[str, str] = Field(..., description="editor, operations and history: RunMyFiles' pages for the job")
+    links: Dict[str, str] = Field(..., description="editor, operations and history: AutoApp's pages for the job")
 
 
 def _step_line(step: JobStep) -> str:
@@ -395,7 +395,7 @@ def job_summary(job_key: str, request: Request,
     """
     A job described for a scheduler to show in its own interface: whether it would
     run, its steps in a line each, the endpoints and tags, a run, and links to
-    RunMyFiles' pages. A small page showing the same is ui/summary.html. See docs/INTEGRATION.md.
+    AutoApp's pages. A small page showing the same is ui/summary.html. See docs/INTEGRATION.md.
     """
     job = db.query(Job).filter(Job.JobKey == job_key).first()
     if not job:

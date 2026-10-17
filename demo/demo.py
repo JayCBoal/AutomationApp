@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-The RunMyFiles demo: a clean, self-contained setup to present from.
+The AutoApp demo: a clean, self-contained setup to present from.
 
     python3 demo/demo.py setup     build a fresh demo (deletes the previous one)
-    python3 demo/demo.py start     start RunMyFiles and the Stand-in Scheduler
+    python3 demo/demo.py start     start AutoApp and the Stand-in Scheduler
     python3 demo/demo.py stop      stop them
     python3 demo/demo.py status    what is running, and where
 
@@ -15,7 +15,7 @@ emptied when Linux restarts: run setup again (it takes seconds).
 It has nothing to do with the development database, and uses its own ports so it
 can run beside the development servers:
 
-    RunMyFiles                 http://localhost:8200/
+    AutoApp                 http://localhost:8200/
     Stand-in Scheduler      http://localhost:8210/
 
 The walkthrough to present from is demo/DEMO.md.
@@ -137,11 +137,11 @@ def setup() -> None:
         shutil.rmtree(WORKSPACE)
     (WORKSPACE / "logs").mkdir(parents=True)
 
-    say("RunMyFiles' database, with the sample data, the sales database and the sample files")
+    say("AutoApp's database, with the sample data, the sales database and the sample files")
     os.environ["STANDIN_URL"] = STANDIN_URL
     python(f"import os; os.environ['STANDIN_URL'] = {STANDIN_URL!r}\n" + BUILD_AUTOAPP, AUTOAPP_DIR)
 
-    say("The Stand-in Scheduler, with a job for each RunMyFiles job")
+    say("The Stand-in Scheduler, with a job for each AutoApp job")
     python(BUILD_STANDIN, STANDIN_DIR)
 
     say("Some history: the stand-in collecting the legal extracts and loading them into billing")
@@ -235,7 +235,7 @@ def stop(quiet: bool = False) -> None:
 
 def status() -> None:
     alive = running()
-    for name, url, label in (("autoapp", AUTOAPP_URL, "RunMyFiles"), ("standin", STANDIN_URL, "Stand-in Scheduler")):
+    for name, url, label in (("autoapp", AUTOAPP_URL, "AutoApp"), ("standin", STANDIN_URL, "Stand-in Scheduler")):
         state = "running" if name in alive else "not running"
         say(f"{label:<20} {url}/   ({state})")
     if not alive:
@@ -249,7 +249,7 @@ def main():
     try:
         import sqlalchemy, uvicorn  # noqa: F401  (the project's packages, needed by everything below)
     except ModuleNotFoundError:
-        sys.exit(f"RunMyFiles' Python packages are not available here. Switch on the project environment first:\n\n"
+        sys.exit(f"AutoApp's Python packages are not available here. Switch on the project environment first:\n\n"
                  f"    source {REPO}/.venv/bin/activate\n")
     commands[sys.argv[1]]()
 

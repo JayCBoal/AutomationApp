@@ -21,7 +21,7 @@ def _sha256(path: str) -> str:
 class FileOpHandler(BaseHandler):
     """
     Execution plugin for managing local file system operations (copy, move)
-    within the RunMyFiles engine.
+    within the AutoApp engine.
     """
 
     CODE = "COPY_FILES"

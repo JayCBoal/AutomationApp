@@ -137,7 +137,7 @@ def test_a_bad_database_url_is_a_clear_error(tmp_path, spool_records):
     with pytest.raises(ValueError) as error:
         run_handler(tmp_path / "spool", {"Database": "not a url", "Statement": "SELECT 1"})
 
-    assert "'Database' is not a database URL RunMyFiles can use" in str(error.value)
+    assert "'Database' is not a database URL AutoApp can use" in str(error.value)
 
 
 def test_the_password_is_never_recorded(tmp_path, spool_records):

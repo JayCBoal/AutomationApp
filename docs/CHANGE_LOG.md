@@ -6,6 +6,12 @@ Notable structural, schema and design changes to AutoApp, newest first. Line-by-
 
 ## 2026-10-16
 
+### RunMyFiles is AutoApp again
+
+- **Changed:** AutoApp's role. The product was forked into its own project, RunMyFiles. AutoApp remains as a testbed and demonstrator for scheduler features worth having in RunMyJobs, starting with workflows (see [PROJECT_GOALS.md](PROJECT_GOALS.md)).
+- **Changed:** the name people read is AutoApp again: the web interface, the Stand-in Scheduler's pages, messages, the job log and README.md. Some documentation from before the fork still says RunMyFiles.
+- **Changed:** the Run Job page runs jobs as the scheduler "AutoApp UI" again (was "RunMyFiles UI"). The sample data names it so too.
+
 ### Headers that stay put, and tags' variables under Variables
 
 - **Changed:** the page header and navigation stay at the top of the window while a page scrolls. On the Job Detail page and the other detail pages, the object's own header (its name and its Edit, Submit and other buttons) stays just under it.

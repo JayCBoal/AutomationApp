@@ -1,5 +1,5 @@
 /*
- * Shared by every page of the RunMyFiles web interface:
+ * Shared by every page of the AutoApp web interface:
  *   - the header and navigation bar
  *   - the dark / light theme switch
  *   - calling the REST API
@@ -18,7 +18,7 @@ const AutoApp = (() => {
 
     // Every page in the interface, in navigation-bar order. A page with no "href" is not built yet.
     const PAGES = [
-        { group: "left", name: "Main Index", href: "index.html", about: "Every page in RunMyFiles" },
+        { group: "left", name: "Main Index", href: "index.html", about: "Every page in AutoApp" },
         { group: "centre", name: "Applications", href: "search.html?kind=applications", about: "The systems that produce and consume files" },
         { group: "centre", name: "Entities", href: "search.html?kind=entities", about: "Outside parties: vendors, clients, partners" },
         { group: "centre", name: "Sites", href: "search.html?kind=sites", about: "An entity's servers" },
@@ -26,7 +26,7 @@ const AutoApp = (() => {
         { group: "centre", name: "Run Job", href: "run.html", about: "Run a job now, as a scheduler would, and watch its log" },
         { group: "centre", name: "Endpoints", href: "search.html?kind=endpoints", about: "The registered places files come from and go to" },
         { group: "centre", name: "Tags", href: "search.html?kind=tags", about: "Labels anything can carry, and the variables they give" },
-        { group: "centre", name: "Schedulers", href: "search.html?kind=schedulers", about: "The workload automation products that run RunMyFiles jobs" },
+        { group: "centre", name: "Schedulers", href: "search.html?kind=schedulers", about: "The workload automation products that run AutoApp jobs" },
         { group: "right", name: "Operations Log", href: "operations.html", about: "Every file handled, and each file's trace" },
         { group: "right", name: "Job History", href: "history.html", about: "Every run of every job" },
         { group: "right", name: "Audit Log", href: "audit.html", about: "Who changed which definition, and when" },
@@ -35,9 +35,9 @@ const AutoApp = (() => {
 
     // ---------- Embedded mode ----------
     /*
-     * A page opened with embed=1 in its address is shown without RunMyFiles' header and
+     * A page opened with embed=1 in its address is shown without AutoApp's header and
      * navigation, for a scheduler (a WLA) to show inside its own interface. It stays
-     * embedded as it is used: links to other RunMyFiles pages keep embed=1. It tells the
+     * embedded as it is used: links to other AutoApp pages keep embed=1. It tells the
      * window that opened it what happened (tellHost). host=<origin> limits which
      * origin may receive those messages; theme=light or theme=dark matches the host's look.
      * The addresses and messages are documented in docs/INTEGRATION.md.
@@ -47,7 +47,7 @@ const AutoApp = (() => {
     const HOST_ORIGIN = ADDRESS.get("host") || "*";
     const HOST_THEME = ["light", "dark"].includes(ADDRESS.get("theme")) ? ADDRESS.get("theme") : null;
 
-    /** A RunMyFiles page's address, kept embedded if this page is. Other addresses are left alone. */
+    /** A AutoApp page's address, kept embedded if this page is. Other addresses are left alone. */
     function link(url) {
         if (!EMBEDDED) return url;
         const target = new URL(url, location.href);
@@ -58,7 +58,7 @@ const AutoApp = (() => {
         return target.pathname + target.search + target.hash;
     }
 
-    /** Goes to another RunMyFiles page, staying embedded if this page is. */
+    /** Goes to another AutoApp page, staying embedded if this page is. */
     function go(url) { location.href = link(url); }
 
     /**
@@ -137,9 +137,9 @@ const AutoApp = (() => {
             for (const name of ["embed", "host", "theme"]) full.searchParams.delete(name);
             holder.innerHTML = `
                 <div class="embed-bar">
-                    <span class="product">RunMyFiles</span>
+                    <span class="product">AutoApp</span>
                     <span class="page-title">${escapeHtml(title)}</span>
-                    <a id="open-in-autoapp" href="${escapeHtml(full.pathname + full.search)}" target="_blank" rel="noopener">Open in RunMyFiles</a>
+                    <a id="open-in-autoapp" href="${escapeHtml(full.pathname + full.search)}" target="_blank" rel="noopener">Open in AutoApp</a>
                 </div>`;
             return;
         }
@@ -155,7 +155,7 @@ const AutoApp = (() => {
 
         holder.innerHTML = `
             <header class="app-header">
-                <span class="product">RunMyFiles</span>
+                <span class="product">AutoApp</span>
                 <span class="page-title">${escapeHtml(title)}</span>
                 <button type="button" class="theme-toggle" id="theme-toggle"></button>
             </header>
@@ -181,7 +181,7 @@ const AutoApp = (() => {
         try {
             response = await fetch(url, options);
         } catch (e) {
-            throw new Error("Could not reach the RunMyFiles API. Is the server running?");
+            throw new Error("Could not reach the AutoApp API. Is the server running?");
         }
         if (!response.ok) {
             let detail = response.statusText;
@@ -195,7 +195,7 @@ const AutoApp = (() => {
             } catch (e) { /* not JSON */ }
             if (response.status === 405) {
                 // The pages are read from disk each time, but the server keeps the code it started with
-                detail = "The server does not accept this request. If RunMyFiles was updated after the server " +
+                detail = "The server does not accept this request. If AutoApp was updated after the server " +
                          "was started, restart the server.";
             }
             const error = new Error(response.status >= 500 ? `The API answered ${response.status}: ${detail}` : detail);

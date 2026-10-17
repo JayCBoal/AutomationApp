@@ -65,7 +65,7 @@ def test_each_kind_has_a_search_page_listing_them_in_name_order(page, world, kin
 
     assert [row.locator(".item-name").inner_text() for row in rows.all()] == names
     assert page.locator(".page-title").inner_text() == title
-    assert page.title() == f"{title} - RunMyFiles"
+    assert page.title() == f"{title} - AutoApp"
 
 
 def test_a_search_row_shows_its_fields_and_what_uses_it(page, world):

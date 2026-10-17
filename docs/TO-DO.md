@@ -99,13 +99,29 @@ Two significant features, each worth its own design session before any code.
     - how For-Each names the current item (a file, a row, a list value) for the steps inside it;
     - how loops are limited, so a While cannot run forever;
     - how the job log and the trace show steps that ran several times, or not at all.
-- **A workflow object type:** a set of jobs with dependencies between them, thought of as a kind of job. This one needs a lot of thought first.
+- **A workflow object type:** a set of jobs with dependencies between them, designed and run in AutoApp. It answers the RunMyJobs job-chain shortcomings listed in [PROJECT_GOALS.md](PROJECT_GOALS.md) goal 2. AutoApp runs workflows itself, but only as far as needed to prove a design behaves as intended. This one needs a lot of thought first.
+  - **Starting point: ActiveBatch's model** (the owner found it intuitive; a place to start, not to copy as-is):
+    - a Plan is an executable container: everything in it runs in parallel unless dependencies say otherwise;
+    - Job Triggers "push" from JobA to JobB: JobA ending starts JobB;
+    - Job Constraints "look back" from JobB to JobA: JobB checks them when it is ready to run, and needs a rule for what happens while they are not met (wait, time out, fail);
+    - sub-Plans, which belong to their parent;
+    - other constraints in any combination on any job, such as date and time (linked to a Schedule or Calendar object, or not);
+    - an expression, in the same C-like language as its Jobs Library, combining a job's constraints. Not great, but far easier to write than REL.
+    - It must not look *obviously* copied from ActiveBatch. At the least, AutoApp gives its objects its own names: "Workflow", not "Plan", and likewise for Triggers, Constraints and sub-Plans.
+  - **Steps or a graph** (discussed 2026-10-16): the stepwise model has no real advantage beyond an easy layout and an easy-to-explain barrier.
+    - Restarts work in a graph too: from the point of failure (the failed job and whatever below it has not run), from a chosen job (it and everything downstream), or bypassing a job fixed by hand (marked done so what depends on it goes ahead).
+    - Each step boundary adds dependencies nobody asked for, which is where the workarounds of PROJECT_GOALS' first shortcoming and the structural sub-chains of its sixth come from.
+    - So: a graph, with an optional group or barrier for "all of these, then those". An RMJ chain then imports directly, each step becoming a group.
   - Questions for the design:
-    - how far it overlaps with what the scheduler already does: dependencies are a WLA's core job, so the question is what a RunMyFiles workflow adds, and where the line sits;
-    - whether a workflow runs as one scheduler job or hands each job back to the scheduler;
-    - what the dependencies can be (success, failure, files present, a variable's value);
-    - restarts part-way through;
-    - how a workflow's runs appear in Job History, the Operations Log and the trace.
+    - join rules: does a job need all its upstream jobs, any of them, or some number of them;
+    - what a job downstream of a branch that was not taken does: run, wait, or count as skipped;
+    - "go back upstream and rerun" as an action rather than an edge (a graph has no cycles), with a limit on how many times;
+    - what dependencies and decisions can test: status, specific return codes and ranges, files present, a value from an earlier job, a time window;
+    - the condition language: a typed language or a builder with a readable text form, and how it is validated and evaluated against a past run to see why it came out as it did;
+    - how cross-workflow dependencies (like RMJ's Wait and Raise Events) are drawn;
+    - a dense diagram that shows full names;
+    - restarts part-way through, with each job's attempts kept, so a restart resets only the jobs chosen;
+    - how a workflow's runs appear in Job History, the Operations Log and the trace (perhaps a parent run with each job's run as a child).
 
 ### Then: breadth
 

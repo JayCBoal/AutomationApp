@@ -52,7 +52,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="RunMyFiles Core REST API",
+    title="AutoApp Core REST API",
     version="1.0.0",
     description="Execution Harness & Payload Abstraction Layer for WLA Engines",
     lifespan=lifespan,
@@ -60,7 +60,7 @@ app = FastAPI(
 
 @app.exception_handler(SQLAlchemyError)
 def database_error(request: Request, error: SQLAlchemyError):
-    """A database failure, explained. Most often the database was built by an earlier version of RunMyFiles."""
+    """A database failure, explained. Most often the database was built by an earlier version of AutoApp."""
     shortfall = database_shortfall()
     if shortfall:
         detail = out_of_date_message(shortfall)
@@ -94,7 +94,7 @@ app.include_router(launches.router)
 
 @app.get("/health", tags=["Health"])
 def health_check():
-    return {"status": "HEALTHY", "service": "RunMyFiles Core API"}
+    return {"status": "HEALTHY", "service": "AutoApp Core API"}
 
 
 @app.get("/", include_in_schema=False)

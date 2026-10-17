@@ -95,7 +95,7 @@ class JobSummary(BaseModel):
     endpoints: List[str] = Field(..., description="Names of the endpoints the job's steps read from or write to")
     ready: bool = Field(..., description="True if the pre-run check finds no problems, so the job would run")
     problem_count: int = Field(..., description="How many problems the pre-run check finds")
-    last_run: Optional[LastRun] = Field(None, description="The most recent run RunMyFiles has a record of")
+    last_run: Optional[LastRun] = Field(None, description="The most recent run AutoApp has a record of")
     tags: List[str] = Field(default_factory=list, description="Paths of the tags the job carries")
     modified: Optional[datetime] = None
     modified_by: Optional[str] = None

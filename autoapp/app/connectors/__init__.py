@@ -1,8 +1,8 @@
 """
-Connectors: how RunMyFiles reads from a scheduler (a WLA) through that scheduler's API.
+Connectors: how AutoApp reads from a scheduler (a WLA) through that scheduler's API.
 
 One connector per technology. Each takes a registered Scheduler (its ApiUrl, and
-its credential, kept as the secret variable ApiToken) and reads what RunMyFiles
+its credential, kept as the secret variable ApiToken) and reads what AutoApp
 needs to know about one of the WLA's jobs: so far, its parameters, which the WLA
 puts in the environment when it runs the job. The job editor shows them, and its
 preview and pre-run check use them. See docs/INTEGRATION.md.
@@ -50,7 +50,7 @@ class Connector:
         self.api_url = (scheduler.ApiUrl or "").rstrip("/")
         self.token = next((v.VarValue for v in scheduler.variables if v.VarName == TOKEN_VARIABLE), None)
         if not self.api_url:
-            raise ConnectorError(f"Scheduler '{scheduler.Name}' has no API address, so RunMyFiles cannot read it.")
+            raise ConnectorError(f"Scheduler '{scheduler.Name}' has no API address, so AutoApp cannot read it.")
 
     def job(self, name: str) -> WlaJob:
         raise NotImplementedError
@@ -66,6 +66,6 @@ def connector_for(scheduler) -> Connector:
     """The connector for a scheduler's technology. Raises ConnectorError if there is none yet."""
     connectors = _connectors()
     if scheduler.Technology not in connectors:
-        raise ConnectorError(f"RunMyFiles cannot read {scheduler.Technology} schedulers yet. "
+        raise ConnectorError(f"AutoApp cannot read {scheduler.Technology} schedulers yet. "
                              f"It can read: {', '.join(sorted(connectors))}.")
     return connectors[scheduler.Technology](scheduler)

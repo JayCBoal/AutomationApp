@@ -1,5 +1,5 @@
 """
-Getting telemetry from the runner's machine into RunMyFiles.
+Getting telemetry from the runner's machine into AutoApp.
 
 These use a real API server in its own process (the live_api fixture), a real
 runner process, and the real delivery command.

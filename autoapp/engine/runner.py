@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-RunMyFiles execution runner.
+AutoApp execution runner.
 
 Runs every active step of one Job, in StepOrder, and returns an OS exit code
 (0 = all steps succeeded, 1 = the job failed) for the calling WLA scheduler.
@@ -116,7 +116,7 @@ def business_date_argument(text: str) -> date:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="RunMyFiles Lightweight Execution Runner")
+    parser = argparse.ArgumentParser(description="AutoApp Lightweight Execution Runner")
     parser.add_argument("--job-key", required=True, help="JobKey of the target Job (e.g. DEV-LEGAL-CLIENT_EXTRACT)")
     parser.add_argument("--instance-id", required=True, help="The scheduler's unique ID for this job instance")
     parser.add_argument("--run-number", type=int, default=1,
@@ -126,7 +126,7 @@ def main():
                              "(default: the AUTOAPP_SCHEDULER environment variable)")
     parser.add_argument("--spool-dir", default="./spool", help="Directory for telemetry spool files")
     parser.add_argument("--api-url", default=os.getenv("AUTOAPP_API_URL"),
-                        help="Address of the RunMyFiles API to deliver telemetry to "
+                        help="Address of the AutoApp API to deliver telemetry to "
                              "(default: the AUTOAPP_API_URL environment variable; if unset, telemetry stays in the spool)")
     parser.add_argument("--working-root", default=None,
                         help="Root of job working folders (default: the AUTOAPP_WORKING_ROOT environment variable)")
@@ -139,7 +139,7 @@ def main():
                              "in the job log: the scheduler's secret job parameters (default: the AUTOAPP_MASK_ENV "
                              "environment variable)")
     parser.add_argument("--run-id", type=uuid.UUID, default=None,
-                        help="The ID to record the run under (default: a new one). RunMyFiles' own Run Job page "
+                        help="The ID to record the run under (default: a new one). AutoApp's own Run Job page "
                              "passes one, so it can follow the run; a scheduler leaves it out.")
     parser.add_argument("--log-level", default=os.getenv("AUTOAPP_LOG_LEVEL", job_log.DEFAULT_LEVEL),
                         type=str.upper, choices=list(job_log.LEVELS),
@@ -150,7 +150,7 @@ def main():
 
     db: Session = SessionLocal()
     try:
-        # Values of secret variables must never reach the log: RunMyFiles' own, and the scheduler's it names
+        # Values of secret variables must never reach the log: AutoApp's own, and the scheduler's it names
         secrets = [value for (value,) in db.query(Variable.VarValue).filter(Variable.IsSecret.is_(True))]
         secrets += [os.environ[name.strip()] for name in args.mask_env.split(",") if name.strip() in os.environ]
         job_log.configure(args.log_level, secrets=secrets)

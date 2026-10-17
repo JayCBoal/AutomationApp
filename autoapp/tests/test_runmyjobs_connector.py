@@ -18,7 +18,7 @@ BASE = "/redwood/demo/api-extension/External/REDWOOD/Redwood_RestService/rest/v1
 
 JOB_DEFINITIONS = {
     "GLOBAL.AUTOAPP_BILLING_EXPORT": {
-        "Name": "AUTOAPP_BILLING_EXPORT", "Partition": "GLOBAL", "Description": "Billing exports through RunMyFiles",
+        "Name": "AUTOAPP_BILLING_EXPORT", "Partition": "GLOBAL", "Description": "Billing exports through AutoApp",
         "JobDefinitionType": "BASH",
         "JobDefinitionParameters": [
             {"Name": "Region", "DefaultExpression": "EU", "Direction": "In", "DataType": "String",
@@ -84,8 +84,8 @@ def test_the_connector_reads_a_job_definitions_parameters(client, registered):
 
     assert response.status_code == 200, response.text
     job = response.json()
-    assert job["description"] == "Billing exports through RunMyFiles"
-    # in RunMyJobs' display order; an Out parameter is not set before the run, and AutoAppJobKey is RunMyFiles' own
+    assert job["description"] == "Billing exports through AutoApp"
+    # in RunMyJobs' display order; an Out parameter is not set before the run, and AutoAppJobKey is AutoApp's own
     assert job["parameters"] == [
         {"name": "Region", "value": "EU", "secret": False},
         {"name": "ExportPassword", "value": None, "secret": True},
@@ -100,7 +100,7 @@ def test_the_api_key_is_sent_as_x_api_key(client, db, registered):
     response = client.get("/api/v1/schedulers/RMJ_DEV/jobs/GLOBAL.AUTOAPP_BILLING_EXPORT")
 
     assert response.status_code == 502
-    assert "refused RunMyFiles' API key" in response.json()["detail"]
+    assert "refused AutoApp's API key" in response.json()["detail"]
 
 
 def test_an_unknown_job_definition_says_so(client, registered):

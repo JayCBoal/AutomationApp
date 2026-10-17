@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-RunMyFiles demo: seed a database, run one job, and leave everything on disk to look at.
+AutoApp demo: seed a database, run one job, and leave everything on disk to look at.
 
     python3 demo/run_demo.py
 
@@ -33,7 +33,7 @@ try:
     from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
 except ModuleNotFoundError:
-    sys.exit("RunMyFiles' Python packages are not available in this terminal.\n"
+    sys.exit("AutoApp's Python packages are not available in this terminal.\n"
              f"Switch on the project environment first:\n\n    source {REPO_DIR}/.venv/bin/activate\n\n"
              "If that file does not exist, see 'Quick start' in README.md.")
 

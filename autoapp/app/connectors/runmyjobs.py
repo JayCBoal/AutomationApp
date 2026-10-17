@@ -12,7 +12,7 @@ A WLA job is named by its business key, <partition>.<name>, e.g. GLOBAL.AUTOAPP_
 GET <ApiUrl>/JobDefinition/<business key> returns the job definition, whose
 JobDefinitionParameters each have a Name, a DefaultExpression, a Direction (In,
 Out or InOut) and a Password flag. Those are what the job sets in the environment
-of the script it runs, so they are what a RunMyFiles step can use.
+of the script it runs, so they are what a AutoApp step can use.
 """
 import json
 import urllib.error
@@ -22,7 +22,7 @@ import urllib.request
 from app.connectors import Connector, ConnectorError, WlaJob, WlaParameter
 
 # The parameters of the RunMyJobs job definition that runs the runner itself (integrations/runmyjobs),
-# which are RunMyFiles' settings rather than values for the job's steps
+# which are AutoApp's settings rather than values for the job's steps
 OWN_PARAMETERS = {"AutoAppJobKey", "AutoAppScheduler", "AutoAppSecretParameters", "BusinessDate"}
 
 
@@ -38,7 +38,7 @@ class RunMyJobsConnector(Connector):
                 return json.loads(response.read().decode("utf-8"))
         except urllib.error.HTTPError as e:
             if e.code == 401:
-                raise ConnectorError(f"RunMyJobs ('{self.scheduler.Name}') refused RunMyFiles' API key. "
+                raise ConnectorError(f"RunMyJobs ('{self.scheduler.Name}') refused AutoApp's API key. "
                                      f"Check the scheduler's ApiToken variable.") from None
             if e.code == 404:
                 return None

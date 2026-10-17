@@ -127,13 +127,13 @@ function jobDetail() {
             this.tagCandidate = "";
             this.tagPreview = null;
             this.refreshTags();
-            document.title = `${job.job_key || "New job"} - RunMyFiles`;
+            document.title = `${job.job_key || "New job"} - AutoApp`;
         },
 
         /** The scheduler's job, for the preview and the pre-run check: { scheduler, wla_job }, or nothing. */
         wlaQuery() { return this.wla ? { scheduler: this.wla.scheduler, wla_job: this.wla.job } : {}; },
 
-        /** Reads the scheduler's job through RunMyFiles' connector for it. A failure is shown, not fatal. */
+        /** Reads the scheduler's job through AutoApp's connector for it. A failure is shown, not fatal. */
         async loadWlaJob() {
             try {
                 this.wlaJob = await AutoApp.get(`/schedulers/${encodeURIComponent(this.wla.scheduler)}/jobs/${encodeURIComponent(this.wla.job)}`);

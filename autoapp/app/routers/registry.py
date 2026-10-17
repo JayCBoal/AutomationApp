@@ -184,7 +184,7 @@ schedulers = APIRouter(prefix="/api/v1/schedulers", tags=["Schedulers"])
 class SchedulerCreate(BaseModel):
     name: str = Field(..., max_length=100, description="What the runner's --scheduler calls it, e.g. RMJ_PROD")
     technology: str = Field("OTHER", description=", ".join(Scheduler.TECHNOLOGIES))
-    api_url: Optional[str] = Field(None, max_length=512, description="Where RunMyFiles reaches it")
+    api_url: Optional[str] = Field(None, max_length=512, description="Where AutoApp reaches it")
     description: Optional[str] = None
     active: bool = True
     variables: Optional[List[VariableSave]] = None
@@ -200,7 +200,7 @@ class SchedulerOut(BaseModel):
 
 @schedulers.post("", response_model=SchedulerOut, status_code=status.HTTP_201_CREATED)
 def create_scheduler(payload: SchedulerCreate, db: Session = Depends(get_db)):
-    """Registers a scheduler: a workload automation product that runs RunMyFiles jobs."""
+    """Registers a scheduler: a workload automation product that runs AutoApp jobs."""
     name = clean_name("scheduler", payload.name, Scheduler, db)
     technology = next((t for t in Scheduler.TECHNOLOGIES if t.lower() == (payload.technology or "").strip().lower()), None)
     if technology is None:

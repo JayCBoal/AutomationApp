@@ -196,7 +196,7 @@ def used_by(db: Session, kind: Kind, obj) -> List[Dict[str, str]]:
 
 
 def runs_by(db: Session, scheduler) -> int:
-    """How many runs RunMyFiles has recorded from a scheduler: its history, which does not stop it being deleted."""
+    """How many runs AutoApp has recorded from a scheduler: its history, which does not stop it being deleted."""
     return db.query(JobRun.id).filter(JobRun.SchedulerName == scheduler.Name).count()
 
 

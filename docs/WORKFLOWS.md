@@ -10,7 +10,7 @@ Status: **being designed. Nothing is built.** On 2026-10-17 the session finished
 2. Dependencies: join rules, branches not taken, final statuses, disabled jobs. *Done.*
 3. Conditions: what they can test, and the language or builder (shortcoming 3). *Done.*
 4. Reactions to outcomes: return codes, rerunning upstream (shortcoming 2). *Done.*
-5. Restarts and bypassing. *Net result, Resume and the Rerun menu decided.*
+5. Restarts and bypassing. *Net result, Resume and the Rerun menu decided; the rest proposed.*
 6. The diagram and editor: cross-workflow links, density, full names (shortcomings 4 and 5).
 7. Run records: Job History, the Operations Log, the trace.
 8. The first slice to build: the smallest thing that shows the idea.
@@ -206,11 +206,27 @@ What a cancelled or killed job ends as: see Reason, below.
 
 ## Proposed, to settle
 
+- **Topic 5, restarts** (proposed 2026-10-17):
+  - **A rerun is a new attempt within the same workflow run**, not a new run, so the history stays together and the net-result rule applies.
+  - **Rerun ▸ on a workflow run:**
+    - *Resume:* reruns the jobs that ended Failed or Not run (Failed ones resume from their record; Not run ones are looked at again from scratch); Succeeded, Bypassed, Skipped and Disabled jobs stay as they are;
+    - *Restart from beginning:* every job reset, from scratch;
+    - *Advanced…:* from a chosen job (it and everything downstream); only chosen jobs (with a warning that downstream results may be out of date); mark as done (Bypassed, Reason `MARKED_DONE`, on a failed or waiting job); ignore a prerequisite for this run (Control-M's "add the condition by hand", done openly); skip chosen jobs; with different `${...}` values (with a warning); hold at… (pause before a chosen job, to look before it runs).
+    - Every choice is recorded in the Audit Log, with who made it.
+  - **Rerun ▸ on a job on its own:** the same, with steps in place of jobs (from a chosen step, with different values, skip a step).
+  - **A manual rerun resets the Reactions' "at most N times" counts:** an operator has decided.
+  - **How Resume works inside a job:**
+    - it reuses the first attempt's resolved `${...}` values, stored with the run; secrets are read again, never stored; `%{Now...}` is the current time;
+    - each step type declares how it resumes: *per file* (Copy, Move, Delete, Check: files with a successful operation record are skipped; a file that was in progress is checked at its destination by size, and checksum where recorded, and redone if it does not match); *whole step* (Run SQL, Zip, Unzip: the failed step runs again in full); *never automatically* (anything unsafe to repeat: Resume holds for an operator at that step);
+    - flow control: an If whose branch had begun keeps that branch; a For Each File reuses attempt 1's list of files (to be recorded) and skips the passes done; a While picks up at its pass;
+    - the run's spool, written as it goes, is the record for a killed runner and a failure of the code alike (the owner's control file is "the spool, read back"); when the last operation is not known to have finished, the half-done rule applies.
+  - Questions for the owner: a new attempt of the same run; the Advanced… list (especially Hold at… and Ignore a prerequisite); the three ways a step resumes; resetting the Reactions' counts.
+
 ## Open questions, by topic
 
 - **Reactions on a use** (raised 2026-10-17): whether a use can add Reactions of its own to its definition's (proposed: yes, the use's looked at first).
 - **Reactions (4):** see the proposal above; also, for an outside prerequisite that times out, whether the job counts as failed or not run.
-- **Restarts (5):** each job's attempts kept, so a restart resets only the jobs chosen; restarting from the point of failure, from a chosen job, or bypassing one; what Advanced… offers; the open points of resuming (above).
+- **Restarts (5):** see the proposal above.
 - **Diagram and editor (6):**
   - how prerequisites outside the workflow (like RunMyJobs' Wait and Raise Events) are drawn (shortcoming 4);
   - a dense diagram that shows full names (shortcoming 5);

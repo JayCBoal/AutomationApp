@@ -79,6 +79,8 @@ Ordered toward a demonstration: a job built in the job editor, run by a schedule
 
 Every page of the web interface is built. See [UI_VISION.md](UI_VISION.md) for what remains proposed.
 
+- **Check Files: minimum age and waiting** (decided 2026-10-17). New parameters: `MinAgeSeconds` (only files unchanged for at least this long count; empty for any age), `WaitMinutes` (keep checking for up to this long before failing; empty for no wait, as now) and `CheckEverySeconds` (default 30). The job log says what it is waiting for ("2 of 3 files are old enough; checking again in 30 seconds") and why it stopped. The same minimum age serves workflow prerequisites on endpoints ([WORKFLOWS.md](WORKFLOWS.md)). A While around Check Files can wait already; this makes the common case simple.
+
 1. **More step handlers.** Each one also adds a catalog entry, so it appears in the editor. Delete, Check, Zip, Unzip and Run SQL are built; still to come:
    - SFTP transfer (this is what makes endpoints on remote sites usable)
    - REST call

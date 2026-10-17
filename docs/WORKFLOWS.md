@@ -8,7 +8,7 @@ Status: **being designed. Nothing is built.** On 2026-10-17 the session finished
 
 1. The objects and their names. *Done.*
 2. Dependencies: join rules, branches not taken, final statuses, disabled jobs. *Done.*
-3. Conditions: what they can test, and the language or builder (shortcoming 3). *Language, outputs, outside targets and which run decided; the rest proposed.*
+3. Conditions: what they can test, and the language or builder (shortcoming 3). *Done.*
 4. Reactions to outcomes: return codes, rerunning upstream (shortcoming 2). *Done.*
 5. Restarts and bypassing. *Net result, Resume and the Rerun menu decided.*
 6. The diagram and editor: cross-workflow links, density, full names (shortcomings 4 and 5).
@@ -192,19 +192,22 @@ What a cancelled or killed job ends as: see Reason, below.
 - Not "today's run": that breaks workflows that cross midnight.
 - Optional limits, off by default, against a stale success: only if that run ended within the last N hours; only a run started after this workflow's run started.
 
-## Proposed, to settle
+### Topic 3's other targets and tools (2026-10-17)
 
-- **Topic 3's other loose ends** (proposed 2026-10-17):
-  - *an endpoint as a target* has the outputs `FileCount` and `Bytes` (what matches its path and pattern now), `Files` (a table, like Operations) and `Stable` (no matching file changed for N seconds, so a job does not start on a file still arriving); as a prerequisite it waits, with its time limit. Local endpoints only, until SFTP exists;
-  - *workflow variables*: as in flow control, `${...}` is fixed when the run starts and `%{...}` comes from the run. A workflow has `${...}` variables of its own, inherited by what is embedded in it. Precedence, highest first: a use's overrides, the job's own, the workflow's, tags. Values fixed at the start are also what Resume needs;
-  - *time windows*: a built-in `%{Now...}` (`Time`, `Date`, `Weekday`): `%{Now.Time} BETWEEN '06:00' AND '18:00'`; as a prerequisite it waits until the window opens;
-  - *the builder*: rows of name → output → comparison → value, joined by AND or OR, with grouping, writing the SQL live beneath; text is always one switch away, and back only while the text is in a shape the builder can show (otherwise "edited as text");
-  - *Explain*: against a past run (each value as it was, each part held or not, the result) and now (current values, in the editor), growing from what flow control already logs.
-  - Questions for the owner: the variable precedence; `Stable` for files.
+- **An endpoint as a target** has the outputs `FileCount` and `Bytes` (what matches its path and pattern now) and `Files` (a table, like Operations). Its prerequisite can ask for a **minimum age** (every file unchanged for at least N seconds), so a job does not start on a file still arriving; it waits, with its time limit. Local endpoints only, until SFTP exists.
+  - Minimum age replaces the `Stable` first proposed: one check of each file's modified time, the partner of Check Files' `MaxAgeHours`, and the same concept as Check Files' minimum age (TO-DO), sharing its code. In a job, Check Files holds the job until its files are ready; in a workflow, the prerequisite keeps the job from starting.
+- **Workflow variables:** as in flow control, `${...}` is fixed when the run starts and `%{...}` comes from the run. A workflow has `${...}` variables of its own, inherited by what is embedded in it.
+  - Precedence, highest first: a use's overrides, the job's own, the workflow's, tags, the scheduler's.
+  - One setting on the workflow, **Tags before workflow variables** (off by default), swaps the two scopes whose order is debatable; a full reorder would make "where did this value come from" hard to answer. The Variables panel says where each value came from.
+  - Values fixed at the start are also what Resume needs.
+- **Time windows:** a built-in `%{Now...}` (`Time`, `Date`, `Weekday`): `%{Now.Time} BETWEEN '06:00' AND '18:00'`; as a prerequisite it waits until the window opens.
+- **The builder:** rows of name → output → comparison → value, joined by AND or OR, with grouping, writing the SQL live beneath; text is always one switch away, and back only while the text is in a shape the builder can show (otherwise "edited as text").
+- **Explain:** against a past run (each value as it was, each part held or not, the result) and now (current values, in the editor), growing from what flow control already logs.
+
+## Proposed, to settle
 
 ## Open questions, by topic
 
-- **Conditions (3):** see the proposal above.
 - **Reactions on a use** (raised 2026-10-17): whether a use can add Reactions of its own to its definition's (proposed: yes, the use's looked at first).
 - **Reactions (4):** see the proposal above; also, for an outside prerequisite that times out, whether the job counts as failed or not run.
 - **Restarts (5):** each job's attempts kept, so a restart resets only the jobs chosen; restarting from the point of failure, from a chosen job, or bypassing one; what Advanced… offers; the open points of resuming (above).

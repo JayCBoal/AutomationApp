@@ -58,6 +58,9 @@ def describe(op: Operation) -> dict:
         scheduler=op.run.SchedulerName,
         run_id=op.run.RunID,
         step_order=op.StepOrder,
+        # Recorded before steps could be nested, an operation has only its step's order
+        step_number=op.StepNumber or (str(op.StepOrder) if op.StepOrder is not None else None),
+        iteration=op.Iteration,
     )
 
 
@@ -173,8 +176,12 @@ CONSUMING = {"MOVE", "DELETE", "ZIP_MOVE"}
 
 
 def _same_step(a: Operation, b: Operation) -> bool:
-    """Operations of one step in one run. Several files zipped into one archive are one write of it."""
-    return a.JobRun_id == b.JobRun_id and a.StepOrder == b.StepOrder
+    """
+    Operations of one step in one run, in one pass of the loops around it. Several files
+    zipped into one archive are one write of it; each pass of a loop makes its own.
+    """
+    return (a.JobRun_id == b.JobRun_id and a.StepOrder == b.StepOrder
+            and a.StepNumber == b.StepNumber and a.Iteration == b.Iteration)
 
 
 def _is_zip(op: Operation) -> bool:

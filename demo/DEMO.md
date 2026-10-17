@@ -59,7 +59,7 @@ The elevator pitch, as a bridge into the demo:
 1. **Say:** "This is a stand-in for RunMyJobs: a deliberately simple scheduler, so the integration can be shown without one. Everything it does with RunMyFiles, a RunMyJobs Extension Point would do the same way."
 2. Click **BILLING_EXPORT**.
    - **Show:** the job definition, as a scheduler holds it: its parameters `SalesRegion` and `ExportPassword` (a secret), and that it gives a business date.
-   - **Show:** the **In RunMyFiles** panel. "The scheduler's own screen shows what RunMyFiles knows about this job: ready to run, its four steps, asked from RunMyFiles' API."
+   - **Show:** the **In RunMyFiles** panel. "The scheduler's own screen shows what RunMyFiles knows about this job: ready to run, its steps, asked from RunMyFiles' API."
 3. Click **Edit in RunMyFiles**.
    - **Say:** "This is RunMyFiles' own job editor, opened from inside the scheduler's job editor. In RunMyJobs it would be a tab on the job definition."
    - **Show:** the job key at the top, and "Ready to run".
@@ -75,8 +75,12 @@ The elevator pitch, as a bridge into the demo:
    - **Step 1, Export open invoices (Run SQL).**
      - **Show:** the SQL, and the database given as `${APP:BILLING_APP.SalesDbUrl}`, which shows as `********`. The database's address, password included, is a secret variable of the billing application.
      - **Show:** the result file, `out/Open_Invoices_${DATE:yyyyMMdd}.csv`, and under it what it really comes to today.
-   - **Step 3, Check both exports.** "Fails the run unless exactly two files, neither empty, are there. A check most scripts never make."
-   - **Step 4, Send to finance (Zip Files).** "Zips them into one archive, straight to finance's inbox, a registered endpoint."
+   - **Step 3, Check both exports.** "Checks that exactly two files, neither empty, are there. A check most scripts never make."
+     - **Show:** its **On failure** is *Continue*: a failed check does not stop the job by itself; step 4 decides.
+   - **Step 4, Send only a sound batch (If).** Its condition is `%{Check_both_exports.Status} = 'SUCCESS'`: "a step reads what an earlier step did, by its name."
+     - **Then:** step 4.1, a **For Each File** over the two exports, keeps a copy of each (4.1.1, from `%{Export.FullName}`); step 4.2, **Send to finance** (Zip Files), "zips them into one archive, straight to finance's inbox, a registered endpoint."
+     - **Else:** step 4.3 holds the exports back, and 4.4 fails the job saying what was wrong. "Nothing half-checked ever reaches finance."
+     - **Say:** "Branches and loops, as steps. No script, and the whole tree is checked before anything runs, even the Else that rarely does."
    - **Say:** "No script. Every step is a type with defined parameters, and every value is previewed live, so a mistake shows before the job ever runs."
 
 ## 4. A change, saved from inside the scheduler (13–16)
@@ -121,10 +125,11 @@ Still in the RunMyFiles window:
    - **Show:** the route, top to bottom. The invoices file:
      1. written by the query;
      2. checked;
-     3. zipped and sent to finance's inbox;
-     4. picked up by finance's job, in a different run;
-     5. unzipped;
-     6. checked again;
+     3. copied to the record by step 4.1.1, marked as its pass of the loop;
+     4. zipped and sent to finance's inbox;
+     5. picked up by finance's job, in a different run;
+     6. unzipped;
+     7. checked again;
    - and the archive kept.
    - **Say:** "That is one file's whole life, across two jobs and two applications, with times, sizes and the run each step belonged to. Today that question takes an afternoon of log reading. Here it takes one click, and it works from any point in the route."
 3. Close the trace, and click **Trace** on another row of the same file.

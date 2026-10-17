@@ -10,6 +10,11 @@
  * fields, and every step in the order shown) in one request; Cancel puts
  * everything back.
  *
+ * Steps can hold steps (docs/FLOW_CONTROL.md): an If holds its Then, any Else Ifs and
+ * an Else, each holding steps; For Each File and While hold steps directly. The page
+ * keeps them as a tree (each step's "children") and draws the tree as a list of rows,
+ * indented, numbered 3, 3.1, 3.2 as the job log numbers them (see "rows").
+ *
  * API routes used:
  *     GET    /api/v1/jobs/{job_key}          the job, its steps and parameters
  *     GET    /api/v1/jobs/{job_key}/check    whether the job would run
@@ -25,6 +30,9 @@
 function jobDetail() {
     const address = new URLSearchParams(location.search);
     const TRUE_WORDS = ["true", "yes", "y", "1"];
+    // The parts of an If, never chosen from the list of step types; shown as headers of their If
+    const BRANCHES = { THEN: "Then", ELSEIF: "Else If", ELSE: "Else" };
+    const isBranch = step => step.step_type in BRANCHES;
     let nextUid = 1;        // gives each step on the page a name of its own, saved or not
 
     // Bookkeeping for the preview. Kept out of the page's own state on purpose: the page re-runs
@@ -157,12 +165,38 @@ function jobDetail() {
                 uid: nextUid++,
                 id: step.id ?? null,
                 title: step.title || "",
+                // A saved step keeps its name: other steps may read %{Name.Status}. A new one takes it from its title.
+                name: step.name || "",
+                nameEdited: step.id != null,
                 active: step.active,
+                on_failure: step.on_failure || "FAIL_JOB",
                 step_type: step.step_type,
                 step_type_name: step.step_type_name || step.step_type,
                 open: false,
                 ...this.fieldsFor(step.step_type, step.parameters),
+                children: (step.children || []).map(child => this.stepForm(child)),
             };
+        },
+
+        /** A new step of a type, empty. An If comes with its Then, and an Else If with its own. */
+        newStep(code) {
+            const type = this.catalog[code];
+            const step = this.stepForm({ title: "", active: true, step_type: code, step_type_name: type ? type.name : code,
+                                         parameters: {} });
+            if (code === "IF" || code === "ELSEIF") step.children = [this.newStep("THEN")];
+            return step;
+        },
+
+        /** The name a new step takes from its title, as the server makes it: spaces become underscores. */
+        nameFromTitle(title) {
+            let name = title.trim().replace(/\s+/g, "_").replace(/[^A-Za-z0-9_]/g, "").replace(/^_+|_+$/g, "").slice(0, 64);
+            if (name && !/^[A-Za-z]/.test(name)) name = ("Step_" + name).slice(0, 64);
+            return name;
+        },
+
+        /** Typing a title names the step too, until its name is changed by hand. */
+        titleTyped(step) {
+            if (!step.nameEdited) step.name = this.nameFromTitle(step.title);
         },
 
         /**
@@ -235,11 +269,25 @@ function jobDetail() {
             field.ticked = this.isDefault(field);
         },
 
-        /** Changing a step's type redraws its form, keeping the values of parameters both types have. */
+        /**
+         * Changing a step's type redraws its form, keeping the values of parameters both types have.
+         * The steps inside it are kept: in an If's Then, in a loop, or after it when it can hold none.
+         */
         retype(step) {
             const kept = this.parametersOf(step);
             Object.assign(step, this.fieldsFor(step.step_type, kept));
             step.step_type_name = this.catalog[step.step_type]?.name || step.step_type;
+            const inside = this.bodyOf(step);
+            if (step.step_type === "IF") {
+                step.children = [this.newStep("THEN")];
+                step.children[0].children = inside;
+            } else if (this.isBlock(step)) {
+                step.children = inside;
+            } else {
+                step.children = [];
+                const { list, index } = this.locate(step);
+                list.splice(index + 1, 0, ...inside);
+            }
         },
 
         // ---------- From the form to what is saved ----------
@@ -260,16 +308,22 @@ function jobDetail() {
             return parameters;
         },
 
+        /** One step, and the steps inside it, as the API's save routes expect them. */
+        stepPayload(step) {
+            return {
+                id: step.id, title: step.title.trim() || null, name: step.name.trim() || null, active: step.active,
+                on_failure: step.on_failure, step_type: step.step_type, parameters: this.parametersOf(step),
+                children: step.children.map(child => this.stepPayload(child)),
+            };
+        },
+
         /** The whole job as the API's save routes expect it. */
         payload() {
             return {
                 job_key: this.form.job_key.trim(),
                 description: this.form.description.trim() || null,
                 active: this.form.active,
-                steps: this.form.steps.map(step => ({
-                    id: step.id, title: step.title.trim() || null, active: step.active,
-                    step_type: step.step_type, parameters: this.parametersOf(step),
-                })),
+                steps: this.form.steps.map(step => this.stepPayload(step)),
                 variables: this.form.variables.map(variable => ({
                     name: variable.name.trim(),
                     value: variable.secret && variable.savedSecret && variable.value === "" ? null : variable.value,
@@ -373,25 +427,149 @@ function jobDetail() {
             return field.data_type === "LOCATION" || String(field.text || "").includes("${");
         },
 
-        addStep() {
+        /** What the preview says is worth knowing about a field: a condition comparing text with a number. */
+        warningsOf(index, field) {
+            const preview = this.previewOf(index, field);
+            return (preview && preview.warnings) || [];
+        },
+
+        // ---------- Steps inside steps ----------
+
+        /** The step types offered in a step's list: all but the parts of an If. */
+        get choosableTypes() { return Object.values(this.catalog).filter(type => !type.hidden); },
+
+        isBlock(step) { return Boolean(this.catalog[step.step_type] && this.catalog[step.step_type].block); },
+
+        /**
+         * The job's steps as the rows the page draws, in order, each block before the steps inside it:
+         *   "step"      a step, with its number (3.1) and how deep it sits
+         *   "branch"    an If's Then, Else If or Else, as a header
+         *   "add"       the place to add a step to a block; "if-tools", to give an If an Else If or Else
+         * flatIndex is the step's place counting every step, branches too, as the preview counts them.
+         */
+        get rows() {
+            const rows = [];
+            let flat = 0;
+            const visit = (list, depth, prefix, counter, owner) => {
+                list.forEach((step, index) => {
+                    const flatIndex = flat++;
+                    if (isBranch(step)) {
+                        rows.push({ key: "b" + step.uid, kind: "branch", step, depth, flatIndex, list, index, owner });
+                        // An Else If's own Then is part of its header; its steps follow it
+                        const holder = step.step_type === "ELSEIF" ? step.children[0] : step;
+                        if (!holder) return;
+                        if (holder !== step) flat++;
+                        visit(holder.children, depth + 1, prefix, counter, holder);
+                        rows.push({ key: "a" + holder.uid, kind: "add", into: holder, depth: depth + 1 });
+                        return;
+                    }
+                    counter.n += 1;
+                    const number = prefix ? prefix + "." + counter.n : String(counter.n);
+                    rows.push({ key: "s" + step.uid, kind: "step", step, depth, number, flatIndex, list, index, owner });
+                    if (!this.isBlock(step) && step.children.length === 0) return;
+                    // The steps of all an If's branches are numbered in one run: 3.1, 3.2, 3.3
+                    visit(step.children, depth + 1, number, { n: 0 }, step);
+                    rows.push(step.step_type === "IF"
+                        ? { key: "i" + step.uid, kind: "if-tools", step, depth: depth + 1 }
+                        : { key: "a" + step.uid, kind: "add", into: step, depth: depth + 1 });
+                });
+            };
+            visit(this.form.steps, 0, "", { n: 0 }, null);
+            return rows;
+        },
+
+        /** Where a step sits: the list holding it, its place there, and the step that list belongs to. */
+        locate(target, list = this.form.steps, owner = null) {
+            const index = list.indexOf(target);
+            if (index >= 0) return { list, index, owner };
+            for (const step of list) {
+                const found = this.locate(target, step.children, step);
+                if (found) return found;
+            }
+            return null;
+        },
+
+        /**
+         * The steps inside a block, leaving out an If's Then, Else If and Else themselves. Told from what
+         * it holds, not its type, as retype() asks after the type has already changed.
+         */
+        bodyOf(step) {
+            return step.children.flatMap(child => !isBranch(child) ? [child]
+                : child.step_type === "ELSEIF" ? (child.children[0] ? child.children[0].children : [])
+                : child.children);
+        },
+
+        /** The block step a step is in, for moving the step out of it; null at the top level. */
+        enclosing(row) {
+            if (!row.owner) return null;
+            let block = row.owner;
+            if (isBranch(block)) {                      // a Then, Else If or Else: the If it belongs to
+                block = this.locate(block).owner;
+                if (block.step_type === "ELSEIF") block = this.locate(block).owner;
+            }
+            return { block, ...this.locate(block) };
+        },
+
+        /** The list a step joins when moved into the block just above it; null if that is not a block. */
+        intoAbove(row) {
+            const above = row.list[row.index - 1];
+            if (!above || isBranch(above) || !this.isBlock(above)) return null;
+            if (above.step_type !== "IF") return above.children;
+            const last = above.children[above.children.length - 1];        // its last branch
+            return last.step_type === "ELSEIF" ? last.children[0].children : last.children;
+        },
+
+        addStep(into = null) {
             // Most steps move files, so a new one starts as Copy Files; the list is alphabetical
-            const type = this.catalog.COPY_FILES || Object.values(this.catalog)[0];
-            const step = this.stepForm({ title: "", active: true, step_type: type.code, step_type_name: type.name, parameters: {} });
+            const step = this.newStep(this.catalog.COPY_FILES ? "COPY_FILES" : this.choosableTypes[0].code);
             step.open = true;
-            this.form.steps.push(step);
+            (into ? into.children : this.form.steps).push(step);
         },
 
-        removeStep(index) {
-            const step = this.form.steps[index];
-            if (confirm(`Remove step ${index + 1}${step.title ? " ('" + step.title + "')" : ""}?`)) this.form.steps.splice(index, 1);
+        /** Gives an If an Else If (before its Else, if it has one) or an Else. */
+        addBranch(ifStep, code) {
+            const branch = this.newStep(code);
+            branch.open = true;
+            const elseAt = ifStep.children.findIndex(b => b.step_type === "ELSE");
+            if (code === "ELSEIF" && elseAt >= 0) ifStep.children.splice(elseAt, 0, branch);
+            else ifStep.children.push(branch);
         },
 
-        /** Moves a step up (by -1) or down (by 1) the running order. */
-        move(index, by) {
-            const steps = this.form.steps;
-            const target = index + by;
-            if (target < 0 || target >= steps.length) return;
-            steps.splice(target, 0, steps.splice(index, 1)[0]);
+        hasElse(ifStep) { return ifStep.children.some(b => b.step_type === "ELSE"); },
+
+        removeStep(row) {
+            const step = row.step;
+            const inside = this.bodyOf(step).length;
+            const what = isBranch(step) ? "this " + BRANCHES[step.step_type]
+                : "step " + row.number + (step.title ? " ('" + step.title + "')" : "");
+            const along = inside ? " and the " + (inside === 1 ? "step" : inside + " steps") + " inside it" : "";
+            if (confirm("Remove " + what + along + "?")) row.list.splice(row.index, 1);
+        },
+
+        /** Moves a step up (by -1) or down (by 1) among the steps of its block, taking the steps inside it along. */
+        move(row, by) {
+            const target = row.index + by;
+            if (target < 0 || target >= row.list.length) return;
+            row.list.splice(target, 0, row.list.splice(row.index, 1)[0]);
+        },
+
+        /** Moves a step into the block just above it, as that block's last step. */
+        moveIn(row) {
+            const into = this.intoAbove(row);
+            if (into) into.push(row.list.splice(row.index, 1)[0]);
+        },
+
+        /** Moves a step out of the block it is in, to just after that block. */
+        moveOut(row) {
+            const outer = this.enclosing(row);
+            if (!outer) return;
+            row.list.splice(row.index, 1);
+            outer.list.splice(outer.list.indexOf(outer.block) + 1, 0, row.step);
+        },
+
+        /** Every step in the job, blocks and the steps inside them. */
+        allSteps(list = this.form.steps) {
+            return list.flatMap(step => [step, ...this.allSteps(step.children)]);
         },
 
         async submit() {
@@ -480,10 +658,18 @@ function jobDetail() {
         },
 
         toggle(step) { step.open = !step.open; },
-        expandAll(open) { for (const step of this.form.steps) step.open = open; },
+        expandAll(open) { for (const step of this.allSteps()) step.open = open; },
 
-        /** One line saying what a step does, shown while it is collapsed: "LEGAL_EXTRACTS -> incoming". */
+        /** How far a row is indented: the steps inside a block sit to the right of it. */
+        indent(row) { return { marginLeft: (row.depth * 28) + "px" }; },
+
+        /**
+         * One line saying what a step does, shown while it is collapsed: "LEGAL_EXTRACTS -> incoming",
+         * or for an If or a While, its condition.
+         */
         summary(step) {
+            const condition = step.fields.find(f => f.name === "Condition");
+            if (condition) return condition.text;
             return step.fields.filter(f => f.data_type === "LOCATION")
                 .map(f => f.mode === "endpoint" ? f.endpoint : f.path).filter(Boolean).join("  →  ");
         },

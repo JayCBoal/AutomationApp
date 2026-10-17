@@ -3,7 +3,7 @@ import time
 from abc import ABC, abstractmethod
 from typing import Dict, Any, List, Optional, Tuple
 from engine import job_log
-from engine.step_catalog import CHOICE, LOCATION, Param, normalize_parameters
+from engine.step_catalog import CHOICE, LOCATION, NUMBER, STRING, Output, Param, normalize_parameters
 from engine.telemetry_client import LocalSpoolTelemetryClient
 
 class BaseHandler(ABC):
@@ -47,10 +47,46 @@ class BaseHandler(ABC):
     # Whether the handler can reach Endpoints that live on a remote Site
     SUPPORTS_REMOTE_SITES = False
 
+    # A block step holds other steps (If, For Each File, While); a hidden one is never offered
+    # in the editor's list of step types, as it is only ever part of another (Then, ElseIf, Else)
+    BLOCK = False
+    HIDDEN = False
+
+    # What later steps can read once this one has run, as %{StepName.Output}. Every step has
+    # BASE_OUTPUTS, which the runner sets; OUTPUTS are a step type's own, set in self.outputs.
+    BASE_OUTPUTS: Tuple[Output, ...] = (
+        Output("Status", STRING, "SUCCESS, FAILED, or SKIPPED if it did not run"),
+        Output("ReturnCode", NUMBER, "0 if it succeeded, 1 if it failed"),
+        Output("ErrorMessage", STRING, "Why it failed; empty if it did not"),
+        Output("StartTime", STRING, "When it started, as 2026-10-16 14:03:07"),
+        Output("EndTime", STRING, "When it ended"),
+        Output("DurationMs", NUMBER, "How long it took, in milliseconds"),
+    )
+    OUTPUTS: Tuple[Output, ...] = ()
+
+    @classmethod
+    def outputs(cls) -> Tuple[Output, ...]:
+        return cls.BASE_OUTPUTS + cls.OUTPUTS
+
     def __init__(self, step_config: Dict[str, Any], telemetry_client: LocalSpoolTelemetryClient):
         self.step_config = step_config
         self.step_id = step_config.get("StepID")
         self.telemetry = telemetry_client
+        # This step type's own outputs, set as the step goes, so a step that fails still leaves them
+        self.outputs: Dict[str, Any] = {}
+
+    @property
+    def label(self) -> str:
+        """How the job log names the step: Step 3.1: Copy (Copy Files) [File 2 of 5: inv_02.csv]"""
+        number = self.step_config.get("StepNumber") or self.step_config.get("StepOrder")
+        label = f"Step {number}: {self.step_config.get('Title')} ({self.step_config.get('StepType')})"
+        passes = self.step_config.get("PassLabel")
+        return f"{label} [{passes}]" if passes else label
+
+    def _step_fields(self) -> Dict[str, Any]:
+        """Which step, and which pass of the loops around it, an operation belongs to."""
+        return dict(step_id=self.step_id, step_order=self.step_config.get("StepOrder"),
+                    step_number=self.step_config.get("StepNumber"), iteration=self.step_config.get("Iteration"))
 
     @abstractmethod
     def execute_step(self, resolved_params: Dict[str, Any]) -> Dict[str, Any]:
@@ -83,8 +119,7 @@ class BaseHandler(ABC):
         Wrapper method executed by runner.py. Logs the step, calls execute_step() and times it.
         A failure is raised to the runner, which records it against the run.
         """
-        label = (f"Step {self.step_config.get('StepOrder')}: {self.step_config.get('Title')} "
-                 f"({self.step_config.get('StepType')})")
+        label = self.label
         job_log.detail(f"BEGIN {label}")
         for line in self.describe(resolved_params):
             job_log.detail(f"    {line}")
@@ -122,8 +157,7 @@ class BaseHandler(ABC):
         self.telemetry.log_operation(
             op_type=op_type,
             status=status,
-            step_id=self.step_id,
-            step_order=self.step_config.get("StepOrder"),
+            **self._step_fields(),
             source_path=os.path.dirname(source) if source else None,
             source_filename=os.path.basename(source) if source else None,
             source_size=source_size,
@@ -153,8 +187,7 @@ class BaseHandler(ABC):
         self.telemetry.log_operation(
             op_type=op_type,
             status=status,
-            step_id=self.step_id,
-            step_order=self.step_config.get("StepOrder"),
+            **self._step_fields(),
             details=details,
             error=error,
             started_at=started_at,

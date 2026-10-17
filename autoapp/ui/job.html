@@ -175,6 +175,11 @@
                     and <code>${SYS:INSTANCE_ID}</code>; and in a rename mask, <code>${FILE:NAME}</code>,
                     <code>${FILE:STEM}</code> and <code>${FILE:EXT}</code>.
                 </p>
+                <p class="muted small" style="margin: 6px 0 0">
+                    From the run itself, filled in as each step starts: what an earlier step did, as
+                    <code>%{Step_name.Status}</code> or <code>%{Step_name.FileCount}</code>, and inside a For Each File,
+                    the file, as <code>%{File.Name}</code> or <code>%{File.FullName}</code>.
+                </p>
             </section>
 
             <!-- Its tags, and the variables they give it -->
@@ -190,150 +195,324 @@
                 </div>
                 <p class="message" id="no-steps" x-show="form.steps.length === 0">This job has no steps.</p>
 
-                <template x-for="(step, index) in form.steps" :key="step.uid">
-                    <div class="step" :class="{ disabled: !step.active, open: step.open }">
-                        <div class="step-head">
-                            <button type="button" class="expander" @click="toggle(step)" :aria-expanded="step.open ? 'true' : 'false'"
-                                    :title="step.open ? 'Hide parameters' : 'Show parameters'"
-                                    x-text="step.open ? '▼' : '▶'"></button>
-                            <span class="step-order" x-text="index + 1"></span>
+                <!-- One row per step, each block followed by the steps inside it, indented (see rows in js/job.js) -->
+                <template x-for="row in rows" :key="row.key">
+                    <div class="step-row" :style="indent(row)">
 
-                            <span class="step-title" x-show="!editing" x-text="step.title"></span>
-                            <input type="text" class="step-title-input" x-show="editing" x-model="step.title"
-                                   placeholder="What this step does" maxlength="150" aria-label="Step title">
+                        <!-- A step -->
+                        <template x-if="row.kind === 'step'">
+                            <div class="step" :class="{ disabled: !row.step.active, open: row.step.open, block: isBlock(row.step) }"
+                                 :data-step-number="row.number">
+                                <div class="step-head">
+                                    <button type="button" class="expander" @click="toggle(row.step)" :aria-expanded="row.step.open ? 'true' : 'false'"
+                                            :title="row.step.open ? 'Hide parameters' : 'Show parameters'"
+                                            x-text="row.step.open ? '▼' : '▶'"></button>
+                                    <span class="step-order" x-text="row.number"></span>
 
-                            <span class="tag" x-show="!editing" x-text="step.step_type_name"></span>
-                            <select class="step-type" x-show="editing" x-model="step.step_type" @change="retype(step)" aria-label="Step type">
-                                <template x-for="type in Object.values(catalog)" :key="type.code">
-                                    <option :value="type.code" :selected="type.code === step.step_type" x-text="type.name"></option>
-                                </template>
-                                <!-- A step whose type this server does not have keeps it, shown by its code -->
-                                <template x-if="!catalog[step.step_type]">
-                                    <option :value="step.step_type" selected x-text="step.step_type"></option>
-                                </template>
-                            </select>
+                                    <span class="step-title" x-show="!editing" x-text="row.step.title"></span>
+                                    <input type="text" class="step-title-input" x-show="editing" x-model="row.step.title"
+                                           @input="titleTyped(row.step)" placeholder="What this step does" maxlength="150"
+                                           aria-label="Step title">
 
-                            <span class="step-summary muted small" x-show="!step.open" x-text="summary(step)"></span>
-                            <span class="spacer"></span>
-
-                            <span class="step-tools" x-show="editing">
-                                <button type="button" class="tool move-up" title="Move this step earlier" :disabled="index === 0"
-                                        @click="move(index, -1)">▲</button>
-                                <button type="button" class="tool move-down" title="Move this step later"
-                                        :disabled="index === form.steps.length - 1" @click="move(index, 1)">▼</button>
-                                <button type="button" class="link remove-step" @click="removeStep(index)">Remove</button>
-                            </span>
-                            <label class="inline"><input type="checkbox" class="step-enabled" x-model="step.active" :disabled="!editing"> Enabled</label>
-                        </div>
-
-                        <div class="step-body" x-show="step.open">
-                            <p class="message error" x-show="!catalog[step.step_type]">
-                                This server has no step type called <span x-text="step.step_type"></span>, so its form cannot be drawn.
-                            </p>
-                            <div class="detail-grid">
-                                <template x-for="field in step.fields" :key="field.name">
-                                    <div class="field-row" :data-parameter="field.name">
-                                        <span class="label" :title="field.description">
-                                            <span x-text="field.name"></span>
-                                            <span class="required" x-show="field.required" title="Required">*</span>
-                                        </span>
-
-                                        <!-- A file location: a registered endpoint, or a path inside the working folder -->
-                                        <template x-if="field.data_type === 'LOCATION'">
-                                            <div class="location-choice">
-                                                <label class="inline">
-                                                    <input type="radio" value="endpoint" x-model="field.mode"
-                                                           :name="'where-' + step.uid + '-' + field.name" :disabled="!editing">
-                                                    Endpoint
-                                                    <input type="text" class="endpoint-value" x-model="field.endpoint"
-                                                           list="endpoint-names" autocomplete="off"
-                                                           :disabled="!editing || field.mode !== 'endpoint'"
-                                                           placeholder="Choose or type a registered endpoint">
-                                                    <button type="button" class="link new-endpoint" x-show="editing"
-                                                            title="Register a new endpoint without leaving this page"
-                                                            @click="newEndpoint(field)">New...</button>
-                                                </label>
-                                                <span class="error-text small not-registered"
-                                                      x-show="field.mode === 'endpoint' && field.endpoint.trim() && !isRegistered(field.endpoint)">
-                                                    No endpoint is registered under this name.
-                                                    <button type="button" class="link small register-it" x-show="editing"
-                                                            @click="newEndpoint(field)">Register it</button></span>
-                                                <label class="inline">
-                                                    <input type="radio" value="path" x-model="field.mode"
-                                                           :name="'where-' + step.uid + '-' + field.name" :disabled="!editing">
-                                                    Working folder path
-                                                    <input type="text" class="path-value" x-model="field.path"
-                                                           :disabled="!editing || field.mode !== 'path'"
-                                                           placeholder="For example incoming/*.csv">
-                                                </label>
-                                            </div>
+                                    <span class="tag" x-show="!editing" x-text="row.step.step_type_name"></span>
+                                    <select class="step-type" x-show="editing" x-model="row.step.step_type" @change="retype(row.step)" aria-label="Step type">
+                                        <template x-for="type in choosableTypes" :key="type.code">
+                                            <option :value="type.code" :selected="type.code === row.step.step_type" x-text="type.name"></option>
                                         </template>
-
-                                        <template x-if="field.data_type === 'BOOLEAN' && !field.asText">
-                                            <div>
-                                                <input type="checkbox" x-model="field.ticked" @change="field.set = true" :disabled="!editing">
-                                                <span class="muted small" x-show="!field.set">default</span>
-                                                <button type="button" class="link small reset-field" x-show="editing && field.set"
-                                                        title="Stop storing a value for this step, so the step type's own setting applies"
-                                                        @click="useDefault(field)">reset</button>
-                                            </div>
+                                        <!-- A step whose type this server does not have keeps it, shown by its code -->
+                                        <template x-if="!catalog[row.step.step_type]">
+                                            <option :value="row.step.step_type" selected x-text="row.step.step_type"></option>
                                         </template>
+                                    </select>
 
-                                        <template x-if="field.data_type === 'CHOICE'">
-                                            <div>
-                                                <select x-model="field.text" :disabled="!editing">
-                                                    <option value="" :selected="!field.text">(not set)</option>
-                                                    <template x-for="choice in field.allowed_values" :key="choice">
-                                                        <option :value="choice" :selected="choice === field.text" x-text="choice"></option>
+                                    <span class="step-summary muted small" x-show="!row.step.open" x-text="summary(row.step)"></span>
+                                    <span class="spacer"></span>
+
+                                    <span class="step-tools" x-show="editing">
+                                        <button type="button" class="tool move-up" title="Move this step earlier" :disabled="row.index === 0"
+                                                @click="move(row, -1)">▲</button>
+                                        <button type="button" class="tool move-down" title="Move this step later"
+                                                :disabled="row.index === row.list.length - 1" @click="move(row, 1)">▼</button>
+                                        <button type="button" class="tool move-out" title="Move this step out of the block it is in, to just after it"
+                                                :disabled="!row.owner" @click="moveOut(row)">◀</button>
+                                        <button type="button" class="tool move-in" title="Move this step into the block just above it"
+                                                :disabled="!intoAbove(row)" @click="moveIn(row)">▶</button>
+                                        <button type="button" class="link remove-step" @click="removeStep(row)">Remove</button>
+                                    </span>
+                                    <label class="inline"><input type="checkbox" class="step-enabled" x-model="row.step.active" :disabled="!editing"> Enabled</label>
+                                </div>
+
+                                <div class="step-body" x-show="row.step.open">
+                                    <p class="message error" x-show="!catalog[row.step.step_type]">
+                                        This server has no step type called <span x-text="row.step.step_type"></span>, so its form cannot be drawn.
+                                    </p>
+                                    <!-- How later steps name it, and what happens if it fails -->
+                                    <div class="step-settings">
+                                        <label class="inline">Step name
+                                            <input type="text" class="step-name" x-model="row.step.name" @input="row.step.nameEdited = true"
+                                                   :disabled="!editing" maxlength="64" placeholder="Made from the title"
+                                                   title="Later steps read what this one did as %{Name.Status}, %{Name.FileCount} and so on">
+                                        </label>
+                                        <label class="inline">On failure
+                                            <select class="step-on-failure" x-model="row.step.on_failure" :disabled="!editing">
+                                                <option value="FAIL_JOB" :selected="row.step.on_failure === 'FAIL_JOB'">Fail the job</option>
+                                                <option value="CONTINUE" :selected="row.step.on_failure === 'CONTINUE'">Continue</option>
+                                                <option value="END_SUCCESS" :selected="row.step.on_failure === 'END_SUCCESS'">End the job with success</option>
+                                            </select>
+                                        </label>
+                                    </div>
+                                    <div class="detail-grid">
+                                        <template x-for="field in row.step.fields" :key="field.name">
+                                            <div class="field-row" :data-parameter="field.name">
+                                                <span class="label" :title="field.description">
+                                                    <span x-text="field.name"></span>
+                                                    <span class="required" x-show="field.required" title="Required">*</span>
+                                                </span>
+
+                                                <!-- A file location: a registered endpoint, or a path inside the working folder -->
+                                                <template x-if="field.data_type === 'LOCATION'">
+                                                    <div class="location-choice">
+                                                        <label class="inline">
+                                                            <input type="radio" value="endpoint" x-model="field.mode"
+                                                                   :name="'where-' + row.step.uid + '-' + field.name" :disabled="!editing">
+                                                            Endpoint
+                                                            <input type="text" class="endpoint-value" x-model="field.endpoint"
+                                                                   list="endpoint-names" autocomplete="off"
+                                                                   :disabled="!editing || field.mode !== 'endpoint'"
+                                                                   placeholder="Choose or type a registered endpoint">
+                                                            <button type="button" class="link new-endpoint" x-show="editing"
+                                                                    title="Register a new endpoint without leaving this page"
+                                                                    @click="newEndpoint(field)">New...</button>
+                                                        </label>
+                                                        <span class="error-text small not-registered"
+                                                              x-show="field.mode === 'endpoint' && field.endpoint.trim() && !isRegistered(field.endpoint)">
+                                                            No endpoint is registered under this name.
+                                                            <button type="button" class="link small register-it" x-show="editing"
+                                                                    @click="newEndpoint(field)">Register it</button></span>
+                                                        <label class="inline">
+                                                            <input type="radio" value="path" x-model="field.mode"
+                                                                   :name="'where-' + row.step.uid + '-' + field.name" :disabled="!editing">
+                                                            Working folder path
+                                                            <input type="text" class="path-value" x-model="field.path"
+                                                                   :disabled="!editing || field.mode !== 'path'"
+                                                                   placeholder="For example incoming/*.csv">
+                                                        </label>
+                                                    </div>
+                                                </template>
+
+                                                <template x-if="field.data_type === 'BOOLEAN' && !field.asText">
+                                                    <div>
+                                                        <input type="checkbox" x-model="field.ticked" @change="field.set = true" :disabled="!editing">
+                                                        <span class="muted small" x-show="!field.set">default</span>
+                                                        <button type="button" class="link small reset-field" x-show="editing && field.set"
+                                                                title="Stop storing a value for this step, so the step type's own setting applies"
+                                                                @click="useDefault(field)">reset</button>
+                                                    </div>
+                                                </template>
+
+                                                <template x-if="field.data_type === 'CHOICE'">
+                                                    <div>
+                                                        <select x-model="field.text" :disabled="!editing">
+                                                            <option value="" :selected="!field.text">(not set)</option>
+                                                            <template x-for="choice in field.allowed_values" :key="choice">
+                                                                <option :value="choice" :selected="choice === field.text" x-text="choice"></option>
+                                                            </template>
+                                                        </select>
+                                                    </div>
+                                                </template>
+
+                                                <template x-if="field.data_type === 'TEXT'">
+                                                    <div class="text-field">
+                                                        <textarea class="code" :rows="textRows(field.text)" x-model="field.text" :disabled="!editing" :placeholder="field.default || ''"></textarea>
+                                                    </div>
+                                                </template>
+
+                                                <template x-if="['STRING', 'INTEGER'].includes(field.data_type) || field.asText">
+                                                    <div class="text-field">
+                                                        <input type="text" x-model="field.text" :disabled="!editing" :placeholder="field.default || ''">
+                                                    </div>
+                                                </template>
+
+                                                <span class="muted small field-help" x-text="field.description"></span>
+
+                                                <!-- What the value really comes to, for the job as it is on screen. It runs the
+                                                     full width under the box and its description, so a long path stays on one line. -->
+                                                <div class="field-preview">
+                                        <template x-for="warning in warningsOf(row.flatIndex, field)" :key="warning">
+                                            <span class="preview warning-text small field-warning" x-text="warning"></span>
+                                        </template>
+                                                    <span class="preview resolved" x-show="showsResolved(row.flatIndex, field)"
+                                                          x-text="'→ ' + (previewOf(row.flatIndex, field) || {}).resolved"></span>
+                                                    <span class="preview error-text small"
+                                                          x-show="(field.data_type !== 'LOCATION' || field.mode === 'path') && previewOf(row.flatIndex, field) && previewOf(row.flatIndex, field).error"
+                                                          x-text="(previewOf(row.flatIndex, field) || {}).error"></span>
+                                                    <template x-for="name in (editing ? missingVariables(field.data_type === 'LOCATION' ? (field.mode === 'path' ? field.path : '') : field.text) : [])"
+                                                              :key="name">
+                                                        <button type="button" class="link small add-missing" @click="addVariable(name)"
+                                                                x-text="'Add variable ' + name"></button>
                                                     </template>
-                                                </select>
+                                                </div>
                                             </div>
                                         </template>
+                                    </div>
 
-                                        <template x-if="field.data_type === 'TEXT'">
-                                            <div class="text-field">
-                                                <textarea class="code" :rows="textRows(field.text)" x-model="field.text" :disabled="!editing" :placeholder="field.default || ''"></textarea>
+                                    <div class="unknown-parameters" x-show="row.step.unknown.length > 0">
+                                        <p class="message error">Not parameters of this step type. The job will not run until they are removed:</p>
+                                        <template x-for="(extra, extraIndex) in row.step.unknown" :key="extra.name">
+                                            <div class="field-row">
+                                                <span class="label status FAILED" x-text="extra.name"></span>
+                                                <div><input type="text" :value="extra.value" disabled></div>
+                                                <button type="button" class="link remove-unknown" x-show="editing"
+                                                        @click="row.step.unknown.splice(extraIndex, 1)">Remove</button>
                                             </div>
                                         </template>
+                                    </div>
+                                </div>
+                            </div>
+                        </template>
 
-                                        <template x-if="['STRING', 'INTEGER'].includes(field.data_type) || field.asText">
-                                            <div class="text-field">
-                                                <input type="text" x-model="field.text" :disabled="!editing" :placeholder="field.default || ''">
+                        <!-- A Then, Else If or Else: a header of its If -->
+                        <template x-if="row.kind === 'branch'">
+                            <div class="step-branch" :data-branch="row.step.step_type">
+                                <div class="branch-head">
+                                    <span class="branch-name" x-text="row.step.step_type === 'THEN' ? 'Then' : row.step.step_type === 'ELSE' ? 'Else' : 'Else If'"></span>
+                                    <template x-if="row.step.step_type === 'ELSEIF'">
+                                        <span class="step-summary muted small" x-show="!editing" x-text="summary(row.step)"></span>
+                                    </template>
+                                    <span class="spacer"></span>
+                                    <span class="step-tools" x-show="editing && row.step.step_type !== 'THEN'">
+                                        <button type="button" class="link remove-branch" @click="removeStep(row)">Remove</button>
+                                    </span>
+                                </div>
+                                <!-- An Else If's condition -->
+                                <template x-if="row.step.step_type === 'ELSEIF' && editing">
+                                    <div class="step-body branch-body">
+                                    <div class="detail-grid">
+                                        <template x-for="field in row.step.fields" :key="field.name">
+                                            <div class="field-row" :data-parameter="field.name">
+                                                <span class="label" :title="field.description">
+                                                    <span x-text="field.name"></span>
+                                                    <span class="required" x-show="field.required" title="Required">*</span>
+                                                </span>
+
+                                                <!-- A file location: a registered endpoint, or a path inside the working folder -->
+                                                <template x-if="field.data_type === 'LOCATION'">
+                                                    <div class="location-choice">
+                                                        <label class="inline">
+                                                            <input type="radio" value="endpoint" x-model="field.mode"
+                                                                   :name="'where-' + row.step.uid + '-' + field.name" :disabled="!editing">
+                                                            Endpoint
+                                                            <input type="text" class="endpoint-value" x-model="field.endpoint"
+                                                                   list="endpoint-names" autocomplete="off"
+                                                                   :disabled="!editing || field.mode !== 'endpoint'"
+                                                                   placeholder="Choose or type a registered endpoint">
+                                                            <button type="button" class="link new-endpoint" x-show="editing"
+                                                                    title="Register a new endpoint without leaving this page"
+                                                                    @click="newEndpoint(field)">New...</button>
+                                                        </label>
+                                                        <span class="error-text small not-registered"
+                                                              x-show="field.mode === 'endpoint' && field.endpoint.trim() && !isRegistered(field.endpoint)">
+                                                            No endpoint is registered under this name.
+                                                            <button type="button" class="link small register-it" x-show="editing"
+                                                                    @click="newEndpoint(field)">Register it</button></span>
+                                                        <label class="inline">
+                                                            <input type="radio" value="path" x-model="field.mode"
+                                                                   :name="'where-' + row.step.uid + '-' + field.name" :disabled="!editing">
+                                                            Working folder path
+                                                            <input type="text" class="path-value" x-model="field.path"
+                                                                   :disabled="!editing || field.mode !== 'path'"
+                                                                   placeholder="For example incoming/*.csv">
+                                                        </label>
+                                                    </div>
+                                                </template>
+
+                                                <template x-if="field.data_type === 'BOOLEAN' && !field.asText">
+                                                    <div>
+                                                        <input type="checkbox" x-model="field.ticked" @change="field.set = true" :disabled="!editing">
+                                                        <span class="muted small" x-show="!field.set">default</span>
+                                                        <button type="button" class="link small reset-field" x-show="editing && field.set"
+                                                                title="Stop storing a value for this step, so the step type's own setting applies"
+                                                                @click="useDefault(field)">reset</button>
+                                                    </div>
+                                                </template>
+
+                                                <template x-if="field.data_type === 'CHOICE'">
+                                                    <div>
+                                                        <select x-model="field.text" :disabled="!editing">
+                                                            <option value="" :selected="!field.text">(not set)</option>
+                                                            <template x-for="choice in field.allowed_values" :key="choice">
+                                                                <option :value="choice" :selected="choice === field.text" x-text="choice"></option>
+                                                            </template>
+                                                        </select>
+                                                    </div>
+                                                </template>
+
+                                                <template x-if="field.data_type === 'TEXT'">
+                                                    <div class="text-field">
+                                                        <textarea class="code" :rows="textRows(field.text)" x-model="field.text" :disabled="!editing" :placeholder="field.default || ''"></textarea>
+                                                    </div>
+                                                </template>
+
+                                                <template x-if="['STRING', 'INTEGER'].includes(field.data_type) || field.asText">
+                                                    <div class="text-field">
+                                                        <input type="text" x-model="field.text" :disabled="!editing" :placeholder="field.default || ''">
+                                                    </div>
+                                                </template>
+
+                                                <span class="muted small field-help" x-text="field.description"></span>
+
+                                                <!-- What the value really comes to, for the job as it is on screen. It runs the
+                                                     full width under the box and its description, so a long path stays on one line. -->
+                                                <div class="field-preview">
+                                        <template x-for="warning in warningsOf(row.flatIndex, field)" :key="warning">
+                                            <span class="preview warning-text small field-warning" x-text="warning"></span>
+                                        </template>
+                                                    <span class="preview resolved" x-show="showsResolved(row.flatIndex, field)"
+                                                          x-text="'→ ' + (previewOf(row.flatIndex, field) || {}).resolved"></span>
+                                                    <span class="preview error-text small"
+                                                          x-show="(field.data_type !== 'LOCATION' || field.mode === 'path') && previewOf(row.flatIndex, field) && previewOf(row.flatIndex, field).error"
+                                                          x-text="(previewOf(row.flatIndex, field) || {}).error"></span>
+                                                    <template x-for="name in (editing ? missingVariables(field.data_type === 'LOCATION' ? (field.mode === 'path' ? field.path : '') : field.text) : [])"
+                                                              :key="name">
+                                                        <button type="button" class="link small add-missing" @click="addVariable(name)"
+                                                                x-text="'Add variable ' + name"></button>
+                                                    </template>
+                                                </div>
                                             </div>
                                         </template>
+                                    </div>
 
-                                        <span class="muted small field-help" x-text="field.description"></span>
-
-                                        <!-- What the value really comes to, for the job as it is on screen. It runs the
-                                             full width under the box and its description, so a long path stays on one line. -->
-                                        <div class="field-preview">
-                                            <span class="preview resolved" x-show="showsResolved(index, field)"
-                                                  x-text="'→ ' + (previewOf(index, field) || {}).resolved"></span>
-                                            <span class="preview error-text small"
-                                                  x-show="(field.data_type !== 'LOCATION' || field.mode === 'path') && previewOf(index, field) && previewOf(index, field).error"
-                                                  x-text="(previewOf(index, field) || {}).error"></span>
-                                            <template x-for="name in (editing ? missingVariables(field.data_type === 'LOCATION' ? (field.mode === 'path' ? field.path : '') : field.text) : [])"
-                                                      :key="name">
-                                                <button type="button" class="link small add-missing" @click="addVariable(name)"
-                                                        x-text="'Add variable ' + name"></button>
-                                            </template>
-                                        </div>
+                                    <div class="unknown-parameters" x-show="row.step.unknown.length > 0">
+                                        <p class="message error">Not parameters of this step type. The job will not run until they are removed:</p>
+                                        <template x-for="(extra, extraIndex) in row.step.unknown" :key="extra.name">
+                                            <div class="field-row">
+                                                <span class="label status FAILED" x-text="extra.name"></span>
+                                                <div><input type="text" :value="extra.value" disabled></div>
+                                                <button type="button" class="link remove-unknown" x-show="editing"
+                                                        @click="row.step.unknown.splice(extraIndex, 1)">Remove</button>
+                                            </div>
+                                        </template>
+                                    </div>
                                     </div>
                                 </template>
                             </div>
+                        </template>
 
-                            <div class="unknown-parameters" x-show="step.unknown.length > 0">
-                                <p class="message error">Not parameters of this step type. The job will not run until they are removed:</p>
-                                <template x-for="(extra, extraIndex) in step.unknown" :key="extra.name">
-                                    <div class="field-row">
-                                        <span class="label status FAILED" x-text="extra.name"></span>
-                                        <div><input type="text" :value="extra.value" disabled></div>
-                                        <button type="button" class="link remove-unknown" x-show="editing"
-                                                @click="step.unknown.splice(extraIndex, 1)">Remove</button>
-                                    </div>
-                                </template>
+                        <!-- Adding a step inside a block -->
+                        <template x-if="row.kind === 'add'">
+                            <div class="add-into" x-show="editing">
+                                <button type="button" class="link small add-step-into" @click="addStep(row.into)">+ Add step here</button>
                             </div>
-                        </div>
+                        </template>
+
+                        <!-- Giving an If another branch -->
+                        <template x-if="row.kind === 'if-tools'">
+                            <div class="add-into" x-show="editing">
+                                <button type="button" class="link small add-elseif" @click="addBranch(row.step, 'ELSEIF')">+ Add Else If</button>
+                                <button type="button" class="link small add-else" x-show="!hasElse(row.step)"
+                                        @click="addBranch(row.step, 'ELSE')">+ Add Else</button>
+                            </div>
+                        </template>
                     </div>
                 </template>
 

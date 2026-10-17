@@ -105,7 +105,7 @@ function operationsLog() {
                 ["Destination entity", r => r.dest.entity], ["Destination site", r => r.dest.site],
                 ["Destination path", r => r.dest.path], ["Destination filename", r => r.dest.filename],
                 ["Destination size", r => r.dest.size],
-                ["Job", r => r.job_key], ["Step", r => r.step_order],
+                ["Job", r => r.job_key], ["Step", r => r.step_number], ["Pass", r => r.iteration],
                 ["Instance ID", r => r.instance_id], ["Run number", r => r.run_number],
                 ["Scheduler", r => r.scheduler], ["Run ID", r => r.run_id],
                 ["Checksum", r => r.checksum], ["Details", r => r.details ? JSON.stringify(r.details) : ""],

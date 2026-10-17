@@ -14,15 +14,32 @@ Rules:
 """
 import json
 import re
-from typing import List, Optional
+from dataclasses import dataclass, field
+from typing import List, Optional, Union
 
 from sqlalchemy.orm import Session, object_session
 
 from app.models import Audit, Job, JobRun, JobStep, JobStepParameter, StepType, Variable, utcnow
-from app.schemas import JobDetail, JobSave, JobStepOut, VariableOut
+from app.schemas import JobDetail, JobSave, JobStepOut, JobStepSave, VariableOut
+from engine import step_tree
+from engine.handlers import HANDLER_REGISTRY
+from engine.handlers.flow import BRANCH_NAMES, BRANCHES, structure_problems, top_level_problems
 
 # A variable is written ${Name} in a value, so its name is kept to what that can hold unambiguously
 VARIABLE_NAME_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def name_from_title(title: Optional[str], position: Union[int, str]) -> str:
+    """
+    A StepName made from a step's title, as the editor makes it: spaces become underscores and
+    anything else a name cannot hold is dropped. "Check files (EU)" gives Check_files_EU.
+    A title that leaves nothing usable gives Step<position>.
+    """
+    name = re.sub(r"[^A-Za-z0-9_]", "", re.sub(r"\s+", "_", (title or "").strip()))
+    name = name.strip("_")[:64]
+    if not name:
+        return f"Step{position}"
+    return name if name[0].isalpha() else ("Step_" + name)[:64]
 
 
 class JobStoreError(Exception):
@@ -39,6 +56,25 @@ def inherited_variables(db: Session, job: Job) -> list:
     return view["variables"]
 
 
+def _describe_steps(nodes: List[step_tree.Node]) -> List[JobStepOut]:
+    return [
+        JobStepOut(
+            id=node.step.id,
+            order=node.step.StepOrder,
+            number=node.number,
+            title=node.step.Title,
+            name=node.step.StepName,
+            active=bool(node.step.IsActive),
+            on_failure=node.step.OnFailure or "FAIL_JOB",
+            step_type=node.step.step_type.HandlerClass,
+            step_type_name=node.step.step_type.TypeName,
+            parameters={p.ParamName: p.ParamValue for p in node.step.parameters},
+            children=_describe_steps(node.children),
+        )
+        for node in nodes
+    ]
+
+
 def describe_job(job: Job) -> JobDetail:
     from app import tag_store
     db = object_session(job)
@@ -50,18 +86,7 @@ def describe_job(job: Job) -> JobDetail:
         created_by=job.CreatedBy,
         modified=job.ModifiedDateTime,
         modified_by=job.ModifiedBy,
-        steps=[
-            JobStepOut(
-                id=step.id,
-                order=step.StepOrder,
-                title=step.Title,
-                active=bool(step.IsActive),
-                step_type=step.step_type.HandlerClass,
-                step_type_name=step.step_type.TypeName,
-                parameters={p.ParamName: p.ParamValue for p in step.parameters},
-            )
-            for step in sorted(job.steps, key=lambda s: (s.StepOrder, s.id))
-        ],
+        steps=_describe_steps(step_tree.build(job.steps)),
         variables=[
             # A secret's value never leaves the server
             VariableOut(name=v.VarName, value=None if v.IsSecret else v.VarValue, secret=bool(v.IsSecret),
@@ -133,6 +158,181 @@ def apply_variables(job, submitted: list, creating: bool) -> List[str]:
     return changes
 
 
+@dataclass
+class _Entry:
+    """One submitted step, where it sits, and (once applied) the JobStep it is saved as."""
+    submitted: JobStepSave
+    parent: Optional["_Entry"]
+    position: int                   # among the steps of the same block
+    number: str                     # 3.1; a Then, ElseIf or Else has its If's
+    children: List["_Entry"] = field(default_factory=list)
+    step: Optional[JobStep] = None
+
+    @property
+    def code(self) -> str:
+        return self.submitted.step_type
+
+    @property
+    def label(self) -> str:
+        """How the audit log names it: step 3.1 ('Copy'), or step 3's Else."""
+        if self.code in BRANCHES:
+            return f"step {self.number}'s {BRANCH_NAMES[self.code].split(' ')[1]}"
+        return _name(self.submitted.title, self.number)
+
+
+def _flatten(steps: List[JobStepSave], parent: Optional[_Entry] = None, prefix: str = "",
+             counter: Optional[List[int]] = None) -> List[_Entry]:
+    """Every submitted step, each block before the steps inside it, numbered as the job log numbers them."""
+    counter = counter if counter is not None else [0]
+    entries = []
+    for position, submitted in enumerate(steps, start=1):
+        if submitted.step_type in BRANCHES:         # keeps its If's number and count
+            entry = _Entry(submitted, parent, position, parent.number if parent else "")
+            below = _flatten(submitted.children, entry, prefix, counter)
+        else:
+            counter[0] += 1
+            number = f"{prefix}.{counter[0]}" if prefix else str(counter[0])
+            entry = _Entry(submitted, parent, position, number)
+            below = _flatten(submitted.children, entry, number, [0])
+        if parent:
+            parent.children.append(entry)
+        entries += [entry] + below
+    return entries
+
+
+def _check_submitted(entries: List[_Entry], step_types: dict) -> None:
+    """Refuses a save whose steps are of unknown types, or are not held as their types allow."""
+    for entry in entries:
+        if entry.code not in step_types:
+            raise JobStoreError(f"{_capital(entry.label)}: there is no step type '{entry.code}'.")
+    for problem in top_level_problems([e.code for e in entries if e.parent is None]):
+        raise JobStoreError(problem)
+    for entry in entries:
+        handler = HANDLER_REGISTRY.get(entry.code)
+        problems = structure_problems(entry.code, [c.code for c in entry.children], bool(handler and handler.BLOCK))
+        if problems:
+            raise JobStoreError(f"{_capital(entry.label)} {problems[0]}")
+        if entry.submitted.on_failure not in JobStep.ON_FAILURE:
+            raise JobStoreError(f"{_capital(entry.label)}: On failure must be one of {', '.join(JobStep.ON_FAILURE)}, "
+                                f"not '{entry.submitted.on_failure}'.")
+        name = (entry.submitted.name or "").strip() or None
+        if name is not None and not JobStep.NAME_PATTERN.match(name):
+            raise JobStoreError(f"{_capital(entry.label)}: '{name}' cannot be a step name. Use letters, digits and "
+                                f"underscores, starting with a letter.")
+
+
+def _capital(text: str) -> str:
+    return text[0].upper() + text[1:]
+
+
+def _step_name(entry: _Entry, saved: Optional[JobStep] = None) -> Optional[str]:
+    """
+    The StepName to save: as given; else the one it has, as other steps may use it; else one
+    made from the title. A Then, ElseIf or Else has none.
+    """
+    if entry.code in BRANCHES:
+        return None
+    given = (entry.submitted.name or "").strip()
+    return given or (saved.StepName if saved else None) or name_from_title(
+        entry.submitted.title, entry.number.replace(".", "_"))
+
+
+def _apply_parameters(step: JobStep, wanted: dict) -> bool:
+    """Makes a step's stored parameters match wanted. Returns whether anything changed."""
+    have = {p.ParamName: p for p in step.parameters}
+    if {n: p.ParamValue for n, p in have.items()} == wanted:
+        return False
+    for name, parameter in have.items():
+        if name not in wanted:
+            step.parameters.remove(parameter)
+        else:
+            parameter.ParamValue = wanted[name]
+    for name, value in wanted.items():
+        if name not in have:
+            step.parameters.append(JobStepParameter(ParamName=name, ParamValue=value))
+    return True
+
+
+def _update_step(step: JobStep, entry: _Entry, step_types: dict) -> List[str]:
+    """Changes a saved step to match what was submitted. Returns what changed, in words."""
+    submitted, parent = entry.submitted, entry.parent.step if entry.parent else None
+    name = _step_name(entry, step)
+    wanted = {"title": (submitted.title, step.Title), "name": (name, step.StepName),
+              "on failure": (submitted.on_failure, step.OnFailure)}
+    what = [field_name for field_name, (new, old) in wanted.items() if (new or "") != (old or "")]
+    if not step.StepName and not (submitted.name or "").strip() and "name" in what:
+        what.remove("name")             # a step saved before names existed is given one, unasked: not a change
+    step.Title, step.StepName, step.OnFailure = submitted.title, name, submitted.on_failure
+    if submitted.active != bool(step.IsActive):
+        what.append("enabled" if submitted.active else "disabled")
+        step.IsActive = submitted.active
+    if step.step_type.HandlerClass != submitted.step_type:
+        what.append("step type")
+        # The relationship, not just the id, so a preview (which never commits) sees the new type
+        step.step_type = step_types[submitted.step_type]
+    if _apply_parameters(step, _stored(submitted.parameters)):
+        what.append("parameters")
+    if step.parent is not parent:
+        what.append("moved into " + (parent_label(entry.parent) if entry.parent else "the top level"))
+        step.parent = parent
+    step.StepOrder = entry.position
+    return what
+
+
+def parent_label(entry: _Entry) -> str:
+    """The block a step was moved into, for the audit log: step 3, or step 3's Else."""
+    return entry.label.split(" (")[0] if entry.code not in BRANCHES else entry.label
+
+
+def _apply_steps(job: Job, entries: List[_Entry], step_types: dict, creating: bool) -> List[str]:
+    """Makes the job's steps match those submitted, keeping each saved step's identity."""
+    current = {step.id: step for step in job.steps}
+    submitted_ids = [e.submitted.id for e in entries if e.submitted.id is not None]
+    if len(submitted_ids) != len(set(submitted_ids)):
+        raise JobStoreError("The same step was submitted twice.")
+    for step_id in submitted_ids:
+        if step_id not in current:
+            raise JobStoreError(f"Step id {step_id} does not belong to job '{job.JobKey}'.")
+    old_order = [s.id for s in step_tree.in_order(current.values()) if s.id in submitted_ids]
+
+    changes = []
+    for entry in entries:               # each block before the steps inside it, so its JobStep exists first
+        submitted = entry.submitted
+        if submitted.id is None:
+            entry.step = JobStep(job_id=job.MasterObject_id, StepType_id=step_types[submitted.step_type].id,
+                                 StepOrder=entry.position, Title=submitted.title, StepName=_step_name(entry),
+                                 IsActive=submitted.active, OnFailure=submitted.on_failure,
+                                 parent=entry.parent.step if entry.parent else None)
+            entry.step.parameters = [JobStepParameter(ParamName=n, ParamValue=v)
+                                     for n, v in _stored(submitted.parameters).items()]
+            job.steps.append(entry.step)
+            if not creating and not (entry.parent and entry.parent.submitted.id is None):
+                changes.append(f"Added {entry.label}.")
+            continue
+        entry.step = current[submitted.id]
+        what = _update_step(entry.step, entry, step_types)
+        if what:
+            changes.append(f"Changed {entry.label}: {', '.join(what)}.")
+
+    removed = {step_id for step_id in current if step_id not in submitted_ids}
+    for step_id in removed:
+        step = current[step_id]
+        if step.ParentStep_id not in removed:   # the steps inside a removed block go with it, unmentioned
+            changes.append(_removed(step))
+        job.steps.remove(step)
+
+    if not creating and old_order != submitted_ids:
+        changes.append("Reordered the steps.")
+    return changes
+
+
+def _removed(step: JobStep) -> str:
+    code = step.step_type.HandlerClass
+    if code in BRANCHES and step.parent is not None:
+        return f"Removed {BRANCH_NAMES[code]} from step '{step.parent.Title or step.parent.StepName}'."
+    return f"Removed step '{step.Title}'." if step.Title else "Removed a step."
+
+
 def save_job(db: Session, payload: JobSave, existing_key: Optional[str], who: str) -> tuple:
     """
     Creates the job (existing_key is None) or changes the job with that key, and
@@ -167,10 +367,8 @@ def apply_job(db: Session, payload: JobSave, existing_key: Optional[str], who: s
         raise JobStoreError(f"A job with JobKey '{new_key}' already exists.", status=409)
 
     step_types = {t.HandlerClass: t for t in db.query(StepType)}
-    for position, step in enumerate(payload.steps, start=1):
-        if step.step_type not in step_types:
-            name = _name(step.title, position)
-            raise JobStoreError(f"{name[0].upper()}{name[1:]}: there is no step type '{step.step_type}'.")
+    entries = _flatten(payload.steps)
+    _check_submitted(entries, step_types)
 
     changes: List[str] = []
     try:
@@ -192,60 +390,7 @@ def apply_job(db: Session, payload: JobSave, existing_key: Optional[str], who: s
     except ValueError as e:                 # the JobKey is not a usable name
         raise JobStoreError(str(e))
 
-    current = {step.id: step for step in job.steps}
-    submitted_ids = [step.id for step in payload.steps if step.id is not None]
-    if len(submitted_ids) != len(set(submitted_ids)):
-        raise JobStoreError("The same step was submitted twice.")
-    for step_id in submitted_ids:
-        if step_id not in current:
-            raise JobStoreError(f"Step id {step_id} does not belong to job '{job.JobKey}'.")
-
-    old_order = [s.id for s in sorted(current.values(), key=lambda s: (s.StepOrder, s.id)) if s.id in submitted_ids]
-
-    for position, submitted in enumerate(payload.steps, start=1):
-        wanted = _stored(submitted.parameters)
-        if submitted.id is None:
-            step = JobStep(job_id=job.MasterObject_id, StepType_id=step_types[submitted.step_type].id,
-                           StepOrder=position, Title=submitted.title, IsActive=submitted.active)
-            step.parameters = [JobStepParameter(ParamName=n, ParamValue=v) for n, v in wanted.items()]
-            job.steps.append(step)
-            if not creating:
-                changes.append(f"Added {_name(submitted.title, position)}.")
-            continue
-
-        step = current[submitted.id]
-        what = []
-        if (submitted.title or "") != (step.Title or ""):
-            what.append("title")
-            step.Title = submitted.title
-        if submitted.active != bool(step.IsActive):
-            what.append("enabled" if submitted.active else "disabled")
-            step.IsActive = submitted.active
-        if step.step_type.HandlerClass != submitted.step_type:
-            what.append("step type")
-            step.StepType_id = step_types[submitted.step_type].id
-        have = {p.ParamName: p for p in step.parameters}
-        if {n: p.ParamValue for n, p in have.items()} != wanted:
-            what.append("parameters")
-            for name, parameter in have.items():
-                if name not in wanted:
-                    step.parameters.remove(parameter)
-                else:
-                    parameter.ParamValue = wanted[name]
-            for name, value in wanted.items():
-                if name not in have:
-                    step.parameters.append(JobStepParameter(ParamName=name, ParamValue=value))
-        step.StepOrder = position
-        if what:
-            changes.append(f"Changed {_name(submitted.title, position)}: {', '.join(what)}.")
-
-    for step_id, step in current.items():
-        if step_id not in submitted_ids:
-            changes.append(f"Removed step '{step.Title}'." if step.Title else "Removed a step.")
-            job.steps.remove(step)
-
-    if not creating and old_order != submitted_ids:
-        changes.append("Reordered the steps.")
+    changes += _apply_steps(job, entries, step_types, creating)
 
     if payload.variables is not None:
         changes += apply_variables(job, payload.variables, creating)

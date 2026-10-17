@@ -2,8 +2,9 @@
 """
 AutoApp execution runner.
 
-Runs every active step of one Job, in StepOrder, and returns an OS exit code
-(0 = all steps succeeded, 1 = the job failed) for the calling WLA scheduler.
+Runs the active steps of one Job, in order (with its If, For Each File and While steps
+deciding which of the steps inside them run, and how often: engine/executor.py), and
+returns an OS exit code (0 = the job succeeded, 1 = it failed) for the calling WLA scheduler.
 """
 import argparse
 import os
@@ -17,13 +18,10 @@ from sqlalchemy.orm import Session
 from app.database import SessionLocal
 from app.models import Job, Variable
 from engine import job_log
+from engine.executor import Executor
 from engine.preflight import describe_problems, prepare_job
 from engine.scope_engine import ScopeResolutionEngine
 from engine.telemetry_client import LocalSpoolTelemetryClient
-
-# A step parameter every step type accepts: the job log level for that step alone
-LOG_LEVEL_PARAM = "LogLevel"
-
 
 def run_job(db: Session, job_key: str, instance_id: str, spool_dir: str,
             working_root: Optional[str] = None, run_number: int = 1,
@@ -70,29 +68,12 @@ def run_job(db: Session, job_key: str, instance_id: str, spool_dir: str,
             if problems:
                 raise ValueError(describe_problems(problems))
 
-            for prepared in prepared_steps:
-                step, handler_cls, resolved = prepared.step, prepared.handler_cls, prepared.resolved
-                raw_params = {p.ParamName: p.ParamValue for p in step.parameters}
-                step_log_level = resolved.params.pop(LOG_LEVEL_PARAM, None)
-                raw_params.pop(LOG_LEVEL_PARAM, None)
+            def after_step():
+                # Send what a step recorded; a failure here never affects the job
+                send_log()
+                telemetry.deliver()
 
-                handler = handler_cls(
-                    step_config={
-                        "StepID": step.id, "StepOrder": step.StepOrder,
-                        "StepType": step.step_type.TypeName, "Title": step.Title,
-                        "RawParams": raw_params,
-                        "SourceEndpointID": resolved.source_endpoint_id,
-                        "DestEndpointID": resolved.dest_endpoint_id,
-                    },
-                    telemetry_client=telemetry
-                )
-                try:
-                    with job_log.level_for_step(step_log_level):
-                        handler.run(resolved.params)
-                finally:
-                    # Send what this step recorded; a failure here never affects the job
-                    send_log()
-                    telemetry.deliver()
+            Executor(db, scope_engine, telemetry, after_step).run_all(prepared_steps)
 
         except Exception as e:
             job_log.error(f"Job '{job_key}' failed: {e}")

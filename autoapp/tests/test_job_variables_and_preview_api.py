@@ -176,12 +176,12 @@ def test_preview_shows_what_each_parameter_resolves_to(client, db, endpoints, ou
     work = tmp_path / "work" / "DEV-LOAD"
     collect, deliver = result["steps"]
     assert (result["valid"], result["problems"]) == (True, [])
-    assert collect["Source"] == {"resolved": f"{outbox}/Legal_Batch_*.csv", "error": None}      # the endpoint's folder and pattern
-    assert collect["Dest"] == {"resolved": str(work / "staging" / "in"), "error": None}         # relative to the working folder
+    assert collect["Source"] == {"resolved": f"{outbox}/Legal_Batch_*.csv", "error": None, "warnings": []}      # the endpoint's folder and pattern
+    assert collect["Dest"] == {"resolved": str(work / "staging" / "in"), "error": None, "warnings": []}         # relative to the working folder
     assert deliver["Source"]["resolved"] == str(work / "staging" / "in" / "*.csv")
     assert deliver["Dest"]["resolved"] == str(tmp_path / "app_inbox")
     assert deliver["RenameMask"]["resolved"] == "${FILE:STEM}_v2${FILE:EXT}"                    # per-file parts still to come
-    assert deliver["Move"] == {"resolved": "True", "error": None}
+    assert deliver["Move"] == {"resolved": "True", "error": None, "warnings": []}
 
 
 def test_preview_reports_each_fields_own_problem_and_carries_on(client, db, endpoints):
@@ -198,7 +198,7 @@ def test_preview_reports_each_fields_own_problem_and_carries_on(client, db, endp
     assert "${Missing}" in fields["Dest"]["error"]
     assert "${FILE:BASENAME} is not a file placeholder" in fields["RenameMask"]["error"]
     assert "'Y' in the date mask 'YYYY' is not understood" in fields["Move"]["error"]
-    assert fields["Checksum"] == {"resolved": "True", "error": None}             # the sound field is unaffected
+    assert fields["Checksum"] == {"resolved": "True", "error": None, "warnings": []}             # the sound field is unaffected
 
 
 def test_preview_of_a_path_outside_the_working_folder_says_so(client, db, endpoints):

@@ -293,6 +293,17 @@ label.inline { display: flex; align-items: center; gap: 8px; color: var(--text);
 .location-choice label.inline input[type=text] { flex: 1; min-width: 0; }
 .unknown-parameters { margin-top: 10px; }
 
+/* Steps inside steps: a block's steps sit indented under it, an If's branches as headers */
+.step.block { border-left: 3px solid var(--accent); }
+.step-settings { display: flex; flex-wrap: wrap; gap: 8px 24px; padding: 6px 0 4px; }
+.step-settings input.step-name { width: 220px; font-family: var(--mono, monospace); }
+.step-branch { margin: 0 0 8px; border-left: 3px solid var(--border); padding-left: 10px; }
+.branch-head { display: flex; align-items: center; gap: 12px; padding: 4px 0; }
+.branch-name { font-weight: 700; color: var(--accent); }
+.step-body.branch-body { border-top: none; padding-left: 0; }
+.add-into { margin: -2px 0 10px; display: flex; gap: 16px; }
+.warning-text { color: var(--warning); display: block; }
+
 /* ---------- Editing ---------- */
 
 a.button { display: inline-block; text-decoration: none; border-radius: 4px; padding: 6px 16px; border: 1px solid var(--accent); }

@@ -36,10 +36,15 @@ def sql_statements(script: str) -> list:
 
 
 def load_seed(db) -> None:
-    # Sent to the database exactly as written: the script contains ${...} and ':' that are not for us to interpret
-    connection = db.connection()
-    for statement in sql_statements(SEED_FILE.read_text()):
-        connection.exec_driver_sql(statement)
+    # Sent to the database exactly as written: the script contains ${...}, %{...} and ':' that are not for us
+    # to interpret. Straight to the driver's own cursor with no parameters, as MariaDB's driver otherwise
+    # reads each % as the start of a parameter.
+    cursor = db.connection().connection.cursor()
+    try:
+        for statement in sql_statements(SEED_FILE.read_text()):
+            cursor.execute(statement)
+    finally:
+        cursor.close()
     db.commit()
 
 

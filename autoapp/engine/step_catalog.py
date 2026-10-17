@@ -6,6 +6,9 @@ is driven from that list: the catalog tables the job editor reads
 (app/catalog.py), the check made before a job runs, and the conversion of the
 stored text into the values a handler works with.
 
+Each handler declares what it leaves behind for later steps the same way, as a
+list of Output: what %{StepName.Output} can read once it has run (docs/FLOW_CONTROL.md).
+
 A LOCATION parameter such as "Source" names a place files are read from or
 written to. A step fills it in one of two ways, under two names:
 
@@ -21,6 +24,14 @@ SOURCE, DEST = "SOURCE", "DEST"
 ENDPOINT_SUFFIX = "Endpoint"
 
 _TRUE, _FALSE = ("true", "yes", "y", "1"), ("false", "no", "n", "0")
+
+# The kinds of value an output holds, so a condition comparing text with a number can be pointed out
+NUMBER = "NUMBER"
+
+
+def holds_run_value(value: Any) -> bool:
+    """Whether a stored value has a %{...}, which only the run can fill in."""
+    return isinstance(value, str) and "%{" in value
 
 
 @dataclass(frozen=True)
@@ -38,6 +49,14 @@ class Param:
     def endpoint_name(self) -> Optional[str]:
         """The name under which a LOCATION is given as an endpoint, e.g. SourceEndpoint."""
         return self.name + ENDPOINT_SUFFIX if self.data_type == LOCATION else None
+
+
+@dataclass(frozen=True)
+class Output:
+    """Something a step leaves behind for later steps, read as %{StepName.Name}."""
+    name: str
+    data_type: str = STRING                 # STRING or NUMBER
+    description: str = ""
 
 
 def _is_blank(value: Any) -> bool:
@@ -76,8 +95,8 @@ def check_parameters(params: Sequence[Param], stored: Dict[str, Any]) -> List[st
     Checks a step's parameters as stored in the job, before any placeholder is
     resolved. Returns one message per problem; an empty list means none.
 
-    A value containing a ${...} placeholder cannot be type-checked until the job
-    runs, so only its presence is checked here.
+    A value containing a ${...} placeholder, or a %{...} value from the run, cannot be
+    type-checked until the job runs, so only its presence is checked here.
     """
     problems: List[str] = []
     accepted = [p.name for p in params] + [p.endpoint_name for p in params if p.endpoint_name]
@@ -102,7 +121,7 @@ def check_parameters(params: Sequence[Param], stored: Dict[str, Any]) -> List[st
         if _is_blank(value):
             if param.required:
                 problems.append(f"'{param.name}' is required.")
-        elif "${" not in str(value):
+        elif "${" not in str(value) and not holds_run_value(value):
             try:
                 _convert(param, value)
             except ValueError as e:
@@ -115,6 +134,7 @@ def normalize_parameters(params: Sequence[Param], resolved: Dict[str, Any]) -> D
     Turns a step's resolved parameters into what its handler receives: defaults
     filled in, text converted to True/False and numbers. By this point each
     LOCATION is a path under its own name, whichever way the step gave it.
+    A value still holding a %{...} (checked before the run) is left as text.
     Raises ValueError listing every problem.
     """
     problems: List[str] = []
@@ -133,6 +153,9 @@ def normalize_parameters(params: Sequence[Param], resolved: Dict[str, Any]) -> D
             value = param.default
             if value is None:
                 continue                    # optional, not set, no default: left out
+        if holds_run_value(value):
+            values[param.name] = value
+            continue
         try:
             values[param.name] = _convert(param, value)
         except ValueError as e:

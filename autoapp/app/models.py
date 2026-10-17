@@ -5,7 +5,7 @@ from sqlalchemy import (
     false, func, text, true
 )
 from sqlalchemy.dialects import mysql
-from sqlalchemy.orm import declarative_base, relationship, validates
+from sqlalchemy.orm import backref, declarative_base, relationship, validates
 
 Base = declarative_base()
 
@@ -333,17 +333,33 @@ class StepDefinition(Base):
 
 
 class JobStep(Base):
+    """
+    One step of a job. Steps form a tree (see docs/FLOW_CONTROL.md): a step inside a block
+    step (If, For Each File, While, and an If's Then, ElseIf and Else) points at it with
+    ParentStep_id, and StepOrder is its position among that block's steps.
+    """
     __tablename__ = 'JobSteps'
+
+    # How other steps refer to this one, as %{StepName.Status}
+    NAME_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
+    # What happens to the job when the step fails
+    ON_FAILURE = ("FAIL_JOB", "CONTINUE", "END_SUCCESS")
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     job_id = Column("Job_MasterObject_id", Integer, ForeignKey('Jobs.MasterObject_id', ondelete='CASCADE'), nullable=False)
     StepType_id = Column(Integer, ForeignKey('StepTypes.id'), nullable=False)
+    # The block step this one sits in; NULL at the top level of the job
+    ParentStep_id = Column(Integer, ForeignKey('JobSteps.id', ondelete='CASCADE'), nullable=True)
     StepOrder = Column(Integer, default=1, server_default=text('1'))
     Title = Column("StepTitle", String(150), nullable=True, default="Execution Step", server_default="Execution Step")
+    StepName = Column(String(64), nullable=True)
     IsActive = Column(Boolean, default=True, server_default=true())
+    OnFailure = Column(String(20), nullable=False, default="FAIL_JOB", server_default="FAIL_JOB")
 
     step_type = relationship("StepType")
     parameters = relationship("JobStepParameter", backref="job_step", cascade="all, delete-orphan", passive_deletes=True)
+    # Through this relationship, a block's steps are deleted before the block itself
+    children = relationship("JobStep", backref=backref("parent", remote_side=[id]), order_by="JobStep.StepOrder")
 
 
 class JobStepParameter(Base):
@@ -402,7 +418,11 @@ class Operation(Base):
     JobRun_id = Column(Integer, ForeignKey('JobRuns.id', ondelete='CASCADE'), nullable=False, index=True)
     Seq = Column(Integer, nullable=False)
     JobStep_id = Column(Integer, ForeignKey('JobSteps.id', ondelete='SET NULL'), nullable=True)
+    # The position of the step's top-level step: 3 for step 3.1
     StepOrder = Column(Integer, nullable=True)
+    # The step's number, e.g. 3.1 inside step 3, and which pass of the loops around it: 2, or 2.3 in nested loops
+    StepNumber = Column(String(50), nullable=True)
+    Iteration = Column(String(50), nullable=True)
     OpType = Column(String(50), nullable=False)
     OpStatus = Column(String(20), nullable=False)
     # Registered Endpoints the file came from / went to; NULL for a location inside the working folder

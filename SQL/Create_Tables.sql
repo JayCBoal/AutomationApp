@@ -198,12 +198,16 @@ CREATE TABLE `JobSteps` (
 	id INTEGER NOT NULL AUTO_INCREMENT, 
 	`Job_MasterObject_id` INTEGER NOT NULL, 
 	`StepType_id` INTEGER NOT NULL, 
+	`ParentStep_id` INTEGER, 
 	`StepOrder` INTEGER DEFAULT 1, 
 	`StepTitle` VARCHAR(150) DEFAULT 'Execution Step', 
+	`StepName` VARCHAR(64), 
 	`IsActive` BOOL DEFAULT true, 
+	`OnFailure` VARCHAR(20) NOT NULL DEFAULT 'FAIL_JOB', 
 	PRIMARY KEY (id), 
 	FOREIGN KEY(`Job_MasterObject_id`) REFERENCES `Jobs` (`MasterObject_id`) ON DELETE CASCADE, 
-	FOREIGN KEY(`StepType_id`) REFERENCES `StepTypes` (id)
+	FOREIGN KEY(`StepType_id`) REFERENCES `StepTypes` (id), 
+	FOREIGN KEY(`ParentStep_id`) REFERENCES `JobSteps` (id) ON DELETE CASCADE
 )ENGINE=InnoDB CHARSET=utf8mb4 COLLATE utf8mb4_bin;
 
 CREATE TABLE `Sites` (
@@ -271,6 +275,8 @@ CREATE TABLE `Operations` (
 	`Seq` INTEGER NOT NULL, 
 	`JobStep_id` INTEGER, 
 	`StepOrder` INTEGER, 
+	`StepNumber` VARCHAR(50), 
+	`Iteration` VARCHAR(50), 
 	`OpType` VARCHAR(50) NOT NULL, 
 	`OpStatus` VARCHAR(20) NOT NULL, 
 	`SourceEndpoint_id` INTEGER, 

@@ -129,9 +129,12 @@ classDiagram
         +int id
         +int job_id
         +int StepType_id
+        +int ParentStep_id
         +int StepOrder
         +string(150) Title
+        +string(64) StepName
         +bool IsActive
+        +string(20) OnFailure
     }
     class JobStepParameter {
         +int id
@@ -145,6 +148,8 @@ classDiagram
         +int Seq
         +int JobStep_id
         +int StepOrder
+        +string(50) StepNumber
+        +string(50) Iteration
         +string(50) OpType
         +string(20) OpStatus
         +int SourceEndpoint_id
@@ -207,6 +212,7 @@ classDiagram
     JobRun "1" --> "*" Operation : operations
     JobStep "*" --> "0..1" StepType : step_type
     JobStep "1" --> "*" JobStepParameter : parameters
+    JobStep "1" --> "*" JobStep : children
     MasterObject "1" --> "*" Variable : variables
     MasterObject "1" --> "*" TagAssignment : tag_assignments
     Operation "*" --> "0..1" Endpoint : source_endpoint

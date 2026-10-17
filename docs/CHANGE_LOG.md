@@ -4,6 +4,27 @@ Notable structural, schema and design changes to AutoApp, newest first. Line-by-
 
 ---
 
+## 2026-10-17
+
+### Flow control: If, For Each File, While, step outputs and On failure
+
+Brought over from RunMyFiles, where it was designed with the owner and built on 2026-10-16 (its commit e68675c), after the fork. The design is in [FLOW_CONTROL.md](FLOW_CONTROL.md).
+
+- **Added:** steps that hold steps. **If** holds a Then, any number of Else If and at most one Else; **For Each File** runs its steps once per file at a location; **While** repeats them while a condition holds, up to `MaxIterations` (default 100), waiting `WaitSeconds` between passes. Then, Else If and Else are step types of their own, never offered on their own in the editor.
+- **Added:** steps are numbered as a tree, 3, 3.1, 3.2, in the editor, the job log and the Operations Log. An If's branches share one count.
+- **Added:** conditions written as a SQL `WHERE` clause, worked out by SQLite in a database that holds nothing and may only compute: `%{Check_files.Status} = 'SUCCESS' AND %{File.Size} > ${MinBytes}`. A value inside quotes is filled in as text, any quote in it doubled; outside quotes it is passed to SQLite separately, so no value can change what a condition means. A variable whose value reads as a number counts as a number.
+- **Added:** `%{...}`, values from the run itself, filled in as each step starts, in any parameter and in conditions: a step's outputs by its StepName (`%{Check_files.FileCount}`), and inside a For Each File the file (`%{File.Name}`, `%{File.FullName}`, `%{File.Size}` and more). Every step has `Status`, `ReturnCode`, `ErrorMessage`, `StartTime`, `EndTime` and `DurationMs`; each step type declares its own besides (`FileCount` for the file steps, `Bytes` for Copy Files, `ArchiveName` for Zip Files, `Passes` for While). A step that has not run is `SKIPPED`.
+- **Added:** inside a For Each File, a step may take the loop's file as its location even when the loop reads from an endpoint outside the working folder; its operations are recorded against that endpoint, so the trace follows the file.
+- **Added:** **StepName** on every step: how later steps refer to it. The editor makes it from the title as the title is typed (spaces become underscores) until it is changed by hand; a saved step's name never changes by itself. Names may repeat: the step that ran last wins.
+- **Added:** **On failure** on every step: *Fail the job* (the default, as before), *Continue*, or *End the job with success*.
+- **Added:** the pre-run check covers every branch and loop: the shape of each If, every condition (that it is valid, and that each `%{...}` names a step or a loop's file, and something it has), and the loop's file name. A condition comparing a number with text is pointed out in the editor, under the condition, and in the job's warnings.
+- **Added:** in the editor, block steps show the steps inside them indented, with **+ Add step here**, **+ Add Else If** and **+ Add Else**, and ◀ ▶ to move a step out of its block or into the block above. Changing a block's type keeps the steps inside it.
+- **Added:** `GET /api/v1/step-types` says of each type whether it holds steps (`block`), whether it is only part of an If (`hidden`), and its `outputs`. A job's steps (`GET /api/v1/jobs/{key}`) have `number`, `name`, `on_failure` and `children`; a save takes `name`, `on_failure` and `children` the same way, and a step moved in or out of a block keeps its id. The preview's fields have `warnings`. A job without blocks reads and saves as before.
+- **Added:** the Operations Log's step column shows the step's number and, inside a loop, its pass; the CSV download has a Pass column. The trace keeps a loop's passes apart.
+- **Changed:** the sample `DEV-BILLING-INVOICE_EXPORT` uses flow control. Its check goes on when it fails; step 4, an If on the check, keeps a copy of each export (a For Each File) and sends the batch to finance, or else holds the exports back and fails saying why. When all is well, finance gets the same archive as before. [DEMO.md](../demo/DEMO.md) says so.
+- **Fixed:** the preview of a saved step whose type was changed checked it as its old type.
+- **Migration:** `JobSteps` gains `ParentStep_id`, `StepName` and `OnFailure`, and `Operations` gains `StepNumber` and `Iteration`. `SQL/migrate_flow_control.py` adds them to an existing SQLite or MariaDB database, keeping its data, and names each step from its title; it can be run again safely. Nothing is dropped or renamed.
+
 ## 2026-10-16
 
 ### RunMyFiles is AutoApp again

@@ -128,7 +128,7 @@
                             <td>
                                 <div x-text="row.job_key"></div>
                                 <div class="muted small">
-                                    <span x-show="row.step_order !== null" x-text="'step ' + row.step_order + ' ·'"></span>
+                                    <span x-show="row.step_number" x-text="'step ' + row.step_number + (row.iteration ? ' (pass ' + row.iteration + ')' : '') + ' ·'"></span>
                                     instance <span x-text="row.instance_id"></span>
                                     <span x-show="row.run_number > 1" x-text="'· run ' + row.run_number"></span>
                                 </div>
@@ -172,7 +172,8 @@
                                 <span class="muted" x-text="time(hop.ended)"></span>
                                 <span x-text="hop.job_key"></span>
                                 <span class="muted small">
-                                    step <span x-text="hop.step_order"></span> · instance <span x-text="hop.instance_id"></span>
+                                    step <span x-text="hop.step_number"></span><span x-show="hop.iteration"
+                                        x-text="' (pass ' + hop.iteration + ')'"></span> · instance <span x-text="hop.instance_id"></span>
                                     <span x-show="hop.run_number > 1" x-text="'· run ' + hop.run_number"></span>
                                     <span x-show="hop.scheduler" x-text="'· scheduler ' + hop.scheduler"></span>
                                 </span>

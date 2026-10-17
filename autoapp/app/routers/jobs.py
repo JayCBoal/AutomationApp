@@ -17,6 +17,8 @@ from app.schemas import (
 )
 from engine.step_catalog import ENDPOINT_SUFFIX
 from engine.handlers import get_handler
+from engine import step_tree
+from engine.handlers.flow import BRANCHES
 from engine.preflight import prepare_job
 from engine.scope_engine import ScopeResolutionEngine
 from engine.step_params import preview_step, resolve_step
@@ -29,17 +31,19 @@ MAX_RESULTS = 500
 EDITOR_NAME = "web interface"
 
 
-def job_problems(db: Session, job: Job, environment: Optional[Dict[str, str]] = None) -> List[str]:
+def job_problems(db: Session, job: Job, environment: Optional[Dict[str, str]] = None,
+                 warnings: Optional[List[str]] = None) -> List[str]:
     """
     Everything that would stop the job from running, as the runner would report it. Runs nothing.
     environment: what the scheduler will set when it runs the job, if known (a WLA job's parameters).
+    warnings: given a list, what is worth knowing but does not stop the job is added to it.
     """
     problems = []
     if not job.IsActive:
         problems.append(f"Job '{job.JobKey}' is disabled.")
     engine = ScopeResolutionEngine(db=db, job_id=job.MasterObject_id, instance_id="CHECK", environment=environment)
     engine.build_context()
-    return problems + prepare_job(db, job, engine)[1]
+    return problems + prepare_job(db, job, engine, warnings)[1]
 
 
 @router.get("", response_model=List[JobSummary])
@@ -245,19 +249,25 @@ def preview_job(payload: JobSave, existing_key: Optional[str] = Query(
                 text = text.replace(secret, MASK) if text else text
             return text
 
-        problems = [safe(problem) for problem in job_problems(db, job, environment)]
+        check_warnings: List[str] = []
+        problems = [safe(problem) for problem in job_problems(db, job, environment, check_warnings)]
         engine = ScopeResolutionEngine(db=db, job_id=job.MasterObject_id, instance_id="PREVIEW", environment=environment)
         engine.build_context()
         steps = []
-        for step in sorted(job.steps, key=lambda s: (s.StepOrder, s.id)):
+        for node in step_tree.walk(step_tree.build(job.steps)):
             try:
-                handler_cls = get_handler(step.step_type.HandlerClass)
+                handler_cls = get_handler(node.code)
             except ValueError:
                 handler_cls = None
-            steps.append({name: FieldPreview(resolved=safe(None if resolved is None else str(resolved)), error=safe(error))
-                          for name, (resolved, error) in preview_step(step, handler_cls, engine, db).items()})
+            fields = {name: FieldPreview(resolved=safe(None if resolved is None else str(resolved)), error=safe(error))
+                      for name, (resolved, error) in preview_step(node.step, handler_cls, engine, db).items()}
+            # A condition comparing text with a number is pointed out under the condition itself
+            mine = [safe(w[len(node.name) + 2:]) for w in check_warnings if w.startswith(node.name + ": ")]
+            if mine and "Condition" in fields:
+                fields["Condition"].warnings = mine
+            steps.append(fields)
         # Tags that disagree about a variable the job does not use: worth saying, but nothing stops
-        warnings = scheduler_warnings + [
+        warnings = scheduler_warnings + [safe(w) for w in check_warnings] + [
             w for w in tag_store.job_tag_warnings(db, job) if not any(w in problem for problem in problems)]
         return JobPreview(valid=not problems, problems=problems, warnings=warnings, steps=steps,
                           tags=tag_store.paths_on(job), inherited_variables=inherited_variables(db, job))
@@ -407,7 +417,8 @@ def job_summary(job_key: str, request: Request,
     def address(page: str, **params) -> str:
         return base + page + "?" + urlencode(params)
 
-    steps = sorted(job.steps, key=lambda s: (s.StepOrder, s.id))
+    # Every step, nested ones too, in the order the job lists them; an If's Then, ElseIf and Else are part of it
+    steps = [s for s in step_tree.in_order(job.steps) if s.step_type.HandlerClass not in BRANCHES]
     endpoints = sorted({p.ParamValue for s in steps for p in s.parameters
                         if p.ParamName.endswith(ENDPOINT_SUFFIX) and p.ParamValue}, key=str.lower)
 

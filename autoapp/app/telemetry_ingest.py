@@ -86,6 +86,8 @@ def ingest_batch(db: Session, batch: TelemetryBatch) -> TelemetryIngestResult:
                     Seq=record.Seq,
                     JobStep_id=existing_id(JobStep, record.StepID),
                     StepOrder=record.StepOrder,
+                    StepNumber=record.StepNumber,
+                    Iteration=record.Iteration,
                     OpType=record.OpType,
                     OpStatus=record.Status,
                     SourceEndpoint_id=existing_id(Endpoint, record.SourceEndpointID),

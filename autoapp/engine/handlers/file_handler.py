@@ -6,7 +6,7 @@ from pathlib import Path
 from engine import job_log
 from engine.handlers.base_handler import BaseHandler
 from engine.rename_mask import new_names
-from engine.step_catalog import BOOLEAN, DEST, LOCATION, SOURCE, STRING, Param
+from engine.step_catalog import BOOLEAN, DEST, LOCATION, NUMBER, SOURCE, STRING, Output, Param
 from engine.telemetry_client import utc_now_iso
 
 
@@ -46,6 +46,10 @@ class FileOpHandler(BaseHandler):
         Param("AllowNoFiles", BOOLEAN, default="False",
               description="Succeed when no files match. Otherwise a step that finds nothing fails."),
     )
+    OUTPUTS = (
+        Output("FileCount", NUMBER, "How many files it copied or moved"),
+        Output("Bytes", NUMBER, "How many bytes it copied or moved, in all"),
+    )
 
     def execute_step(self, params: dict) -> dict:
         source_pattern, dest_path = params["Source"], params["Dest"]
@@ -74,6 +78,7 @@ class FileOpHandler(BaseHandler):
         # Resolve source files (supports glob patterns)
         matched_files = sorted(f for f in glob.glob(source_pattern) if os.path.isfile(f))
         job_log.debug(f"Files matching '{source_pattern}': {matched_files}")
+        self.outputs.update(FileCount=0, Bytes=0)
         if not matched_files:
             if not allow_no_files:
                 # Finding nothing usually means something upstream is late or broken
@@ -132,6 +137,7 @@ class FileOpHandler(BaseHandler):
                                        checksum, started_at=started_at)
             job_log.detail(f"{done} '{src_file}'\n\tto '{target}' ({dest_size} bytes)")
             total_bytes += dest_size
+            self.outputs.update(FileCount=self.outputs["FileCount"] + 1, Bytes=total_bytes)
             result_data["details"]["ops"].append({
                 "OpType": op_type,
                 "Source": src_file,

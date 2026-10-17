@@ -29,6 +29,7 @@ erDiagram
     Jobs |o--o{ JobRuns : "Job_MasterObject_id"
     Jobs ||--o{ JobSteps : "Job_MasterObject_id"
     StepTypes ||--o{ JobSteps : "StepType_id"
+    JobSteps |o--o{ JobSteps : "ParentStep_id"
     MasterObjects ||--o| Sites : "MasterObject_id"
     Entities |o--o{ Sites : "Entity_MasterObject_id"
     Tags ||--o{ TagAssignments : "Tag_MasterObject_id"
@@ -141,9 +142,12 @@ erDiagram
         int id PK
         int Job_MasterObject_id FK "required"
         int StepType_id FK "required"
+        int ParentStep_id FK
         int StepOrder
         string(150) StepTitle
+        string(64) StepName
         bool IsActive
+        string(20) OnFailure "required"
     }
     JobStepParameters {
         int id PK
@@ -174,6 +178,7 @@ erDiagram
     StepTypes ||--o{ StepDefinitions : "StepType_id"
     Jobs ||--o{ JobSteps : "Job_MasterObject_id"
     StepTypes ||--o{ JobSteps : "StepType_id"
+    JobSteps |o--o{ JobSteps : "ParentStep_id"
     JobSteps ||--o{ JobStepParameters : "JobStep_id"
 ```
 
@@ -217,6 +222,8 @@ erDiagram
         int Seq "required"
         int JobStep_id FK
         int StepOrder
+        string(50) StepNumber
+        string(50) Iteration
         string(50) OpType "required"
         string(20) OpStatus "required"
         int SourceEndpoint_id FK

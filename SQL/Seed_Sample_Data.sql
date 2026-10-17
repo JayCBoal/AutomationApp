@@ -9,6 +9,10 @@
 --   DEV-BILLING-INVOICE_EXPORT    -> DEV-FINANCE-LOAD_REPORTS   (SQL export, check,
 --                                                                zip, unzip, clean up)
 --
+-- The export job shows flow control (docs/FLOW_CONTROL.md): it sends the batch only if
+-- its check passed, keeping a copy of each export first, and otherwise holds the
+-- exports back and fails, saying what was wrong.
+--
 -- The export jobs query the sample sales database, SQL/Sample_Sales_Data.sql.
 --
 -- Run it against empty tables: after SQL/Create_Tables.sql on MariaDB, or
@@ -42,6 +46,18 @@ WHERE NOT EXISTS (SELECT 1 FROM StepTypes WHERE Code = 'UNZIP_FILES');
 INSERT INTO StepTypes (Name, Code, Description)
 SELECT 'Run SQL', 'RUN_SQL', 'Runs one SQL statement; a query''s rows can be written to a CSV file'
 WHERE NOT EXISTS (SELECT 1 FROM StepTypes WHERE Code = 'RUN_SQL');
+INSERT INTO StepTypes (Name, Code, Description)
+SELECT 'If', 'IF', 'Runs one set of steps or another, depending on a condition'
+WHERE NOT EXISTS (SELECT 1 FROM StepTypes WHERE Code = 'IF');
+INSERT INTO StepTypes (Name, Code, Description)
+SELECT 'Then', 'THEN', 'The steps that run when the condition holds'
+WHERE NOT EXISTS (SELECT 1 FROM StepTypes WHERE Code = 'THEN');
+INSERT INTO StepTypes (Name, Code, Description)
+SELECT 'Else', 'ELSE', 'The steps that run when no condition holds'
+WHERE NOT EXISTS (SELECT 1 FROM StepTypes WHERE Code = 'ELSE');
+INSERT INTO StepTypes (Name, Code, Description)
+SELECT 'For Each File', 'FOR_EACH_FILE', 'Runs its steps once for each file at a location'
+WHERE NOT EXISTS (SELECT 1 FROM StepTypes WHERE Code = 'FOR_EACH_FILE');
 
 -- The parameters each step type takes are not listed here. They are declared by the handlers
 -- in the code and copied into the StepDefinitions table by:  python3 -m app.catalog
@@ -112,34 +128,53 @@ INSERT INTO Jobs (MasterObject_id, JobKey, Description) VALUES
 (13, 'DEV-BILLING-INVOICE_EXPORT',   'Exports open invoices and payments from the sales database and sends them to finance as one archive'),
 (15, 'DEV-FINANCE-LOAD_REPORTS',     'Picks up the billing archive, unpacks it, checks the reports and keeps a month of archives');
 
-INSERT INTO JobSteps (id, Job_MasterObject_id, StepType_id, StepOrder, StepTitle)
-SELECT 1, 5, id, 1, 'Collect extracts'   FROM StepTypes WHERE Code = 'COPY_FILES';
-INSERT INTO JobSteps (id, Job_MasterObject_id, StepType_id, StepOrder, StepTitle)
-SELECT 2, 5, id, 2, 'Archive'            FROM StepTypes WHERE Code = 'COPY_FILES';
-INSERT INTO JobSteps (id, Job_MasterObject_id, StepType_id, StepOrder, StepTitle)
-SELECT 3, 5, id, 3, 'Deliver to billing' FROM StepTypes WHERE Code = 'COPY_FILES';
-INSERT INTO JobSteps (id, Job_MasterObject_id, StepType_id, StepOrder, StepTitle)
-SELECT 4, 6, id, 1, 'Pick up from inbox' FROM StepTypes WHERE Code = 'COPY_FILES';
+INSERT INTO JobSteps (id, Job_MasterObject_id, StepType_id, StepOrder, StepTitle, StepName)
+SELECT 1, 5, id, 1, 'Collect extracts',   'Collect_extracts' FROM StepTypes WHERE Code = 'COPY_FILES';
+INSERT INTO JobSteps (id, Job_MasterObject_id, StepType_id, StepOrder, StepTitle, StepName)
+SELECT 2, 5, id, 2, 'Archive',            'Archive' FROM StepTypes WHERE Code = 'COPY_FILES';
+INSERT INTO JobSteps (id, Job_MasterObject_id, StepType_id, StepOrder, StepTitle, StepName)
+SELECT 3, 5, id, 3, 'Deliver to billing', 'Deliver_to_billing' FROM StepTypes WHERE Code = 'COPY_FILES';
+INSERT INTO JobSteps (id, Job_MasterObject_id, StepType_id, StepOrder, StepTitle, StepName)
+SELECT 4, 6, id, 1, 'Pick up from inbox', 'Pick_up_from_inbox' FROM StepTypes WHERE Code = 'COPY_FILES';
 
-INSERT INTO JobSteps (id, Job_MasterObject_id, StepType_id, StepOrder, StepTitle)
-SELECT 5, 13, id, 1, 'Export open invoices'   FROM StepTypes WHERE Code = 'RUN_SQL';
-INSERT INTO JobSteps (id, Job_MasterObject_id, StepType_id, StepOrder, StepTitle)
-SELECT 6, 13, id, 2, 'Export payments'        FROM StepTypes WHERE Code = 'RUN_SQL';
-INSERT INTO JobSteps (id, Job_MasterObject_id, StepType_id, StepOrder, StepTitle)
-SELECT 7, 13, id, 3, 'Check both exports'     FROM StepTypes WHERE Code = 'CHECK_FILES';
-INSERT INTO JobSteps (id, Job_MasterObject_id, StepType_id, StepOrder, StepTitle)
-SELECT 8, 13, id, 4, 'Send to finance'        FROM StepTypes WHERE Code = 'ZIP_FILES';
+INSERT INTO JobSteps (id, Job_MasterObject_id, StepType_id, StepOrder, StepTitle, StepName)
+SELECT 5, 13, id, 1, 'Export open invoices',   'Export_open_invoices' FROM StepTypes WHERE Code = 'RUN_SQL';
+INSERT INTO JobSteps (id, Job_MasterObject_id, StepType_id, StepOrder, StepTitle, StepName)
+SELECT 6, 13, id, 2, 'Export payments',        'Export_payments' FROM StepTypes WHERE Code = 'RUN_SQL';
+INSERT INTO JobSteps (id, Job_MasterObject_id, StepType_id, StepOrder, StepTitle, StepName)
+SELECT 7, 13, id, 3, 'Check both exports',     'Check_both_exports' FROM StepTypes WHERE Code = 'CHECK_FILES';
+INSERT INTO JobSteps (id, Job_MasterObject_id, StepType_id, StepOrder, StepTitle, StepName)
+SELECT 8, 13, id, 2, 'Send to finance',        'Send_to_finance' FROM StepTypes WHERE Code = 'ZIP_FILES';
 
-INSERT INTO JobSteps (id, Job_MasterObject_id, StepType_id, StepOrder, StepTitle)
-SELECT 9, 15, id, 1, 'Pick up the archive'    FROM StepTypes WHERE Code = 'COPY_FILES';
-INSERT INTO JobSteps (id, Job_MasterObject_id, StepType_id, StepOrder, StepTitle)
-SELECT 10, 15, id, 2, 'Unpack'                FROM StepTypes WHERE Code = 'UNZIP_FILES';
-INSERT INTO JobSteps (id, Job_MasterObject_id, StepType_id, StepOrder, StepTitle)
-SELECT 11, 15, id, 3, 'Check the reports'     FROM StepTypes WHERE Code = 'CHECK_FILES';
-INSERT INTO JobSteps (id, Job_MasterObject_id, StepType_id, StepOrder, StepTitle)
-SELECT 12, 15, id, 4, 'Keep the archive'      FROM StepTypes WHERE Code = 'COPY_FILES';
-INSERT INTO JobSteps (id, Job_MasterObject_id, StepType_id, StepOrder, StepTitle)
-SELECT 13, 15, id, 5, 'Remove old archives'   FROM StepTypes WHERE Code = 'DELETE_FILES';
+-- Step 4 decides what happens to the exports: sent if the check passed, else held back.
+-- Its steps are inserted before step 8 (Send to finance) is moved inside it, below.
+INSERT INTO JobSteps (id, Job_MasterObject_id, StepType_id, StepOrder, StepTitle, StepName)
+SELECT 14, 13, id, 4, 'Send only a sound batch', 'Send_only_a_sound_batch' FROM StepTypes WHERE Code = 'IF';
+INSERT INTO JobSteps (id, Job_MasterObject_id, ParentStep_id, StepType_id, StepOrder)
+SELECT 15, 13, 14, id, 1 FROM StepTypes WHERE Code = 'THEN';
+INSERT INTO JobSteps (id, Job_MasterObject_id, ParentStep_id, StepType_id, StepOrder, StepTitle, StepName)
+SELECT 16, 13, 15, id, 1, 'Keep a copy of each export', 'Keep_a_copy' FROM StepTypes WHERE Code = 'FOR_EACH_FILE';
+INSERT INTO JobSteps (id, Job_MasterObject_id, ParentStep_id, StepType_id, StepOrder, StepTitle, StepName)
+SELECT 17, 13, 16, id, 1, 'Copy it to the record', 'Copy_it_to_the_record' FROM StepTypes WHERE Code = 'COPY_FILES';
+INSERT INTO JobSteps (id, Job_MasterObject_id, ParentStep_id, StepType_id, StepOrder)
+SELECT 18, 13, 14, id, 2 FROM StepTypes WHERE Code = 'ELSE';
+INSERT INTO JobSteps (id, Job_MasterObject_id, ParentStep_id, StepType_id, StepOrder, StepTitle, StepName)
+SELECT 19, 13, 18, id, 1, 'Hold the exports back', 'Hold_the_exports_back' FROM StepTypes WHERE Code = 'COPY_FILES';
+INSERT INTO JobSteps (id, Job_MasterObject_id, ParentStep_id, StepType_id, StepOrder, StepTitle, StepName)
+SELECT 20, 13, 18, id, 2, 'Say what was wrong', 'Say_what_was_wrong' FROM StepTypes WHERE Code = 'CHECK_FILES';
+UPDATE JobSteps SET ParentStep_id = 15 WHERE id = 8;
+UPDATE JobSteps SET OnFailure = 'CONTINUE' WHERE id = 7;
+
+INSERT INTO JobSteps (id, Job_MasterObject_id, StepType_id, StepOrder, StepTitle, StepName)
+SELECT 9, 15, id, 1, 'Pick up the archive',    'Pick_up_the_archive' FROM StepTypes WHERE Code = 'COPY_FILES';
+INSERT INTO JobSteps (id, Job_MasterObject_id, StepType_id, StepOrder, StepTitle, StepName)
+SELECT 10, 15, id, 2, 'Unpack',                'Unpack' FROM StepTypes WHERE Code = 'UNZIP_FILES';
+INSERT INTO JobSteps (id, Job_MasterObject_id, StepType_id, StepOrder, StepTitle, StepName)
+SELECT 11, 15, id, 3, 'Check the reports',     'Check_the_reports' FROM StepTypes WHERE Code = 'CHECK_FILES';
+INSERT INTO JobSteps (id, Job_MasterObject_id, StepType_id, StepOrder, StepTitle, StepName)
+SELECT 12, 15, id, 4, 'Keep the archive',      'Keep_the_archive' FROM StepTypes WHERE Code = 'COPY_FILES';
+INSERT INTO JobSteps (id, Job_MasterObject_id, StepType_id, StepOrder, StepTitle, StepName)
+SELECT 13, 15, id, 5, 'Remove old archives',   'Remove_old_archives' FROM StepTypes WHERE Code = 'DELETE_FILES';
 
 INSERT INTO JobStepParameters (JobStep_id, ParameterName, ParameterValue) VALUES
 (1, 'SourceEndpoint', 'LEGAL_APP_EXTRACTS'),
@@ -173,6 +208,18 @@ ORDER BY p.payment_date, p.reference'),
 (8, 'ArchiveName',    'Billing_${DATE:yyyyMMdd}.zip'),
 (8, 'Move',           'True'),
 (8, 'Overwrite',      'True'),
+(14, 'Condition',     '%{Check_both_exports.Status} = ''SUCCESS'''),
+(16, 'Source',        'out/*_${DATE:yyyyMMdd}.csv'),
+(16, 'ItemName',      'Export'),
+(17, 'Source',        '%{Export.FullName}'),
+(17, 'Dest',          'kept/${DATE:yyyyMMdd}'),
+(19, 'Source',        'out/*_${DATE:yyyyMMdd}.csv'),
+(19, 'Dest',          'held/${DATE:yyyyMMdd}'),
+(19, 'Move',          'True'),
+(19, 'AllowNoFiles',  'True'),
+(20, 'Source',        'held/${DATE:yyyyMMdd}/*.csv'),
+(20, 'MinCount',      '2'),
+(20, 'MaxCount',      '2'),
 (9, 'SourceEndpoint', 'FINANCE_APP_INBOX'),
 (9, 'Dest',           'incoming'),
 (9, 'Move',           'True'),

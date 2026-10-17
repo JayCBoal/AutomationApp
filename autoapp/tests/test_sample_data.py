@@ -4,6 +4,8 @@ actually run. The seed is loaded into a database built from the models, its
 file locations are pointed at the test's temp folder, and the sample jobs are
 run with the real runner.
 """
+from datetime import date
+
 from sqlalchemy import text
 
 from app.catalog import sync_catalog
@@ -66,12 +68,34 @@ def test_sample_export_jobs_query_the_sales_database_and_hand_the_reports_to_fin
     assert [(hop["job_key"], hop["op_type"]) for hop in trace["hops"]] == [
         ("DEV-BILLING-INVOICE_EXPORT", "SQL_EXPORT"),
         ("DEV-BILLING-INVOICE_EXPORT", "CHECK"),
+        ("DEV-BILLING-INVOICE_EXPORT", "COPY"),            # step 4.1.1, keeping a copy of each export
         ("DEV-BILLING-INVOICE_EXPORT", "ZIP_MOVE"),
         ("DEV-FINANCE-LOAD_REPORTS", "MOVE"),
         ("DEV-FINANCE-LOAD_REPORTS", "UNZIP"),
         ("DEV-FINANCE-LOAD_REPORTS", "CHECK"),
         ("DEV-FINANCE-LOAD_REPORTS", "MOVE"),
     ]
+
+
+def test_the_sample_export_holds_back_a_batch_that_fails_its_check(db, run_runner, tmp_path):
+    """The export's If (step 4): a third file in the batch fails the check, so nothing goes to finance."""
+    load_seed(db)
+    for root in db.query(Variable).filter(Variable.VarName == "Root"):
+        root.VarValue = root.VarValue.replace("/tmp/autoapp_sample", str(tmp_path))
+    create_sales_db(tmp_path / "sales.db")
+    db.query(Variable).filter(Variable.VarName == "SalesDbUrl").one().VarValue = f"sqlite:///{tmp_path / 'sales.db'}"
+    today = date.today().strftime("%Y%m%d")
+    out = tmp_path / "work" / "DEV-BILLING-INVOICE_EXPORT" / "out"
+    out.mkdir(parents=True)
+    (out / f"Stray_{today}.csv").write_text("left over\n")
+
+    export = run_runner("DEV-BILLING-INVOICE_EXPORT", "1005")
+
+    assert export.returncode == 1
+    held = tmp_path / "work" / "DEV-BILLING-INVOICE_EXPORT" / "held" / today
+    assert sorted(p.name for p in held.iterdir()) == [
+        f"Open_Invoices_{today}.csv", f"Payments_{today}.csv", f"Stray_{today}.csv"]
+    assert not (tmp_path / "finance_app" / "inbox").exists() or not list((tmp_path / "finance_app" / "inbox").iterdir())
 
 
 def test_rows_inserted_by_plain_sql_get_the_schema_defaults(db):

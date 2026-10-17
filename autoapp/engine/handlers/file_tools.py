@@ -19,7 +19,7 @@ from typing import Dict, List
 
 from engine import job_log
 from engine.handlers.base_handler import BaseHandler
-from engine.step_catalog import BOOLEAN, DEST, INTEGER, LOCATION, SOURCE, STRING, Param
+from engine.step_catalog import BOOLEAN, DEST, INTEGER, LOCATION, NUMBER, SOURCE, STRING, Output, Param
 from engine.telemetry_client import utc_now_iso
 
 ALLOW_NO_FILES = Param("AllowNoFiles", BOOLEAN, default="False",
@@ -62,6 +62,7 @@ class DeleteFilesHandler(BaseHandler):
               description="Only files last changed more than this many days ago. Leave empty for all matching files."),
         ALLOW_NO_FILES,
     )
+    OUTPUTS = (Output("FileCount", NUMBER, "How many files it deleted"),)
 
     def execute_step(self, params: dict) -> dict:
         pattern, older_than = params["Source"], params.get("OlderThanDays")
@@ -71,6 +72,7 @@ class DeleteFilesHandler(BaseHandler):
             cutoff = time.time() - older_than * 86400
             files = [f for f in files if os.path.getmtime(f) < cutoff]
         extra = f" older than {plural(older_than, 'day')}" if older_than is not None else ""
+        self.outputs["FileCount"] = 0
         if not files:
             return nothing_matched(pattern, params["AllowNoFiles"], result, extra)
 
@@ -83,6 +85,7 @@ class DeleteFilesHandler(BaseHandler):
                 job_log.error(f"Could not delete '{path}': {e}")
                 raise
             self.record_file_operation("DELETE", "SUCCESS", path, None, size, started_at=started_at)
+            self.outputs["FileCount"] += 1
             job_log.detail(f"Deleted '{path}' ({size} bytes)")
         result["details"]["summary"].append(f"Deleted {plural(len(files), 'file')}.")
         return result
@@ -102,6 +105,7 @@ class CheckFilesHandler(BaseHandler):
         Param("MaxAgeHours", INTEGER,
               description="Every file must have been changed within this many hours. Leave empty for any age."),
     )
+    OUTPUTS = (Output("FileCount", NUMBER, "How many files matched, whether or not they passed"),)
 
     def execute_step(self, params: dict) -> dict:
         pattern = params["Source"]
@@ -109,6 +113,7 @@ class CheckFilesHandler(BaseHandler):
         allow_empty, max_age = params["AllowEmpty"], params.get("MaxAgeHours")
         result = empty_result()
         files = matching_files(pattern)
+        self.outputs["FileCount"] = len(files)
 
         problems = []
         if len(files) < least:
@@ -166,6 +171,10 @@ class ZipFilesHandler(BaseHandler):
         CREATE_FOLDER,
         ALLOW_NO_FILES,
     )
+    OUTPUTS = (
+        Output("FileCount", NUMBER, "How many files it put into the archive"),
+        Output("ArchiveName", STRING, "The archive's file name"),
+    )
 
     def execute_step(self, params: dict) -> dict:
         pattern, move = params["Source"], params["Move"]
@@ -173,6 +182,7 @@ class ZipFilesHandler(BaseHandler):
         op_type = "ZIP_MOVE" if move else "ZIP"
         result = empty_result()
         files = matching_files(pattern)
+        self.outputs["FileCount"] = 0
         if not files:
             return nothing_matched(pattern, params["AllowNoFiles"], result)
 
@@ -210,6 +220,7 @@ class ZipFilesHandler(BaseHandler):
             raise
 
         archive_size = os.path.getsize(archive)
+        self.outputs.update(FileCount=len(files), ArchiveName=os.path.basename(archive))
         for path in files:
             if move:
                 os.remove(path)
@@ -233,11 +244,13 @@ class UnzipFilesHandler(BaseHandler):
         CREATE_FOLDER,
         ALLOW_NO_FILES,
     )
+    OUTPUTS = (Output("FileCount", NUMBER, "How many files it took out of the archives"),)
 
     def execute_step(self, params: dict) -> dict:
         pattern, dest = params["Source"], params["Dest"]
         result = empty_result()
         archives = matching_files(pattern)
+        self.outputs["FileCount"] = 0
         if not archives:
             return nothing_matched(pattern, params["AllowNoFiles"], result)
         if params["CreateFolder"]:
@@ -280,6 +293,7 @@ class UnzipFilesHandler(BaseHandler):
                                                started_at=started_at)
                     job_log.detail(f"Unzipped '{member.filename}' from '{archive}'\n\tto '{target}' ({size} bytes)")
                     count += 1
+                    self.outputs["FileCount"] = count
         result["details"]["summary"].append(
             f"Unzipped {plural(count, 'file')} from {plural(len(archives), 'archive')}.")
         return result

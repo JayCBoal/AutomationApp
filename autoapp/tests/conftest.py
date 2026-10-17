@@ -147,12 +147,15 @@ class Seeder:
         existing = self.db.query(StepType).filter(StepType.HandlerClass == code).first()
         return existing or self._add(StepType(TypeName=name, HandlerClass=code))
 
-    def step(self, job, order, code="COPY_FILES", title=None, **params):
+    def step(self, job, order, code="COPY_FILES", title=None, parent=None, name=None, on_failure="FAIL_JOB", **params):
         step = self._add(JobStep(
             job_id=job.MasterObject_id,
             StepType_id=self.step_type(code, code).id,
             StepOrder=order,
             Title=title or f"Step {order}",
+            ParentStep_id=parent.id if parent else None,
+            StepName=name,
+            OnFailure=on_failure,
         ))
         for name, value in params.items():
             self.db.add(JobStepParameter(job_step_id=step.id, ParamName=name, ParamValue=value))

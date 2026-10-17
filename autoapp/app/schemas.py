@@ -67,13 +67,22 @@ class StepParameterOut(BaseModel):
     allowed_values: Optional[List[str]] = Field(None, description="For a CHOICE")
 
 
+class StepOutputOut(BaseModel):
+    name: str = Field(..., description="Read by later steps as %{StepName.<name>}")
+    data_type: str = Field(..., description="STRING or NUMBER")
+    description: Optional[str] = None
+
+
 class StepTypeOut(BaseModel):
     code: str = Field(..., description="Stored on each step; never changes")
     name: str
     description: Optional[str] = None
     active: bool
     has_handler: bool = Field(..., description="False if this server has no code to run the step type")
+    block: bool = Field(False, description="True for a step that holds other steps: If, For Each File, While")
+    hidden: bool = Field(False, description="True for a part of an If (Then, ElseIf, Else), never chosen on its own")
     parameters: List[StepParameterOut]
+    outputs: List[StepOutputOut] = Field(default_factory=list, description="What later steps can read once it has run")
 
 
 class LastRun(BaseModel):
@@ -128,13 +137,18 @@ class VariableSave(BaseModel):
 
 class JobStepOut(BaseModel):
     id: int
-    order: int
+    order: int = Field(..., description="Its position among the steps of the block it is in, or of the job")
+    number: str = Field("", description="As the job log shows it: 3.1 for the first step inside step 3. "
+                                         "A Then, ElseIf or Else has its If's number")
     title: Optional[str] = None
+    name: Optional[str] = Field(None, description="Its StepName, by which later steps read its outputs: %{Name.Status}")
     active: bool
+    on_failure: str = Field("FAIL_JOB", description="FAIL_JOB, CONTINUE or END_SUCCESS")
     step_type: str = Field(..., description="The step type's code; see /api/v1/step-types")
     step_type_name: str
     parameters: Dict[str, Optional[str]] = Field(
         ..., description="As stored: placeholders unresolved, a location under its path or its Endpoint name")
+    children: List["JobStepOut"] = Field(default_factory=list, description="The steps inside it, in order")
 
 
 class JobDetail(BaseModel):
@@ -156,10 +170,16 @@ class JobDetail(BaseModel):
 class JobStepSave(BaseModel):
     id: Optional[int] = Field(None, description="The step's id when changing an existing step; leave out for a new one")
     title: Optional[str] = Field(None, max_length=150)
+    name: Optional[str] = Field(None, max_length=64, description=(
+        "Its StepName: letters, digits and underscores, starting with a letter. Left out, it is made from the title"))
     active: bool = True
+    on_failure: str = Field("FAIL_JOB", description="FAIL_JOB, CONTINUE or END_SUCCESS")
     step_type: str = Field(..., description="A step type code from /api/v1/step-types")
     parameters: Dict[str, Optional[str]] = Field(
         default_factory=dict, description="Blank values are not stored, so the step type's default applies")
+    children: List["JobStepSave"] = Field(default_factory=list, description=(
+        "The steps inside it, for an If (its Then, ElseIf and Else), an ElseIf (its Then), a Then, an Else, "
+        "a For Each File or a While. A step moved in or out of a block keeps its id"))
 
 
 class JobSave(BaseModel):
@@ -185,6 +205,8 @@ class JobSaveResult(BaseModel):
 class FieldPreview(BaseModel):
     resolved: Optional[str] = Field(None, description="What the value becomes when the job runs")
     error: Optional[str] = Field(None, description="Why it cannot be resolved, if it cannot")
+    warnings: List[str] = Field(default_factory=list, description=(
+        "Worth knowing but not stopping the job, such as a condition comparing text with a number"))
 
 
 class JobPreview(BaseModel):
@@ -196,8 +218,8 @@ class JobPreview(BaseModel):
     tags: List[str] = Field(default_factory=list, description="Paths of the tags as submitted")
     inherited_variables: List[InheritedVariableOut] = Field(default_factory=list)
     steps: List[Dict[str, FieldPreview]] = Field(
-        ..., description="For each step submitted, in order: each parameter by name. "
-                         "A location appears under its parameter name however the step gave it")
+        ..., description="For each step submitted, in order, each block before the steps inside it: "
+                         "each parameter by name. A location appears under its parameter name however the step gave it")
 
 
 class JobCheckResult(BaseModel):
@@ -231,6 +253,8 @@ class OperationRecord(BaseModel):
     Seq: int
     StepID: Optional[int] = None
     StepOrder: Optional[int] = None
+    StepNumber: Optional[str] = Field(None, max_length=50, description="e.g. 3.1 for the first step inside step 3")
+    Iteration: Optional[str] = Field(None, max_length=50, description="The loops' passes: 2, or 2.3 in nested loops")
     OpType: str = Field(..., max_length=50)
     Status: str = Field(..., max_length=20)
     SourcePath: Optional[str] = None
@@ -309,6 +333,8 @@ class OperationOut(BaseModel):
     scheduler: Optional[str] = None
     run_id: str
     step_order: Optional[int] = None
+    step_number: Optional[str] = Field(None, description="The step's number, e.g. 3.1 inside step 3")
+    iteration: Optional[str] = Field(None, description="Which pass of the loops around the step: 2, or 2.3 when nested")
 
 
 class TraceHop(OperationOut):
@@ -319,3 +345,7 @@ class TraceHop(OperationOut):
 class FileTrace(BaseModel):
     filename: Optional[str]
     hops: List[TraceHop]
+
+
+JobStepOut.model_rebuild()
+JobStepSave.model_rebuild()

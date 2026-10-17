@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import StepType
-from app.schemas import StepParameterOut, StepTypeOut
+from app.schemas import StepOutputOut, StepParameterOut, StepTypeOut
 from engine.handlers import HANDLER_REGISTRY
 from engine.step_catalog import ENDPOINT_SUFFIX, LOCATION
 
@@ -14,12 +14,17 @@ router = APIRouter(prefix="/api/v1/step-types", tags=["Step Catalog"])
 
 
 def _describe(step_type: StepType) -> StepTypeOut:
+    handler = HANDLER_REGISTRY.get(step_type.HandlerClass)
     return StepTypeOut(
         code=step_type.HandlerClass,
         name=step_type.TypeName,
         description=step_type.Description,
         active=bool(step_type.IsActive),
-        has_handler=step_type.HandlerClass in HANDLER_REGISTRY,
+        has_handler=handler is not None,
+        block=bool(handler and handler.BLOCK),
+        hidden=bool(handler and handler.HIDDEN),
+        outputs=[StepOutputOut(name=o.name, data_type=o.data_type, description=o.description)
+                 for o in (handler.outputs() if handler else ())],
         parameters=[
             StepParameterOut(
                 name=d.ParamName,

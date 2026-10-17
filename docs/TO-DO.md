@@ -88,17 +88,17 @@ Every page of the web interface is built. See [UI_VISION.md](UI_VISION.md) for w
 
 2. **Scheduler integration.** Decision 7 holds the plan and the user's thoughts; [INTEGRATION.md](INTEGRATION.md) what a WLA plug-in can rely on. Steps 1 to 4 are built: run context, embedded mode and the documented addresses, reading a WLA job's parameters, and the Stand-in Scheduler. Next is a real WLA, when one is available.
 
-### Then: jobs that do more
+### Done: flow control (2026-10-17, from RunMyFiles)
 
-Two significant features, each worth its own design session before any code.
+Designed with the owner and built in RunMyFiles on 2026-10-16, then brought over: [FLOW_CONTROL.md](FLOW_CONTROL.md). If/Else If/Else, For Each File and While; step outputs read as `%{StepName.Output}`; conditions written as a SQL `WHERE` clause; On failure; the sample export job uses them. Next, when wanted:
 
-- **Flow control step types:** If-Then-Else, While, For-Each and the like, as ActiveBatch has. They turn a job's steps into a real scripting language, which is what makes complex jobs possible without scripts.
-  - Questions for the design:
-    - how a block of steps is held in the database and shown in the editor (nesting, and moving steps in and out);
-    - what a condition can test (a variable, a step's result, whether files exist, a count);
-    - how For-Each names the current item (a file, a row, a list value) for the steps inside it;
-    - how loops are limited, so a While cannot run forever;
-    - how the job log and the trace show steps that ran several times, or not at all.
+- **A general For Each:** over the rows of a Run SQL step's result, or a list of values, with SQL row outputs to feed it.
+- **Break and Continue** steps inside loops.
+- **The presenter deck** still describes the export job's four steps; the walkthrough in DEMO.md is up to date.
+- **`POST /api/v1/jobs/init`** (the runner's payload, decision 2) still lists steps flat, without their nesting. It is used by nothing yet; it needs the tree when the runner switches to the API.
+
+### Then: workflows
+
 - **A workflow object type:** a set of jobs with dependencies between them, designed and run in AutoApp. It answers the RunMyJobs job-chain shortcomings listed in [PROJECT_GOALS.md](PROJECT_GOALS.md) goal 2. Being designed: the starting point, decisions and open questions are in [WORKFLOWS.md](WORKFLOWS.md).
 
 ### Then: breadth

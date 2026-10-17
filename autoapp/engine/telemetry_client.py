@@ -75,6 +75,8 @@ class LocalSpoolTelemetryClient:
         status: str,
         step_id: Optional[int] = None,
         step_order: Optional[int] = None,
+        step_number: Optional[str] = None,
+        iteration: Optional[str] = None,
         source_path: Optional[str] = None,
         source_filename: Optional[str] = None,
         source_size: Optional[int] = None,
@@ -96,6 +98,8 @@ class LocalSpoolTelemetryClient:
         self._write("OPERATION", {
             "StepID": step_id,
             "StepOrder": step_order,
+            "StepNumber": step_number,
+            "Iteration": iteration,
             "OpType": op_type,
             "Status": status,
             "SourcePath": source_path,

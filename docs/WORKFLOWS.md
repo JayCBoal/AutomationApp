@@ -65,6 +65,7 @@ The owner found it intuitive. A place to start, not to copy as-is.
 
 ### Prerequisites (2026-10-17)
 
+- An embedded workflow can carry prerequisites as a whole ("Transform waits for the extracts"): they gate everything inside it, and its lines go to its frame. A job inside can also have its own, even to something outside the frame (only Enrich waits for the FX rates); its line then goes into the frame to it. The diagram draws whichever was defined (2026-10-17).
 - One concept for what a job waits for: on another job in the same workflow it is drawn as an arrow; on something outside the workflow (a job in another workflow, a file, a value) it is drawn as a marked link, never hidden (shortcoming 4).
 
 ### Reactions (2026-10-17)
@@ -228,6 +229,7 @@ What a cancelled or killed job ends as: see Reason, below.
 To be judged again in practice once built, above all the outside dependencies.
 
 - **Layout:** left to right by default (columns are the levels of the graph; parallel jobs stack down a column), top to bottom as a choice for portrait screens. Laid out automatically; no dragging (pinning perhaps later).
+  - Each column keeps the order the jobs have in the definition (the outline's order), so folding a frame or other changes do not reshuffle it, at some cost in compactness (decided 2026-10-17, after the mockup).
 - **Full names, always:** a box wraps its name onto as many lines as needed, so one long name does not widen its whole column. Never truncated.
 - **A box in the editor** shows what kind of thing it is: embedded or shared, job or workflow; disabled here or elsewhere; has Reactions. Everything else is in the side panel on selection, the same panel as the job editor. It has no status: statuses are for runs.
 - **Every kind of dependency is visible:**
@@ -239,11 +241,14 @@ To be judged again in practice once built, above all the outside dependencies.
   - Ended (any final status): black, solid;
   - return codes: blue, labelled (`RC 4`, `RC 0-4`);
   - any other status, or a combination: grey, labelled.
-  - *Any* rather than all is marked where arrows enter a job. Rerun from… Reactions are a dashed arrow back upstream.
-- **Embedded workflows** are a frame around their jobs, collapsible to one box with a summary ("Extract: 12 jobs"; in a run "2 running, 1 failed"). **Shared** ones are a single box, opening read-only.
-- **Outside dependencies, both ways** (shortcoming 4): what this workflow waits for as dashed boxes at the left edge (`⇢ MONTH_END / Extract`, linking there); what waits for this workflow as dashed boxes at the right edge (`Needed by ⇢ BILLING / Load`); Start a workflow Reactions as right-edge stubs.
+  - *Any* rather than all is marked where arrows enter a job.
+  - Reactions have a look of their own, since dashed means Failed: Rerun from… is a dash-dot line in the muted colour, back upstream, its label marked ↺ (decided 2026-10-17, after the mockup).
+  - Pointing at any line says what it means ("Transform waits until Extract_US succeeded"); so does pointing at a marker (decided 2026-10-17, after the mockup).
+- **Embedded workflows** are a frame around their jobs; a frame shows ▾ to fold it and a folded one ▸ to unfold it (a double-click unfolds too); folded, it is one box with a summary ("Extract: 12 jobs"; in a run "2 running, 1 failed"). **Shared** ones are a single box, opening read-only.
+- **Outside dependencies, both ways** (shortcoming 4); selecting one opens the same side panel as a job, marked *Outside this workflow*: what this workflow waits for as dashed boxes at the left edge (`⇢ MONTH_END / Extract`, linking there); what waits for this workflow as dashed boxes at the right edge (`Needed by ⇢ BILLING / Load`); Start a workflow Reactions as right-edge stubs.
 - **In a run**, boxes use the lines' colours and patterns: Succeeded green; Failed red; Running blue with a moving stripe; Waiting on a prerequisite an amber outline (the side panel says which); not started yet plain; Held a pause marker; Not run hollow grey; Skipped grey stripes; Disabled crossed out; Bypassed a dashed outline with an arrow through; late a red clock. Rerun ▸ on every box.
 - **Editing:** + Job (New job here, Use an existing job…); drag from box to box to make a prerequisite, select a line to change its test; Disable here and Rerun ▸ on each box's menu.
+- **The key** (what lines, states and markers mean) is folded away by default: once learnt it only takes room, and pointing at things explains them.
 - **Diagram | Outline**, the same switch and words in the job editor and the workflow editor. The outline is an indented list (embedded workflows nested, prerequisites under each job), for very large workflows and screen readers.
 - **Find:** matches as AutoApp's search pages do (case ignored, anywhere in the name), and looks everywhere: direct children, inside embedded workflows and inside shared ones, however deep. Results list their path (`MONTH_END / Extract / Stage_EU`). On the diagram, matches are highlighted, a collapsed frame says how many it holds ("2 matches inside"), and *Show matches* opens every frame on the way to them; shared workflows open inline for this, read-only and visibly distinct. Zoom and fit too.
 - **Layout engine:** elkjs (Eclipse Layout Kernel), vendored like Alpine, for positions only; AutoApp draws the SVG. Its licence is the Eclipse Public License 2.0: free, nothing to buy, and no obligation on AutoApp unless elkjs's own code were changed and distributed. Chosen over dagre (MIT), which handles nested frames poorly. The owner cares about the UX, not the means, provided nothing needs a paid licence.
@@ -267,15 +272,21 @@ To be judged again in practice once built, above all the outside dependencies.
 - **Phase 8, time-based Reactions** (the SLA reach): not started by, not ended by, runs longer than; Mark as late; Notify (needs a way to notify, such as the Send email step in TO-DO).
 - The order follows the shortcomings' priority, except that the diagram comes second (every later phase has something to show on it), and restarts and time-based Reactions, the deepest engine work and the least needed to show the design, come last.
 - The owner may change the order of Phases 3 to 8 later.
-- Each phase is planned in detail just before it is built. The mockup is made now, alongside planning Phase 1 (it does not depend on it): `autoapp/ui/mockup_workflow.html`.
+- Each phase is planned in detail just before it is built. The mockup was made alongside planning Phase 1: `autoapp/ui/mockup_workflow.html` (open it from the running server at `/ui/mockup_workflow.html`; it is not in the navigation bar).
+- Phase 1's plan: [WORKFLOWS_PHASE1.md](WORKFLOWS_PHASE1.md).
 
 
 ## Proposed, to settle
 
+- **Prerequisites that aren't satisfied** (proposed 2026-10-17). Already decided: one that can never hold makes the job Not run, cascading; one outside the workflow waits, with an optional limit. The rest, in two levels:
+  - *on each prerequisite*, how long to wait and whether it is required: wait with no limit (the default inside a workflow), up to N minutes, or until a time ("until 02:00"); if it isn't met in time, **required** (the default: the job can't start) or **optional** (go ahead without it: "use today's FX rates if they arrive by 02:00, otherwise carry on");
+  - *on the job*, what "can't start" means: **Not run** (the default, cascading), **Fail** (Failed, Reason `PREREQUISITES_NOT_MET` or `TIMED_OUT`, so failure paths and Reactions take over), or **Hold for an operator**.
+  - Why two levels: patience belongs to each thing waited for (the file has until 02:00, the other workflow until 03:00); the consequence belongs to the job, which has one fate however it failed to start, as with Reactions' decisions. A time-based Reaction ("not started by 03:00") sits beside this as a side effect (notify, mark as late), not deciding the job's fate.
+  - Questions for the owner: is this the right split; anything missing.
+
 ## Open questions, by topic
 
 - **Reactions on a use** (raised 2026-10-17): whether a use can add Reactions of its own to its definition's (proposed: yes, the use's looked at first).
-- **Reactions (4):** see the proposal above; also, for an outside prerequisite that times out, whether the job counts as failed or not run.
 - **Diagram and editor (6):** how a job's steps (with If and loops) are drawn as a diagram.
 - **Run records (7):**
   - how a workflow's runs appear in Job History, the Operations Log and the trace (perhaps a parent run with each job's run as a child);

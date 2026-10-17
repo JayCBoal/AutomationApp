@@ -13,6 +13,7 @@ from pathlib import Path
 import pytest
 
 from app.models import JobStep, Operation
+from conftest import read_logs
 from engine import conditions
 
 MIGRATION = Path(__file__).resolve().parents[2] / "SQL" / "migrate_flow_control.py"
@@ -23,8 +24,7 @@ def names(folder):
 
 
 def job_log(spool_records, tmp_path) -> str:
-    return "\n".join(line for r in spool_records(tmp_path / "spool", with_log=True) if r["Record"] == "LOG"
-                     for line in r["Lines"])
+    return read_logs(tmp_path / "logs")
 
 
 def if_job(seed, condition, elseif=None):

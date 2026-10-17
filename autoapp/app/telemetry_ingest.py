@@ -1,5 +1,6 @@
 """
-Loads telemetry records (see app/schemas.py) into JobRuns, Operations and JobRunLogs.
+Loads telemetry records (see app/schemas.py) into JobRuns and Operations. The job log is not among
+them: it is a file on the host that ran the job, and RUN_START says where (engine/log_files.py).
 
 Used by the /api/v1/telemetry/records route and by engine.spool_delivery.
 Loading is safe to repeat: a run is identified by its RunID and an operation by
@@ -11,7 +12,7 @@ from typing import Any, Dict, List, Optional
 
 from sqlalchemy.orm import Session
 
-from app.models import Endpoint, Job, JobRun, JobRunLog, JobStep, Operation
+from app.models import Endpoint, Job, JobRun, JobStep, Operation
 from app.schemas import LogRecord, OperationRecord, RunEndRecord, RunStartRecord, TelemetryBatch, TelemetryIngestResult
 
 
@@ -61,6 +62,7 @@ def ingest_batch(db: Session, batch: TelemetryBatch) -> TelemetryIngestResult:
                     SchedulerName=record.Scheduler,
                     BusinessDate=record.BusinessDate,
                     Host=record.Host,
+                    LogFile=record.LogFile,
                     Status="RUNNING",
                     StartedDateTime=_naive_utc(record.StartedAtUtc),
                     ParentRun_id=parent.id if parent else None,
@@ -111,13 +113,7 @@ def ingest_batch(db: Session, batch: TelemetryBatch) -> TelemetryIngestResult:
                 result.operations_added += 1
 
             elif isinstance(record, LogRecord):
-                already = db.query(JobRunLog.id).filter(
-                    JobRunLog.JobRun_id == run.id, JobRunLog.Seq == record.Seq
-                ).first()
-                if already:
-                    result.duplicates_skipped += 1
-                    continue
-                db.add(JobRunLog(JobRun_id=run.id, Seq=record.Seq, LogText="\n".join(record.Lines)))
+                continue        # from a runner older than log files: its lines are not kept
 
             elif isinstance(record, RunEndRecord):
                 if run.EndedDateTime is not None:

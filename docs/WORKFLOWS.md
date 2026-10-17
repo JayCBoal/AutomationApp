@@ -97,6 +97,7 @@ The owner found it intuitive. A place to start, not to copy as-is.
 - Disabling a job *in a workflow* affects only that use of it: "stop here" (Disabled) or "pass through" (Bypassed). The workflow editor offers this on the job itself ("Disable here"), separately from disabling the definition, which is done on the job's own page.
 - Disabling a *shared definition* means it can run nowhere: a hard stop, shown on each workflow's diagram as disabled elsewhere.
 - Whenever a shared job is disabled, from a workflow that uses it or on its own page, the user is warned which workflows use it and what will happen in each.
+- The workflows still run: a disabled job does not stop one from starting. Only what is wrong with the workflow as a whole does (it is disabled itself, or empty). A job in it that would fail its own pre-run check fails when its turn comes, with its reason, as it would on its own; the workflow's check lists both kinds in advance as warnings. (Built in Phase 1, with the warning, 2026-10-17.)
 
 ### Names of jobs in a workflow (2026-10-17)
 
@@ -149,7 +150,7 @@ What a cancelled or killed job ends as: see Reason, below.
     - Rerun this job: Resume or Restart from beginning, after a wait, at most N times;
     - Rerun from…: a chosen upstream job and everything between it and this one, at most N times;
     - Skip…: chosen jobs, or the rest of a branch;
-    - Cancel the workflow (nothing more starts; running jobs finish) and Kill the workflow (nothing more starts; running jobs are ended now), as in RunMyJobs;
+    - Kill the workflow (see "Kill, Cancel and Hold", below);
     - Cancel the job (one not yet started will not start) and Kill the job (ends it while running);
     - Hold for an operator: pauses the workflow until someone chooses what next (Control-M's "leave it waiting", on purpose and visible);
   - *side effects*, changing nothing in the run: Notify; Mark as late (a flag, not a status, shown on the diagram and in Job History and searchable: the record of a missed deadline); Start a workflow (the one push in the model, drawn as an outside link).
@@ -157,7 +158,7 @@ What a cancelled or killed job ends as: see Reason, below.
   - Why: a job has one fate, but any number of people can hear about it. Example: A "failed: notify ops", B "return code 8: rerun, at most twice", C "failed: cancel the workflow". On a failure with code 8, ops are notified and the job reruns; C applies when the code is not 8, or once B's reruns are used up. With every match firing (Control-M's On-Do, in order, where an earlier Do can change how a later On evaluates) the rerun and the cancel would compete; with first match only, the notify would have to be copied into B.
   - In the editor (decided), two sections make the rule visible: **What happens next** (ordered; the first that holds wins, like If/ElseIf) and **Also** (every one that holds fires).
 - Each rerun's N counts per workflow run; when it is used up, the next matching decision applies ("rerun twice, then hold").
-- A workflow's own Reactions decide its final status; by default a workflow with a Failed job is Failed.
+- A workflow's own Reactions and completion rules decide its final status; by default, see "When a workflow succeeds", below.
 - "Explain" shows which entries matched and which actions took effect.
 - Steps' On failure is expected to become Reactions too, one mechanism for both.
 
@@ -295,6 +296,35 @@ To be judged again in practice once built, above all the outside dependencies.
 ### Where workflows run (2026-10-17)
 
 - The workflow runner works on the database directly, beside the server, not on an agent. In ActiveBatch terms, workflows run on the server's own virtual queue, the natural home if queues ever come.
+
+### When a workflow succeeds (2026-10-17)
+
+- **By default, a workflow succeeds unless a failure went unhandled.** The owner's framing: it succeeds if all of its jobs that nothing waits for succeeded, so a handled failure does not fail it. Refined so that a failure cut off by Not run still counts:
+  - a failed job fails the workflow unless something that waits for it ran anyway (its prerequisite on that job held);
+  - a job nothing waits for must not fail;
+  - Not run, Skipped, Disabled and Bypassed jobs do not count against it, except a job Not run because it was cancelled (Reason `CANCELLED`): that counts as unhandled, so a workflow someone cancelled part of does not end green unless its completion rules say so.
+- Examples: in the sample, a failed ledger check is handled because Alert finance ran, so the workflow's outcome is Alert finance's. In A → B (B waits for A to succeed), A fails and B is Not run: nothing ran because of A's failure, so the workflow fails. With Any, a failure a waiter could do without counts as handled.
+- Built in Phase 1 (2026-10-17), replacing "any failed job fails the workflow".
+- **Completion rules**, set on a workflow when the default is not wanted:
+  - *Ends when:* all its jobs have ended (the default), or chosen jobs have ended; the rest are then left to finish on their own, or killed.
+  - *Succeeds when:* the default above, or chosen jobs succeeded, or a condition (flow control's language).
+  - *Return code:* 0 or 1 (the default), a chosen job's, or mapped from conditions.
+  - With Reactions (Phase 3); conditions need Phase 4.
+
+### Kill, Cancel and Hold on a workflow (2026-10-17)
+
+- **Cancel** and **Hold** are for what has not started: a cancelled job or workflow ends Not run, Reason `CANCELLED`; a held one waits for an operator.
+- **A running workflow** offers two actions, down through the workflows inside it:
+  - **Kill:** kills its jobs that are running (Failed, `KILLED`) and cancels those not yet started (Not run, `CANCELLED`);
+  - **Cancel what hasn't started:** cancels those not yet started; the jobs running finish.
+- Either way the jobs keep their own statuses and reasons, and the workflow's status follows its completion rules, or the default ("When a workflow succeeds", where cancelled jobs count as unhandled). Its `Reason` says it was killed or cancelled.
+- The rule underneath: never started is Not run; started and stopped on purpose is Failed, with a Reason saying how.
+- Phase 1 has **Cancel what hasn't started** (the workflow ends Failed, `CANCELLED`). Kill comes in Phase 3.
+
+### Loops (2026-10-17)
+
+- A loop is allowed in a workflow, with a required maximum number of runs. It is not made of prerequisites: A waiting for B while B waits for A can never start, so saving still refuses that, and its message points to the way to repeat jobs.
+- A loop is a repeat link, "after B, go back to A", with a condition and at most N runs, each pass a new attempt: the Reaction "Rerun from…", drawn as the dash-dot ↺ line.
 
 ## Proposed, to settle
 

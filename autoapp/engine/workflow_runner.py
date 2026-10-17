@@ -15,11 +15,12 @@ Every second or so it:
   - starts every job whose prerequisites now hold;
   - marks Not run each job whose prerequisites can never hold, which can cascade;
   - after a Cancel, starts nothing more, and marks what has not started Not run.
-The workflow ends when every job has a final status: Failed if any job failed (or if it
-was cancelled), otherwise Succeeded.
+The workflow ends when every job has a final status. By default (docs/WORKFLOWS.md, "When a
+workflow succeeds") it fails if a failure went unhandled: a job failed and nothing that waits
+for it ran, or a job was cancelled. Otherwise it succeeds, so a failure path that did its job
+leaves the workflow green.
 """
 import os
-import socket
 import subprocess
 import sys
 import tempfile
@@ -32,13 +33,13 @@ from typing import Dict, List, Optional, Tuple
 
 from sqlalchemy.orm import Session
 
-from app.models import Job, JobRun, JobRunLog, WorkflowRunItem, utcnow
-from engine import job_log, return_codes
+from app.models import Job, JobRun, WorkflowRunItem, utcnow
+from engine import job_log, log_files, return_codes
 
 AUTOAPP_DIR = Path(__file__).resolve().parents[1]
 CHILD_SCHEDULER = "AutoApp workflow"
 POLL_SECONDS = float(os.getenv("AUTOAPP_WORKFLOW_POLL_SECONDS", "1"))
-FINAL = ("SUCCESS", "FAILED", "NOT_RUN")
+FINAL = ("SUCCESS", "FAILED", "NOT_RUN", "DISABLED")
 HOLDS, NEVER, WAIT = "HOLDS", "NEVER", "WAIT"
 OUTPUT_KEPT = 20                # lines of a job runner's own output kept, for one that left no record
 
@@ -70,6 +71,7 @@ class Planned:
     join: str
     prerequisites: List[Tuple[str, str, Optional[str]]]       # (target name, test, return codes)
     row: WorkflowRunItem
+    active: bool = True             # a disabled job ends Disabled when its turn comes: a hard stop
     process: Optional[subprocess.Popen] = None
     run_id: Optional[str] = None
     output_path: Optional[str] = None
@@ -121,7 +123,8 @@ def why_never(planned: Planned, by_name: Dict[str, Planned]) -> str:
 
 def outcome_words(row: WorkflowRunItem) -> str:
     code = f" with return code {row.ReturnCode}" if row.ReturnCode is not None else ""
-    return {"SUCCESS": f"succeeded{code}", "FAILED": f"failed{code}", "NOT_RUN": "did not run"}.get(row.Status, "has not ended")
+    return {"SUCCESS": f"succeeded{code}", "FAILED": f"failed{code}", "NOT_RUN": "did not run",
+            "DISABLED": "is disabled"}.get(row.Status, "has not ended")
 
 
 # ---------- The run ----------
@@ -134,7 +137,6 @@ class WorkflowRunner:
         self.items: List[Planned] = []
         self.by_name: Dict[str, Planned] = {}
         self.cancelled = False
-        self._log_seq = 0
 
     def run(self) -> int:
         """Runs the workflow to the end. Returns the exit code for whoever started it: 0 if it succeeded, else 1."""
@@ -168,7 +170,8 @@ class WorkflowRunner:
         run = JobRun(RunID=self.run_id, JobKey=self.workflow.JobKey, Job_MasterObject_id=self.workflow.MasterObject_id,
                      SchedulerInstanceID=self.options.instance_id, RunNumber=self.options.run_number,
                      SchedulerName=self.options.scheduler, BusinessDate=self.options.business_date,
-                     Host=socket.gethostname(), Status="RUNNING", JobType="WORKFLOW", StartedDateTime=utcnow(),
+                     Host=log_files.this_host(), LogFile=log_files.start(self.run_id), Status="RUNNING",
+                     JobType="WORKFLOW", StartedDateTime=utcnow(),
                      ParentRun_id=parent.id if parent else None, WorkflowPath=self.options.workflow_path,
                      Attempt=self.options.attempt)
         self.db.add(run)
@@ -183,25 +186,42 @@ class WorkflowRunner:
         return self.record.ReturnCode
 
     def _conclude(self) -> int:
-        failed = [p.name for p in self.items if p.row.Status == "FAILED"]
-        not_run = [p.name for p in self.items if p.row.Status == "NOT_RUN"]
-        if self.cancelled:
-            job_log.error(f"Workflow '{self.workflow.JobKey}' was cancelled.")
-            return self._finish("FAILED", "CANCELLED", "Cancelled: nothing more was started.")
-        if failed:
-            message = f"{_count(failed, 'job')} failed: {', '.join(failed)}."
+        """Succeeded, unless a failure went unhandled or jobs were cancelled."""
+        cancelled = [p.name for p in self.items if p.row.Reason == "CANCELLED"]
+        unhandled, handled = self._failures()
+        not_run = [p.name for p in self.items if p.row.Status == "NOT_RUN" and p.row.Reason != "CANCELLED"]
+        if cancelled:
+            message = f"Cancelled: {_count(cancelled, 'job')} did not start: {', '.join(cancelled)}."
+            job_log.error(f"Workflow '{self.workflow.JobKey}' was cancelled. {message}")
+            return self._finish("FAILED", "CANCELLED", message)
+        if unhandled:
+            message = (f"{_count(unhandled, 'job')} failed with nothing that waits for {_it(unhandled)} run: "
+                       f"{', '.join(unhandled)}.")
             job_log.error(f"Workflow '{self.workflow.JobKey}' failed. {message}")
             return self._finish("FAILED", "JOB_FAILED", message)
+        if handled:
+            job_log.summary(f"{_count(handled, 'job')} failed, and what waits for {_it(handled)} ran: "
+                            f"{', '.join(handled)}.")
         job_log.summary(f"Workflow '{self.workflow.JobKey}' completed successfully"
                         + (f"; {_count(not_run, 'job')} did not run, as planned: {', '.join(not_run)}." if not_run else "."))
         return self._finish("SUCCESS", None)
 
+    def _failures(self) -> Tuple[List[str], List[str]]:
+        """The failed jobs, as (unhandled, handled): handled if a job that waits for it started anyway."""
+        waiters: Dict[str, List[Planned]] = {}
+        for planned in self.items:
+            for target, _test, _codes in planned.prerequisites:
+                waiters.setdefault(target, []).append(planned)
+        unhandled, handled = [], []
+        for planned in self.items:
+            if planned.row.Status != "FAILED":
+                continue
+            ran = any(w.row.Status in ("SUCCESS", "FAILED") for w in waiters.get(planned.name, []))
+            (handled if ran else unhandled).append(planned.name)
+        return unhandled, handled
+
     def _save(self) -> None:
-        """Commits the run's state, with the lines the workflow's log has gained."""
-        lines = job_log.take_lines()
-        if lines:
-            self._log_seq += 1
-            self.db.add(JobRunLog(JobRun_id=self.record.id, Seq=self._log_seq, LogText="\n".join(lines)))
+        """Commits the run's state. Its log goes straight to its file."""
         self.db.commit()
 
     # --- Planning, from the workflow as it is now ---
@@ -213,7 +233,8 @@ class WorkflowRunner:
                                   ItemName=item.ItemName, JobKey=item.job.JobKey, ItemOrder=position)
             self.db.add(row)
             prerequisites = [(p.target.ItemName, p.Test, p.ReturnCodes) for p in item.prerequisites if p.target]
-            self.items.append(Planned(item.ItemName, item.job.JobKey, item.JoinRule, prerequisites, row))
+            self.items.append(Planned(item.ItemName, item.job.JobKey, item.JoinRule, prerequisites, row,
+                                      active=bool(item.job.IsActive)))
         self.by_name = {p.name: p for p in self.items}
         job_log.detail(f"{_count(self.items, 'job')}: " + ", ".join(p.name for p in self.items))
         self._save()
@@ -245,6 +266,10 @@ class WorkflowRunner:
                 if state == NEVER:
                     self._not_run(planned, "PREREQUISITES_NOT_MET",
                                   f"'{planned.name}' will not run: {why_never(planned, self.by_name)}.")
+                    changed = True
+                elif state == HOLDS and not planned.active:
+                    planned.row.Status, planned.row.EndedDateTime = "DISABLED", utcnow()
+                    job_log.summary(f"'{planned.name}' is disabled (job '{planned.job_key}'), so it does not run.")
                     changed = True
                 elif state == HOLDS:
                     self._start(planned)
@@ -322,6 +347,10 @@ class WorkflowRunner:
 
 
 # ---------- Small helpers ----------
+
+def _it(names: List[str]) -> str:
+    return "it" if len(names) == 1 else "them"
+
 
 def _count(things, word: str) -> str:
     return f"{len(things)} {word}{'' if len(things) == 1 else 's'}"

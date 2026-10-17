@@ -21,10 +21,10 @@ function workflowDetail() {
     const address = new URLSearchParams(location.search);
     const TESTS = { SUCCESS: "succeeded", FAILED: "failed", ENDED: "ended, whatever happened", RC: "gave return codes" };
     const STATES = { PENDING: "Not started yet", WAITING: "Waiting", RUNNING: "Running", SUCCESS: "Succeeded",
-                     FAILED: "Failed", NOT_RUN: "Not run" };
+                     FAILED: "Failed", NOT_RUN: "Not run", DISABLED: "Disabled" };
     const REASONS = { PREREQUISITES_NOT_MET: "its prerequisites can't be met", CANCELLED: "the workflow was cancelled",
                       RETURN_CODE: "its return code is not a success code", ERROR: "a step failed",
-                      JOB_FAILED: "a job failed" };
+                      JOB_FAILED: "a failure went unhandled" };
     const POLL_MS = 1500;
     let nextUid = 1;
     let pollTimer = null;
@@ -142,6 +142,7 @@ function workflowDetail() {
 
         get changed() { return Boolean(this.form) && this.editing && JSON.stringify(this.payload()) !== this.saved; },
         get problems() { return this.check ? this.check.problems : []; },
+        get warnings() { return this.check ? this.check.warnings || [] : []; },
 
         // ---------- Choosing and editing ----------
 
@@ -200,6 +201,7 @@ function workflowDetail() {
         },
 
         async submit() {
+            if (!AutoApp.confirmDisable(this.job, this.payload())) return;
             this.busy = true;
             this.error = "";
             this.notice = "";
@@ -208,7 +210,7 @@ function workflowDetail() {
                     ? await AutoApp.send("PUT", "/jobs/" + encodeURIComponent(this.job.job_key), this.payload())
                     : await AutoApp.send("POST", "/jobs", this.payload());
                 this.job = result.job;
-                this.check = { valid: result.valid, problems: result.problems };
+                this.check = { valid: result.valid, problems: result.problems, warnings: [] };
                 this.show(result.job);
                 this.editing = false;
                 this.notice = result.changes.length ? "Saved. " + result.changes.join(" ") : "Saved. Nothing had changed.";
@@ -218,6 +220,7 @@ function workflowDetail() {
                     this.isNew = false;
                 }
                 this.allJobs = await AutoApp.get("/jobs");
+                this.check = await AutoApp.get("/jobs/" + encodeURIComponent(result.job.job_key) + "/check");
                 await this.loadRuns();
             } catch (e) {
                 this.error = e.message;

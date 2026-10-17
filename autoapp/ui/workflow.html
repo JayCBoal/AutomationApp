@@ -53,7 +53,7 @@
                 <span class="spacer"></span>
                 <button type="button" class="secondary danger" id="cancel-run-button"
                         x-show="run.status === 'RUNNING' && !run.cancel_requested" @click="cancelRun()"
-                        title="Start nothing more. The jobs running now finish.">Cancel run</button>
+                        title="Start nothing more. The jobs running now finish.">Cancel what hasn't started</button>
                 <span class="muted small" x-show="run.cancel_requested && run.status === 'RUNNING'">Cancelling: waiting for the running jobs to finish</span>
                 <a x-show="run.run_id" :href="logLink(run.run_id)">The workflow's log</a>
                 <button type="button" class="link" @click="closeRun()">Close</button>
@@ -95,6 +95,9 @@
                         <span class="muted small" x-show="changed">(as last saved, not as it is on screen)</span>
                         <ul class="problems" x-show="problems.length">
                             <template x-for="problem in problems"><li x-text="problem"></li></template>
+                        </ul>
+                        <ul class="warnings" id="check-warnings" x-show="warnings.length">
+                            <template x-for="warning in warnings"><li class="message warning small" x-text="warning"></li></template>
                         </ul>
                     </div>
                 </div>

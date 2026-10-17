@@ -82,12 +82,20 @@ def test_a_workflow_whose_jobs_would_run_is_ready(client, jobs, db):
     assert result["valid"], result["problems"]
 
 
-def test_a_workflow_says_which_of_its_jobs_would_not_run(client, jobs, db):
+def test_a_disabled_job_does_not_stop_a_workflow_and_the_check_warns_of_it(client, jobs, db):
     db.query(Job).filter(Job.JobKey == "LOAD").one().IsActive = False
     db.commit()
     result = save(client, workflow()).json()
-    assert not result["valid"]
-    assert result["problems"] == ["'LOAD' would not run: Job 'LOAD' is disabled."]
+    assert result["valid"], result["problems"]
+    check = client.get(ROUTE + "/MONTH_END/check").json()
+    assert check["valid"]
+    assert check["warnings"] == ["'LOAD' is disabled: it will end Disabled, and what needs it to succeed will not run."]
+
+
+def test_a_job_says_which_workflows_use_it(client, jobs):
+    save(client, workflow())
+    assert client.get(ROUTE + "/LOAD").json()["used_in"] == ["MONTH_END"]
+    assert client.get(ROUTE + "/MONTH_END").json()["used_in"] == []
 
 
 def test_an_empty_workflow_is_saved_but_will_not_run(client, jobs):
@@ -108,7 +116,7 @@ def test_an_empty_workflow_is_saved_but_will_not_run(client, jobs):
     ([item("LOAD", join="SOME")], "'LOAD': its join must be ALL or ANY, not 'SOME'."),
     ([item("NOPE")], "'NOPE' runs the job 'NOPE', which does not exist."),
     ([item("LOAD", "A", after=["C"]), item("EXTRACT_EU", "B", after=["A"]), item("EXTRACT.US", "C", after=["B"])],
-     "The prerequisites go round in a loop: 'A', which waits for 'C', which waits for 'B', which waits for 'A'."),
+     "The prerequisites go round in a loop: 'A', which waits for 'C', which waits for 'B', which waits for 'A'. None of them could ever start."),
 ])
 def test_a_workflow_that_cannot_work_is_refused_saying_why(client, jobs, items, message):
     response = save(client, workflow(items=items))

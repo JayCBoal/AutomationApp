@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -9,6 +10,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.catalog import sync_catalog
 from app.database import get_db
+from app.log_agent import remove_old_logs
 from app.routers import (
     definitions, endpoints, history, jobs, launches, lookups, operations, registry, schedulers, settings, step_types,
     telemetry, variables
@@ -16,6 +18,8 @@ from app.routers import (
 from app.schema_check import out_of_date_message, schema_problems
 
 logger = logging.getLogger("AutoApp.API")
+
+LOG_CLEANUP_SECONDS = 24 * 60 * 60      # old job logs are looked for at startup, then once a day
 
 
 def database_shortfall() -> list:
@@ -34,9 +38,31 @@ UI_DIR = Path(__file__).resolve().parents[1] / "ui"
 
 
 
+def remove_old_logs_now() -> None:
+    """Removes the job logs older than the Settings page allows. A failure is logged and tried again tomorrow."""
+    sessions = app.dependency_overrides.get(get_db, get_db)()
+    try:
+        removed = remove_old_logs(next(sessions))
+        if removed:
+            logger.info("Removed %d job logs older than the Settings page allows.", removed)
+    except (SQLAlchemyError, OSError) as e:
+        logger.warning("Old job logs were not removed: %s", str(e).splitlines()[0])
+    finally:
+        sessions.close()
+
+
+async def remove_old_logs_daily() -> None:
+    while True:
+        await asyncio.to_thread(remove_old_logs_now)
+        await asyncio.sleep(LOG_CLEANUP_SECONDS)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """On startup, check the database fits this version, and bring the step catalog into line with the handlers."""
+    """
+    On startup, check the database fits this version, and bring the step catalog into line with the handlers.
+    While running, remove old job logs once a day.
+    """
     shortfall = database_shortfall()
     if shortfall:
         logger.error(out_of_date_message(shortfall))
@@ -48,7 +74,9 @@ async def lifespan(app: FastAPI):
         logger.warning("The step catalog was not updated: %s", str(e).splitlines()[0])
     finally:
         sessions.close()
+    cleanup = asyncio.create_task(remove_old_logs_daily())
     yield
+    cleanup.cancel()
 
 
 app = FastAPI(

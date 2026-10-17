@@ -252,23 +252,6 @@ class TagAssignment(Base):
     tag = relationship("Tag", foreign_keys=[Tag_MasterObject_id])
 
 
-class JobRunLog(Base):
-    """
-    Lines of a run's job log, as the runner sent them: one row for each batch,
-    in Seq order. The runner masked secret values before sending.
-    """
-    __tablename__ = 'JobRunLogs'
-    __table_args__ = (
-        UniqueConstraint('JobRun_id', 'Seq', name='uq_runlog_run_seq'),
-    )
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    JobRun_id = Column(Integer, ForeignKey('JobRuns.id', ondelete='CASCADE'), nullable=False)
-    Seq = Column(Integer, nullable=False)
-    # One line per line of the log. MEDIUMTEXT on MariaDB, as a busy step can log a great deal
-    LogText = Column(Text().with_variant(mysql.MEDIUMTEXT(), "mysql", "mariadb"), nullable=False)
-
-
 class SettingValue(Base):
     """
     A system-wide setting changed from its default. The settings themselves, their
@@ -471,6 +454,10 @@ class JobRun(Base):
     Attempt = Column(Integer, nullable=False, default=1, server_default=text('1'))
     # Set when someone asks a workflow run to start nothing more
     CancelRequestedDateTime = Column(PreciseDateTime, nullable=True)
+    # The job log is a file on the host that ran the job (engine/log_files.py): where it is within that
+    # host's log folder, and when it was removed for being older than the Settings page's limit
+    LogFile = Column(String(500), nullable=True)
+    LogRemovedDateTime = Column(PreciseDateTime, nullable=True)
 
     job = relationship("Job")
     operations = relationship("Operation", back_populates="run", cascade="all, delete-orphan",

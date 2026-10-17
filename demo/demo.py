@@ -47,6 +47,7 @@ def environment() -> dict:
         "DATABASE_URL": f"sqlite:///{WORKSPACE / 'autoapp_demo.db'}",
         "AUTOAPP_WORKING_ROOT": str(WORKSPACE / "work"),
         "AUTOAPP_SPOOL_DIR": str(WORKSPACE / "spool"),
+        "AUTOAPP_LOG_ROOT": str(WORKSPACE / "logs"),
         "STANDIN_DATABASE_URL": f"sqlite:///{WORKSPACE / 'standin_demo.db'}",
         "STANDIN_TOKEN": STANDIN_TOKEN,
         "STANDIN_NAME": "STANDIN",

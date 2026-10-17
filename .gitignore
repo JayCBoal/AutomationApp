@@ -2,6 +2,7 @@ __pycache__/
 *.py[cod]
 *.db
 spool/
+logs/
 test_spool/
 test_workspace/
 test_data/

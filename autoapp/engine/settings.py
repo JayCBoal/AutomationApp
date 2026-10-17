@@ -47,6 +47,17 @@ SETTINGS: Dict[str, Setting] = {s.key: s for s in [
                 ("APP", "The endpoint's application"), ("ENDPOINT", "The endpoint's tags"),
                 ("TAG", "The job's tags"), ("JOB", "The job's own variables")),
     ),
+    Setting(
+        "LogRetentionDays", CHOICE,
+        default="30",
+        title="Keep job logs for",
+        description="How long a run's job log is kept, in days after the run ended. Each log is a file on the "
+                    "host that ran the job; older ones are removed from there once a day, and the run's log "
+                    "page then says when. The run's record and its operations are kept whatever this says.",
+        choices=("7", "14", "30", "90", "365", "FOREVER"),
+        labels=(("7", "A week"), ("14", "Two weeks"), ("30", "30 days"), ("90", "90 days"), ("365", "A year"),
+                ("FOREVER", "Never remove them")),
+    ),
 ]}
 
 

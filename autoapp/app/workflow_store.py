@@ -110,7 +110,8 @@ def _check_no_loops(names: List[str], submitted: List[WorkflowItemSave]) -> None
     loop = find_loop({name: [p.target for p in item.prerequisites] for name, item in zip(names, submitted)})
     if loop:
         chain = ", which waits for ".join(f"'{n}'" for n in loop)
-        raise WorkflowError(f"The prerequisites go round in a loop: {chain}. A job cannot end up waiting for itself.")
+        raise WorkflowError(f"The prerequisites go round in a loop: {chain}. None of them could ever start. "
+                            "To run jobs again, a Rerun from… Reaction will repeat them, up to a limit (not built yet).")
 
 
 def _jobs_used(db: Session, submitted: List[WorkflowItemSave], names: List[str]) -> Dict[str, Job]:
@@ -222,8 +223,14 @@ def _apply_prerequisites(item: WorkflowItem, submitted: WorkflowItemSave, by_nam
 
 # ---------- Checking before a run, and who uses what ----------
 
-def workflow_problems(db: Session, workflow: Job, seen: Optional[Set[int]] = None) -> List[str]:
-    """Everything that would stop the workflow from running, in plain words. Runs nothing."""
+def workflow_problems(db: Session, workflow: Job, warnings: Optional[List[str]] = None,
+                      seen: Optional[Set[int]] = None) -> List[str]:
+    """
+    What would stop the workflow from starting, in plain words: only what is wrong with it as a whole.
+    A job in it that is disabled, or would fail its own pre-run check, does not stop it: when its turn
+    comes it ends Disabled, or fails, and what needs it to succeed does not run. Given a list, warnings
+    gets those jobs, so the check can say so before the run. Runs nothing.
+    """
     from app.routers.jobs import job_problems
     seen = (seen or set()) | {workflow.MasterObject_id}
     problems = []
@@ -231,16 +238,21 @@ def workflow_problems(db: Session, workflow: Job, seen: Optional[Set[int]] = Non
         problems.append(f"Workflow '{workflow.JobKey}' is disabled.")
     if not workflow.items:
         problems.append(f"Workflow '{workflow.JobKey}' has no jobs in it yet. Add the jobs it should run.")
+    if warnings is None:
+        return problems
     checked: Dict[int, List[str]] = {}
     for item in workflow.items:
         job = item.job
         if job.MasterObject_id in seen:
             continue
+        if not job.IsActive:
+            warnings.append(f"'{item.ItemName}' is disabled: it will end Disabled, and what needs it to succeed will not run.")
+            continue
         if job.MasterObject_id not in checked:
-            checked[job.MasterObject_id] = (workflow_problems(db, job, seen) if job.JobType == "WORKFLOW"
+            checked[job.MasterObject_id] = (workflow_problems(db, job, [], seen) if job.JobType == "WORKFLOW"
                                             else job_problems(db, job))
-        for problem in checked[job.MasterObject_id][:1]:     # the first is enough to say it would not run
-            problems.append(f"'{item.ItemName}' would not run: {problem}")
+        for problem in checked[job.MasterObject_id][:1]:     # the first is enough to say it would fail
+            warnings.append(f"'{item.ItemName}' would fail: {problem}")
     return problems
 
 

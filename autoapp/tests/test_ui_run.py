@@ -110,3 +110,31 @@ def test_a_scheduler_is_registered_on_its_detail_page(page, db):
     page.goto("/ui/search.html?kind=schedulers&technology=CONTROL_M")
     page.locator("a.item-name").first.wait_for()
     assert [a.inner_text() for a in page.locator("a.item-name").all()] == ["CTM_PROD"]
+
+
+def test_a_job_is_found_with_the_job_search_criteria_and_chosen(page, collect, db):
+    page.goto("/ui/run.html")
+    assert sorted(r.locator("a.job-key").inner_text() for r in wait_for_search(page).all()) == ["DEV-BROKEN", "DEV-COLLECT"]
+    page.locator("input[name=job_key]").fill("collect")
+    page.locator("form[aria-label='Search criteria'] button[type=submit]").click()
+    rows = wait_for_search(page)
+    page.wait_for_function("() => document.querySelectorAll('table.results tbody tr').length === 1")
+    assert "1 job," in page.locator("#result-summary").inner_text()
+
+    rows.first.locator(".choose-job").click()
+
+    assert page.locator("#run-job").input_value() == "DEV-COLLECT"
+    page.locator("#run-check .status").wait_for()
+    assert page.locator("#run-check .status").inner_text() == "Ready to run"
+    assert rows.first.locator(".choose-job").inner_text() == "Chosen"
+    assert "job_key=collect" in page.url and "key=DEV-COLLECT" in page.url     # both kept, for a reload
+
+
+def test_the_search_finds_workflows_by_type(page, collect, seed, db):
+    from app.models import Job
+    db.add(Job(JobKey="DEV-FLOW", JobType="WORKFLOW", Description="A workflow"))
+    db.commit()
+    page.goto("/ui/run.html?job_type=WORKFLOW")
+    rows = wait_for_search(page)
+    assert [r.locator("a.job-key").inner_text() for r in rows.all()] == ["DEV-FLOW"]
+    assert "Workflow" in rows.first.inner_text() and "0 jobs" in rows.first.inner_text()

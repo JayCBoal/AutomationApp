@@ -224,3 +224,15 @@ def test_the_variable_precedence_is_put_in_order_and_saved(page, world):
     assert "to ENV,SYS,ENTITY,APP,ENDPOINT,JOB,TAG." in page.locator("#save-notice").inner_text()
     assert page.request.get("/api/v1/settings").json()[0]["value"][-2:] == ["JOB", "TAG"]
     assert [li.get_attribute("data-choice") for li in setting.locator("li").all()][:2] == ["TAG", "JOB"]
+
+
+def test_how_long_job_logs_are_kept_is_chosen_from_a_list(page, world):
+    page.goto("/ui/settings.html")
+    setting = page.locator('[data-setting="LogRetentionDays"]')
+    setting.wait_for()
+    assert setting.locator(".setting-choice").input_value() == "30"
+    setting.locator(".setting-choice").select_option("90")
+    with page.expect_response(lambda r: r.request.method == "PUT"):
+        setting.locator(".save-setting").click()
+    page.locator("#save-notice").wait_for(state="visible")
+    assert "Changed Keep job logs for from 30 to 90." in page.locator("#save-notice").inner_text()

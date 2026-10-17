@@ -24,7 +24,7 @@ TABLE_GROUPS = {
                         "Variables", "TagAssignments"],
     "Jobs and steps": ["Jobs", "JobSteps", "JobStepParameters", "StepTypes", "StepDefinitions"],
     "Workflows": ["Jobs", "WorkflowItems", "WorkflowPrerequisites", "JobRuns", "WorkflowRunItems"],
-    "Endpoints, runs, operations, audits and settings": ["Endpoints", "JobRuns", "JobRunLogs", "Operations", "Audits", "Settings"],
+    "Endpoints, runs, operations, audits and settings": ["Endpoints", "JobRuns", "Operations", "Audits", "Settings"],
 }
 
 TYPE_NAMES = {"Integer": "int", "String": "string", "Text": "text", "Boolean": "bool",

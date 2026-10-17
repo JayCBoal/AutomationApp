@@ -99,6 +99,7 @@ def describe_job(job: Job) -> JobDetail:
         tags=tag_store.paths_on(job),
         inherited_variables=inherited_variables(db, job) if db is not None else [],
         items=workflow_store.describe_items(job) if job.JobType == "WORKFLOW" else [],
+        used_in=workflow_store.workflows_using(db, job) if db is not None else [],
     )
 
 

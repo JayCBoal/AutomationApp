@@ -41,7 +41,6 @@ erDiagram
     MasterObjects ||--o| Endpoints : "MasterObject_id"
     Sites |o--o{ Endpoints : "Site_MasterObject_id"
     Applications |o--o{ Endpoints : "Application_MasterObject_id"
-    JobRuns ||--o{ JobRunLogs : "JobRun_id"
     JobSteps ||--o{ JobStepParameters : "JobStep_id"
     WorkflowItems ||--o{ WorkflowPrerequisites : "Item_id"
     WorkflowItems |o--o{ WorkflowPrerequisites : "TargetItem_id"
@@ -245,6 +244,8 @@ erDiagram
         string(1000) WorkflowPath
         int Attempt "required"
         datetime CancelRequestedDateTime
+        string(500) LogFile
+        datetime LogRemovedDateTime
     }
     WorkflowRunItems {
         int id PK
@@ -309,12 +310,8 @@ erDiagram
         string(1000) WorkflowPath
         int Attempt "required"
         datetime CancelRequestedDateTime
-    }
-    JobRunLogs {
-        int id PK
-        int JobRun_id FK "required"
-        int Seq "required"
-        text LogText "required"
+        string(500) LogFile
+        datetime LogRemovedDateTime
     }
     Operations {
         int id PK
@@ -360,7 +357,6 @@ erDiagram
     MasterObjects ||--o| Endpoints : "MasterObject_id"
     Sites |o--o{ Endpoints : "Site_MasterObject_id"
     Applications |o--o{ Endpoints : "Application_MasterObject_id"
-    JobRuns ||--o{ JobRunLogs : "JobRun_id"
     JobRuns ||--o{ Operations : "JobRun_id"
     JobSteps |o--o{ Operations : "JobStep_id"
     Endpoints |o--o{ Operations : "SourceEndpoint_id"
@@ -375,6 +371,5 @@ erDiagram
 | `Variables` | `MasterObject_id`, `VarName` |
 | `TagAssignments` | `Tag_MasterObject_id`, `Target_MasterObject_id` |
 | `WorkflowItems` | `Workflow_MasterObject_id`, `ItemName` |
-| `JobRunLogs` | `JobRun_id`, `Seq` |
 | `WorkflowRunItems` | `WorkflowRun_id`, `Path` |
 | `Operations` | `JobRun_id`, `Seq` |

@@ -49,6 +49,17 @@
                 </div>
             </template>
 
+            <!-- A choice: one of a list -->
+            <template x-if="setting.kind === 'CHOICE'">
+                <select class="setting-choice" x-model="draft[setting.key]" style="max-width: 320px"
+                        :aria-label="setting.title">
+                    <template x-for="choice in setting.choices" :key="choice">
+                        <option :value="choice" x-text="setting.labels[choice] || choice"
+                                :selected="choice === draft[setting.key]"></option>
+                    </template>
+                </select>
+            </template>
+
             <div class="actions">
                 <button type="button" class="primary save-setting" :disabled="busy || !changed(setting)" @click="save(setting)">Save</button>
                 <button type="button" class="secondary undo-setting" :disabled="busy || !changed(setting)" @click="undo(setting)">Undo</button>

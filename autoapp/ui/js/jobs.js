@@ -25,19 +25,13 @@ function jobSearch() {
 
         time: AutoApp.formatTime,
 
-        steps(job) {
-            if (job.job_type === "WORKFLOW") return `${job.item_count} job${job.item_count === 1 ? "" : "s"}`;
-            const enabled = `${job.step_count} step${job.step_count === 1 ? "" : "s"}`;
-            return job.disabled_step_count ? `${enabled} (+${job.disabled_step_count} disabled)` : enabled;
-        },
+        steps: AutoApp.jobContents,
 
         checkHint(job) {
             return `${job.problem_count} problem${job.problem_count === 1 ? "" : "s"} found: click to see`;
         },
 
-        detailLink(job) {
-            return (job.job_type === "WORKFLOW" ? "workflow.html?" : "job.html?") + new URLSearchParams({ key: job.job_key });
-        },
+        detailLink: AutoApp.jobPage,
 
         operationsLink(job) {
             return "operations.html?" + new URLSearchParams({ job_key: job.job_key });

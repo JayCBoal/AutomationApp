@@ -582,6 +582,32 @@ const AutoApp = (() => {
         return page;
     }
 
+    // ---------- Jobs in a list ----------
+
+    /** What a job is made of, in a few words: "3 steps (+1 disabled)", or for a workflow "8 jobs". */
+    function jobContents(job) {
+        if (job.job_type === "WORKFLOW") return `${job.item_count} job${job.item_count === 1 ? "" : "s"}`;
+        const enabled = `${job.step_count} step${job.step_count === 1 ? "" : "s"}`;
+        return job.disabled_step_count ? `${enabled} (+${job.disabled_step_count} disabled)` : enabled;
+    }
+
+    /**
+     * Before a save that disables a job used in workflows: says what that does in each, and asks.
+     * True when the save may go ahead.
+     */
+    function confirmDisable(job, payload) {
+        if (!job || !job.active || payload.active || !job.used_in.length) return true;
+        const count = job.used_in.length === 1 ? "1 workflow" : `${job.used_in.length} workflows`;
+        return confirm(`Disable '${job.job_key}'? It is used in ${count}: ${job.used_in.join(", ")}.\n\n` +
+            "In each, when its turn comes it will end Disabled instead of running, and the jobs that need it " +
+            "to succeed will not run. Jobs that wait only for it to end will still run. The workflows themselves still run.");
+    }
+
+    /** The page of a job, or of a workflow. */
+    function jobPage(job) {
+        return (job.job_type === "WORKFLOW" ? "workflow.html?" : "job.html?") + new URLSearchParams({ key: job.job_key });
+    }
+
     // ---------- Tags ----------
 
     /** "Finance/Reporting" as it is shown: "Finance / Reporting". */
@@ -748,5 +774,5 @@ const AutoApp = (() => {
     }
 
     return { PAGES, EMBEDDED, link, go, tellHost, get, send, createInPlace, ensureLookups, parseUtc, formatTime, localInputToUtc, timeZoneName, formatSize, toCsv, download, searchPage,
-             showPath, normalPath, fillTagPanels, tagEditing };
+             jobContents, jobPage, confirmDisable, showPath, normalPath, fillTagPanels, tagEditing };
 })();

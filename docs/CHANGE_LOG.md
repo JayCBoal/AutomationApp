@@ -6,6 +6,33 @@ Notable structural, schema and design changes to AutoApp, newest first. Line-by-
 
 ## 2026-10-17
 
+### Workflows: a handled failure no longer fails the workflow
+
+- **Changed:** a workflow fails only if a failure went unhandled: a job failed and nothing that waits for it ran, or jobs were cancelled. A failure path that ran (the sample's Alert finance) leaves the workflow Succeeded, and its log says which failures were handled. A job that is Not run because something before it failed does not count against the workflow; the failure before it does. Design: [WORKFLOWS.md](WORKFLOWS.md), "When a workflow succeeds".
+- **Changed:** the workflow page's **Cancel run** is now **Cancel what hasn't started**, which is what it did.
+
+### Job logs are files on the host that ran the job
+
+- **Changed:** a run's job log is no longer stored in the database. The runner writes it, line by line, to `<log root>/<host>/<YYYY-MM-DD>/<RunID>.log`; the run's record keeps only where it is (`JobRuns.LogFile`, with `Host`). The server reads it through that host's agent, as a WLA reads job output; AutoApp has no agents, so a stand-in reads the host's folder on this machine. Pages show logs as before, and a run still going shows its log so far.
+- **Added:** the setting **Keep job logs for** (Settings page; 30 days by default, or a week to a year, or never). Older logs are removed at server startup and once a day; the run's log page then says when. A log missing from its host is also said so.
+- **Added:** the Settings page shows settings that are a choice from a list.
+- **Changed:** the runner no longer sends `LOG` records; one in an old spool file is still accepted, and its lines are not kept.
+- **Changed (docs/INTEGRATION.md):** the job log is also kept as a file, under `AUTOAPP_LOG_ROOT`. Nothing a scheduler does changes.
+- **Migration:** `SQL/migrate_log_files.py` adds `JobRuns.LogFile` and `JobRuns.LogRemovedDateTime`, writes each run's existing log to its file, and drops the `JobRunLogs` table (the owner approved dropping it). Run it with `AUTOAPP_LOG_ROOT` set as the server has it.
+
+### Workflows: disabled jobs no longer stop a workflow
+
+- **Changed:** a workflow that uses a disabled job still runs. When the disabled job's turn comes it ends **Disabled** without running; the jobs that need it to succeed are Not run ("it waits for 'Off' to succeed, and 'Off' is disabled"), and jobs that wait only for it to end still run. Before, the whole workflow refused to start.
+- **Changed:** a job in a workflow that would fail its own pre-run check no longer stops the workflow either: it fails when its turn comes, with its own reason. Only a disabled or empty workflow refuses to start.
+- **Added:** the workflow's check, on its page and on Run Job, lists such jobs as warnings in advance.
+- **Added:** disabling a job that workflows use asks first, naming the workflows and saying what will happen in each. Every job's details now list the workflows that use it (`used_in`).
+- **Changed:** the message refusing prerequisites that go round in a loop says none of those jobs could ever start, and that repeating jobs will be done with a Rerun from… Reaction.
+- **Design** ([WORKFLOWS.md](WORKFLOWS.md)): when a workflow succeeds by default (a failure fails it only if nothing that waits for it ran), completion rules, Kill, Cancel and Hold on a workflow, and loops as repeat links with a limit.
+
+### Run Job: finding a job with the Job Search criteria
+
+- **Added:** the Run Job page has the Job Search page's criteria (job key, description, type, status, endpoint, tag) and lists the jobs found, each with its status, contents, tags and last run. **Choose** picks one to run. The criteria and the job chosen are kept in the page address, so a reload keeps both. Typing a job key still works as before.
+
 ### Workflows, Phase 1: jobs that run other jobs
 
 The design is in [WORKFLOWS.md](WORKFLOWS.md), this phase's plan in [WORKFLOWS_PHASE1.md](WORKFLOWS_PHASE1.md).

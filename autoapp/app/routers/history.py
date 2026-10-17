@@ -16,7 +16,8 @@ from sqlalchemy import case, func
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import Audit, JobRun, JobRunLog, Operation, WorkflowRunItem, utcnow
+from app.log_agent import log_note, run_log
+from app.models import Audit, JobRun, Operation, WorkflowRunItem, utcnow
 
 MAX_RESULTS = 500
 router = APIRouter(tags=["History"])
@@ -87,12 +88,13 @@ def list_runs(
             .filter(Operation.JobRun_id.in_([run.id for run in runs])).group_by(Operation.JobRun_id)
         )
         counts = {run_id: (total, int(failed or 0)) for run_id, total, failed in rows}
-    logged = set()
-    if runs:
-        logged = {run_id for (run_id,) in db.query(JobRunLog.JobRun_id).filter(
-            JobRunLog.JobRun_id.in_([run.id for run in runs])).distinct()}
     parents = _parent_run_ids(db, runs)
-    return [_describe(run, counts.get(run.id, (0, 0)), run.id in logged, parents.get(run.ParentRun_id)) for run in runs]
+    return [_describe(run, counts.get(run.id, (0, 0)), _has_log(run), parents.get(run.ParentRun_id)) for run in runs]
+
+
+def _has_log(run: JobRun) -> bool:
+    """From the record alone, so a list of runs asks no host anything."""
+    return bool(run.LogFile) and run.LogRemovedDateTime is None
 
 
 def _run_and_inside(db: Session, run_id: str) -> List[int]:
@@ -140,6 +142,7 @@ class RunItemOut(BaseModel):
 
 class RunDetail(RunOut):
     log: List[str] = []
+    log_note: Optional[str] = None
     items: List[RunItemOut] = []
     cancel_requested: bool = False
 
@@ -147,19 +150,18 @@ class RunDetail(RunOut):
 @router.get("/api/v1/runs/{run_id}", response_model=RunDetail)
 def get_run(run_id: str, db: Session = Depends(get_db)):
     """
-    One run, with its job log as far as it has arrived: the runner sends it after
-    each step, so a run still going shows what it has done so far. Secret values
-    were masked by the runner.
+    One run, with its job log as far as it has been written: the log is a file on the
+    host that ran the job, read through that host's agent (app/log_agent.py), so a run
+    still going shows what it has done so far. Secret values were masked by the runner.
     """
     run = db.query(JobRun).filter(JobRun.RunID == run_id).first()
     if run is None:
         raise HTTPException(404, f"AutoApp has no record of run '{run_id}'.")
     total, failed = (db.query(func.count(Operation.id), func.sum(case((Operation.OpStatus == "FAILED", 1), else_=0)))
                      .filter(Operation.JobRun_id == run.id).one())
-    chunks = db.query(JobRunLog.LogText).filter(JobRunLog.JobRun_id == run.id).order_by(JobRunLog.Seq).all()
-    lines = [line for (text,) in chunks for line in text.split("\n")]
     parent = db.get(JobRun, run.ParentRun_id).RunID if run.ParentRun_id and db.get(JobRun, run.ParentRun_id) else None
-    return RunDetail(**_describe(run, (total or 0, int(failed or 0)), bool(chunks), parent).model_dump(), log=lines,
+    return RunDetail(**_describe(run, (total or 0, int(failed or 0)), _has_log(run), parent).model_dump(),
+                     log=run_log(run), log_note=log_note(run),
                      items=_run_items(db, run), cancel_requested=run.CancelRequestedDateTime is not None)
 
 

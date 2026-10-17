@@ -13,13 +13,15 @@ LogLevel step parameter:
 Errors go to stderr and everything else to stdout. Values of variables marked
 secret are replaced with ******** wherever they would appear.
 
-Every line written is also kept, as written, so the runner can send the log with
-the run's other records (take_lines); the server keeps it with the run.
+Every line written also goes to the run's log file (write_to), masked the same way:
+the file is kept on the host that ran the job, and the server reads it from there
+(engine/log_files.py).
 """
 import logging
 import sys
+from pathlib import Path
 from contextlib import contextmanager
-from typing import Iterable, List, Optional
+from typing import Iterable, Optional
 
 SUMMARY = 25        # between logging.INFO (20) and logging.WARNING (30)
 LEVELS = {"DEBUG": logging.DEBUG, "DETAIL": logging.INFO, "SUMMARY": SUMMARY, "SILENT": logging.ERROR}
@@ -59,41 +61,36 @@ class _RedactSecrets(logging.Filter):
         return True
 
 
-class _Keep(logging.Handler):
-    """Keeps every line written, already masked and formatted, until take_lines() collects them."""
-    def __init__(self):
-        super().__init__()
-        self.lines: List[str] = []
-
-    def emit(self, record):
-        self.lines.append(self.format(record))
-
-
-_kept = _Keep()
+_redact = _RedactSecrets(())
 
 
 def configure(level: Optional[str] = None, secrets: Iterable[str] = ()) -> None:
     """Sets up the job log for this process. Call once, before the job starts."""
     for handler in list(_logger.handlers):
         _logger.removeHandler(handler)
+        handler.close()
 
-    redact = _RedactSecrets(secrets)
+    global _redact
+    _redact = _RedactSecrets(secrets)
     out = logging.StreamHandler(sys.stdout)
     out.addFilter(lambda record: record.levelno < logging.ERROR)
     err = logging.StreamHandler(sys.stderr)
     err.setLevel(logging.ERROR)
-    _kept.lines = []
-    for handler in (out, err, _kept):
-        handler.setFormatter(_Formatter())
-        handler.addFilter(redact)
-        _logger.addHandler(handler)
+    for handler in (out, err):
+        _add(handler)
     _logger.setLevel(level_number(level))
 
 
-def take_lines() -> List[str]:
-    """The lines written since the last call, masked as they were written."""
-    lines, _kept.lines = _kept.lines, []
-    return lines
+def write_to(path: Path) -> None:
+    """From now on, also writes every line to this file, masked as on screen. Each line is written as it comes."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    _add(logging.FileHandler(path, encoding="utf-8"))
+
+
+def _add(handler: logging.Handler) -> None:
+    handler.setFormatter(_Formatter())
+    handler.addFilter(_redact)
+    _logger.addHandler(handler)
 
 
 @contextmanager

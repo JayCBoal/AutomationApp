@@ -15,7 +15,89 @@
 
 <!-- Runs a job now, the way a scheduler would, and shows its job log as it runs -->
 <main x-data="runPage()">
-    <form class="panel" @submit.prevent="start()" aria-label="Job to run">
+    <!-- Finding a job to run, with the Job Search page's criteria -->
+    <form class="panel" @submit.prevent="search()" aria-label="Search criteria">
+        <div class="criteria">
+            <fieldset>
+                <legend>Job</legend>
+                <label>Job key <input type="text" x-model="criteria.job_key" name="job_key" data-lookup="jobs"></label>
+                <label>Description <input type="text" x-model="criteria.description" name="description"></label>
+                <label>Type
+                    <select x-model="criteria.job_type" name="job_type">
+                        <option value="">Any</option>
+                        <option value="STEPS">Jobs</option>
+                        <option value="WORKFLOW">Workflows</option>
+                    </select>
+                </label>
+                <label>Status
+                    <select x-model="criteria.active" name="active">
+                        <option value="">Any</option>
+                        <option value="true">Enabled</option>
+                        <option value="false">Disabled</option>
+                    </select>
+                </label>
+            </fieldset>
+            <fieldset>
+                <legend>Uses</legend>
+                <label title="An endpoint that one of the job's steps reads from or writes to">Endpoint
+                    <input type="text" x-model="criteria.endpoint" name="endpoint" data-lookup="endpoints"></label>
+                <label title="A tag the job carries; a parent tag finds jobs carrying any tag under it">Tag
+                    <input type="text" x-model="criteria.tag" name="tag" data-lookup="tags"></label>
+            </fieldset>
+        </div>
+        <div class="actions">
+            <button type="submit" class="primary" :disabled="loading">Search</button>
+            <button type="button" class="secondary" @click="clear()" :disabled="loading">Clear</button>
+            <span class="message small" id="result-summary" x-show="!error" x-text="summary"></span>
+        </div>
+
+        <p class="message capped" x-show="capped" x-cloak>
+            Only the first <span x-text="rows.length"></span> are shown. Narrow the criteria to see the rest.
+        </p>
+        <div class="table-scroll found-jobs" x-show="rows.length > 0" x-cloak>
+            <table class="results">
+                <thead>
+                    <tr><th>Job</th><th>Status</th><th>Contents</th><th>Tags</th><th>Last run</th><th></th></tr>
+                </thead>
+                <tbody>
+                    <template x-for="job in rows" :key="job.job_key">
+                        <tr :class="{ chosen: job.job_key === jobKey.trim() }">
+                            <td>
+                                <a class="job-key" :href="jobPage(job)" x-text="job.job_key"></a>
+                                <template x-if="job.job_type === 'WORKFLOW'"><span class="tag">Workflow</span></template>
+                                <div class="muted small" x-text="job.description"></div>
+                            </td>
+                            <td>
+                                <span class="status" :class="job.active ? 'Enabled' : 'Disabled'"
+                                      x-text="job.active ? 'Enabled' : 'Disabled'"></span>
+                            </td>
+                            <td class="nowrap" x-text="jobContents(job)"></td>
+                            <td class="job-tags">
+                                <template x-for="path in job.tags" :key="path">
+                                    <span class="tag" x-text="AutoApp.showPath(path)"></span>
+                                </template>
+                            </td>
+                            <td class="last-run">
+                                <template x-if="job.last_run">
+                                    <div>
+                                        <span class="status" :class="job.last_run.status" x-text="job.last_run.status"></span>
+                                        <span class="nowrap" x-text="time(job.last_run.ended || job.last_run.started)"></span>
+                                    </div>
+                                </template>
+                                <span class="muted" x-show="!job.last_run">Never run</span>
+                            </td>
+                            <td>
+                                <button type="button" class="secondary choose-job" @click="choose(job)"
+                                        x-text="job.job_key === jobKey.trim() ? 'Chosen' : 'Choose'"></button>
+                            </td>
+                        </tr>
+                    </template>
+                </tbody>
+            </table>
+        </div>
+    </form>
+
+    <form class="panel" id="run-form" @submit.prevent="start()" aria-label="Job to run">
         <div class="detail-grid">
             <label for="run-job">Job <span class="required" title="Required">*</span></label>
             <div class="create-row">
@@ -35,6 +117,9 @@
                             <template x-for="problem in check.problems"><li x-text="problem"></li></template>
                         </ul>
                         <p class="muted small" x-show="!check.valid">It can still be run, to see how it fails.</p>
+                        <ul class="warnings" id="check-warnings" x-show="check.warnings.length">
+                            <template x-for="warning in check.warnings"><li class="message warning small" x-text="warning"></li></template>
+                        </ul>
                     </div>
                 </template>
             </div>

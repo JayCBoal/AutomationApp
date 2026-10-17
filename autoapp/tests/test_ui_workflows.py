@@ -141,3 +141,31 @@ def test_job_history_shows_a_workflow_run_with_its_jobs(page, saved_flow):
     keys = sorted(k.inner_text() for k in page.locator("table.results a.job-key").all())
     assert keys == ["FLOW", "SIM_FIRST", "SIM_SECOND"]
     assert page.locator("a.parent-link:visible").count() == 2
+
+
+def test_disabling_a_job_used_in_a_workflow_warns_first_and_the_workflow_says_so(page, saved_flow, db):
+    saved_flow()
+    page.goto("/ui/job.html?key=SIM_SECOND")
+    page.locator("#edit-button").click()
+    page.locator("#job-enabled").uncheck()
+    said = []
+    page.once("dialog", lambda dialog: (said.append(dialog.message), dialog.dismiss()))
+    page.locator("#submit-button").click()
+    assert said and "It is used in 1 workflow: FLOW." in said[0] and "will end Disabled" in said[0]
+    db.expire_all()
+    assert db.query(Job).filter(Job.JobKey == "SIM_SECOND").one().IsActive          # cancelled: not saved
+
+    page.once("dialog", lambda dialog: dialog.accept())
+    page.locator("#submit-button").click()
+    page.locator("#save-notice").wait_for()
+    db.expire_all()
+    assert not db.query(Job).filter(Job.JobKey == "SIM_SECOND").one().IsActive
+
+    page.goto("/ui/workflow.html?key=FLOW")
+    page.locator("#check-warnings li").first.wait_for()
+    assert page.locator("#check-warnings li").inner_text().startswith("'Second' is disabled")
+    assert page.locator("#runnability .ready-text").is_visible()                    # it still runs
+    page.locator("#run-button").click()
+    wait_for_run_end(page)
+    assert [s.inner_text() for s in page.locator("#run-items .wf-state").all()] == [
+        "Succeeded · return code 0", "Disabled"]

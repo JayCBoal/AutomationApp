@@ -187,6 +187,7 @@ class JobDetail(BaseModel):
     inherited_variables: List[InheritedVariableOut] = Field(
         default_factory=list, description="What the job's tags give it, in name order")
     items: List[WorkflowItemOut] = Field(default_factory=list, description="A workflow's jobs, in outline order")
+    used_in: List[str] = Field(default_factory=list, description="The workflows that use it, in name order")
 
 
 class PrerequisiteSave(BaseModel):
@@ -284,6 +285,8 @@ class RunStartRecord(BaseModel):
     Scheduler: Optional[str] = Field(None, max_length=100)
     BusinessDate: Optional[date] = Field(None, description="The date the run is for, if the scheduler gave one")
     Host: Optional[str] = Field(None, max_length=255)
+    LogFile: Optional[str] = Field(None, max_length=500, description=(
+        "Where the run's job log is, within the host's log folder: <YYYY-MM-DD>/<RunID>.log"))
     StartedAtUtc: datetime
     ParentRunID: Optional[str] = Field(None, max_length=36, description="The workflow run this job run is part of")
     WorkflowPath: Optional[str] = Field(None, max_length=1000, description="Its place in that workflow: Transform/Stage")
@@ -327,7 +330,10 @@ class RunEndRecord(BaseModel):
 
 
 class LogRecord(BaseModel):
-    """Lines of the job log, as the runner printed them, secrets already masked."""
+    """
+    Lines of the job log, as runners sent them before logs were kept as files (2026-10-17).
+    Still accepted, so an old spool file loads, but the lines are not kept.
+    """
     Record: Literal["LOG"]
     RunID: str
     Seq: int

@@ -59,7 +59,7 @@ class LocalSpoolTelemetryClient:
 
     def start_run(self, job_key: str, run_number: int = 1, scheduler: Optional[str] = None,
                   business_date=None, parent_run_id: Optional[str] = None, workflow_path: Optional[str] = None,
-                  attempt: int = 1) -> None:
+                  attempt: int = 1, log_file: Optional[str] = None) -> None:
         # A job run inside a workflow run says which, where in the workflow it is, and which attempt
         workflow = {"ParentRunID": parent_run_id, "WorkflowPath": workflow_path, "Attempt": attempt} if parent_run_id else {}
         self._write("RUN_START", {**workflow,
@@ -69,6 +69,7 @@ class LocalSpoolTelemetryClient:
             "Scheduler": scheduler,
             "BusinessDate": business_date.isoformat() if business_date else None,
             "Host": socket.gethostname(),
+            "LogFile": log_file,
             "StartedAtUtc": utc_now_iso(),
         })
 
@@ -119,11 +120,6 @@ class LocalSpoolTelemetryClient:
             "StartedAtUtc": started_at,
             "EndedAtUtc": ended_at or utc_now_iso(),
         })
-
-    def log_lines(self, lines: List[str]) -> None:
-        """Records lines of the job log. Nothing is written for none."""
-        if lines:
-            self._write("LOG", {"Lines": list(lines)})
 
     def end_run(self, status: str, error: Optional[str] = None, return_code: Optional[int] = None,
                 reason: Optional[str] = None) -> None:

@@ -168,18 +168,19 @@ def seed(db):
     return Seeder(db)
 
 
-def read_spool(spool_dir, with_log=False) -> list:
-    """
-    Returns the records from the completed (.jsonl) spool files in a folder. The job
-    log's LOG records are left out unless with_log is set, as most tests are about the rest.
-    """
+def read_spool(spool_dir) -> list:
+    """Returns the records from the completed (.jsonl) spool files in a folder."""
     records = []
     for spool_file in sorted(Path(spool_dir).glob("*.jsonl")):
         for line in spool_file.read_text().splitlines():
-            record = json.loads(line)
-            if with_log or record["Record"] != "LOG":
-                records.append(record)
+            records.append(json.loads(line))
     return records
+
+
+def read_logs(log_root) -> str:
+    """Every job log written under a log root, oldest first: the runs of one test."""
+    files = sorted(Path(log_root).rglob("*.log"), key=lambda path: path.stat().st_mtime)
+    return "\n".join(path.read_text() for path in files)
 
 
 @pytest.fixture
@@ -257,10 +258,22 @@ def unused_api_url():
 
 
 def subprocess_env(db_url) -> dict:
-    """Environment for a runner or server process: the test's database, and no settings leaking in from the shell."""
+    """
+    Environment for a runner or server process: the test's database and log folder, and no settings
+    leaking in from the shell.
+    """
     env = {k: v for k, v in os.environ.items() if not k.startswith("AUTOAPP_")}
     env["DATABASE_URL"] = db_url
+    env["AUTOAPP_LOG_ROOT"] = os.environ["AUTOAPP_LOG_ROOT"]
     return env
+
+
+@pytest.fixture(autouse=True)
+def log_root(tmp_path, monkeypatch):
+    """Every test keeps its job logs in a folder of its own, read by the in-process API and its processes alike."""
+    folder = tmp_path / "logs"
+    monkeypatch.setenv("AUTOAPP_LOG_ROOT", str(folder))
+    return folder
 
 
 @pytest.fixture

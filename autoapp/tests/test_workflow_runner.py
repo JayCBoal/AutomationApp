@@ -9,7 +9,8 @@ import time
 
 import pytest
 
-from app.models import Job, JobRun, JobRunLog, WorkflowItem, WorkflowPrerequisite, WorkflowRunItem, utcnow
+from app.log_agent import run_log
+from app.models import Job, JobRun, WorkflowItem, WorkflowPrerequisite, WorkflowRunItem, utcnow
 from conftest import AUTOAPP_DIR, subprocess_env
 
 
@@ -71,7 +72,7 @@ def results(db, job_key):
     db.expire_all()
     run = db.query(JobRun).filter(JobRun.JobKey == job_key, JobRun.JobType == "WORKFLOW").order_by(JobRun.id.desc()).first()
     items = {i.ItemName: i for i in db.query(WorkflowRunItem).filter(WorkflowRunItem.WorkflowRun_id == run.id)}
-    log = "\n".join(row.LogText for row in db.query(JobRunLog).filter(JobRunLog.JobRun_id == run.id).order_by(JobRunLog.Seq))
+    log = "\n".join(run_log(run))
     return run, items, log
 
 
@@ -104,9 +105,9 @@ def test_a_failure_makes_what_needed_success_not_run_and_lets_failure_paths_run(
 
     code, run, items, log = run_flow("PATHS")
 
-    assert code == 1
-    assert (run.Status, run.Reason) == ("FAILED", "JOB_FAILED")
-    assert run.ErrorMessage == "1 job failed: Load."
+    assert code == 0, log                       # the failure path ran: the failure was handled
+    assert (run.Status, run.Reason) == ("SUCCESS", None)
+    assert "1 job failed, and what waits for it ran: Load." in log
     assert states(items) == {"Load": ("FAILED", "ERROR", 1), "Report": ("NOT_RUN", "PREREQUISITES_NOT_MET", None),
                              "Alert": ("SUCCESS", None, 0), "Cleanup": ("SUCCESS", None, 0)}
     assert "'Report' will not run: it waits for 'Load' to succeed, and 'Load' failed with return code 1." in log
@@ -117,7 +118,23 @@ def test_any_starts_a_job_when_one_of_its_prerequisites_holds(sim, flow, run_flo
                     ("Publish", sim("C"), ["Primary", "Backup"], "ANY")])
     code, run, items, log = run_flow("EITHER")
     assert items["Publish"].Status == "SUCCESS"
-    assert run.Status == "FAILED"            # Primary failed: the workflow says so, though Publish ran
+    assert run.Status == "SUCCESS"           # Publish could do without Primary, and ran: handled
+
+
+def test_a_failure_nothing_ran_after_fails_the_workflow(sim, flow, run_flow):
+    flow("CHAIN", [("A", sim("A", fail=True)), ("B", sim("B"), ["A"])])
+    code, run, items, log = run_flow("CHAIN")
+    assert code == 1
+    assert (run.Status, run.Reason) == ("FAILED", "JOB_FAILED")
+    assert run.ErrorMessage == "1 job failed with nothing that waits for it run: A."
+    assert items["B"].Status == "NOT_RUN"         # not counted against the workflow; A's failure is
+
+
+def test_a_failure_on_a_failure_path_fails_the_workflow(sim, flow, run_flow):
+    flow("PATH", [("Load", sim("A", fail=True)), ("Alert", sim("B", fail=True), [("Load", "FAILED")])])
+    code, run, items, log = run_flow("PATH")
+    assert code == 1
+    assert run.ErrorMessage == "1 job failed with nothing that waits for it run: Alert."
 
 
 # ---------- Return codes ----------
@@ -171,6 +188,7 @@ def test_cancel_starts_nothing_more_and_lets_running_jobs_finish(sim, flow, db, 
     run, items, log = results(db, "LONG")
     assert process.returncode == 1
     assert (run.Status, run.Reason) == ("FAILED", "CANCELLED")
+    assert run.ErrorMessage == "Cancelled: 1 job did not start: After."
     assert states(items) == {"Slow": ("SUCCESS", None, 0), "After": ("NOT_RUN", "CANCELLED", None)}
     assert "Cancel asked for" in log
 
@@ -186,11 +204,35 @@ def test_a_workflow_can_run_another_and_each_run_points_to_the_one_above(sim, fl
     assert (step_run.ParentRun_id, step_run.WorkflowPath) == (inner_run.id, "Inner/Step")
 
 
-def test_a_workflow_that_would_not_run_fails_at_once_saying_why(sim, flow, run_flow, db):
-    broken = sim("A")
-    broken.IsActive = False
-    flow("BROKEN", [("Off", broken)])
-    code, run, items, log = run_flow("BROKEN")
+def test_a_workflow_that_cannot_run_fails_at_once_saying_why(sim, flow, run_flow, db):
+    off = flow("OFF", [("Only", sim("A"))])
+    off.IsActive = False
+    db.commit()
+    code, run, items, log = run_flow("OFF")
     assert code == 1 and items == {}
     assert (run.Status, run.Reason) == ("FAILED", "ERROR")
-    assert run.ErrorMessage == "The workflow cannot run: 'Off' would not run: Job 'A' is disabled."
+    assert run.ErrorMessage == "The workflow cannot run: Workflow 'OFF' is disabled."
+
+
+def test_a_disabled_job_ends_disabled_and_what_needs_its_success_does_not_run(sim, flow, run_flow, db):
+    off = sim("A")
+    off.IsActive = False
+    flow("FLOW", [("Off", off), ("After", sim("B"), ["Off"]), ("Tidy", sim("C"), [("Off", "ENDED")]),
+                  ("Other", sim("D"))])
+    code, run, items, log = run_flow("FLOW")
+    assert code == 0, log
+    assert {name: item.Status for name, item in items.items()} == {
+        "Off": "DISABLED", "After": "NOT_RUN", "Tidy": "SUCCESS", "Other": "SUCCESS"}
+    assert db.query(JobRun).filter(JobRun.JobKey == "A").count() == 0          # never started
+    assert "'Off' is disabled (job 'A'), so it does not run." in log
+    assert "'After' will not run: it waits for 'Off' to succeed, and 'Off' is disabled." in log
+
+
+def test_a_job_that_would_fail_its_own_check_fails_when_its_turn_comes(sim, flow, run_flow, seed, db):
+    broken = seed.job("BROKEN")
+    seed.step(broken, 1, Source="nowhere/*.csv", Dest="out")
+    flow("FLOW", [("First", sim("A")), ("Broken", broken, ["First"]), ("Next", sim("B"), ["Broken"])])
+    code, run, items, log = run_flow("FLOW")
+    assert code == 1
+    assert [items[n].Status for n in ("First", "Broken", "Next")] == ["SUCCESS", "FAILED", "NOT_RUN"]
+    assert items["Broken"].child_run.Status == "FAILED"

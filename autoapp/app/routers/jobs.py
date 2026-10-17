@@ -40,7 +40,7 @@ def job_problems(db: Session, job: Job, environment: Optional[Dict[str, str]] = 
     """
     if job.JobType == "WORKFLOW":
         from app.workflow_store import workflow_problems
-        return workflow_problems(db, job)
+        return workflow_problems(db, job, warnings)
     problems = []
     if not job.IsActive:
         problems.append(f"Job '{job.JobKey}' is disabled.")
@@ -329,7 +329,8 @@ def check_job(job_key: str,
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"No job with JobKey '{job_key}' exists.")
 
     environment, warnings = wla_environment(db, scheduler, wla_job)
-    problems = job_problems(db, job, environment)
+    # A workflow's warnings name the jobs in it that are disabled or would fail: it runs all the same
+    problems = job_problems(db, job, environment, warnings if job.JobType == "WORKFLOW" else None)
     return JobCheckResult(job_key=job_key, valid=not problems, problems=problems, warnings=warnings)
 
 

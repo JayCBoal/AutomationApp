@@ -64,7 +64,7 @@ def test_runner_posts_after_each_step_and_sends_each_record_once(db, job, tmp_pa
     posts = []
     monkeypatch.setattr("engine.telemetry_client.post_records",
                         lambda api_url, records, timeout=None: posts.append(
-                            [r["Record"] for r in records if r["Record"] != "LOG"]))
+                            [r["Record"] for r in records]))
     db.commit()
 
     exit_code = run_job(db, "DEV-LOAD", "88421", str(tmp_path / "spool"),

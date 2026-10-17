@@ -158,6 +158,9 @@ button:disabled { opacity: 0.45; cursor: default; }
 /* ---------- Results table ---------- */
 
 .table-scroll { overflow-x: auto; }
+/* Run Job: the jobs found, in a box of their own so the job chosen and its run stay near */
+.found-jobs { max-height: 340px; overflow-y: auto; margin-top: 12px; }
+.found-jobs tr.chosen td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
 table.results { width: 100%; border-collapse: collapse; }
 table.results th {
     text-align: left;
@@ -406,4 +409,5 @@ body.embedded main { padding-top: 12px; }
 .wf-state.RUNNING { color: var(--accent); border-color: var(--accent); }
 .wf-state.WAITING { color: var(--warning); border-color: var(--warning); }
 .wf-state.NOT_RUN { border-style: dashed; }
+.wf-state.DISABLED { color: var(--muted); text-decoration: line-through; }
 .status.RUNNING { color: var(--accent); }

@@ -41,9 +41,9 @@
 
             <pre class="job-log" id="job-log" x-ref="log" @scroll="logScrolled($event)" x-show="run.log.length"><template
                  x-for="(line, index) in run.log" :key="index"><span :class="lineClass(line)" x-text="line + '\n'"></span></template></pre>
-            <p class="message" id="no-log" x-show="run.log.length === 0 && run.status !== 'RUNNING'">No job log was recorded
-                for this run. Runs from before AutoApp kept job logs have none.</p>
-            <p class="muted small" x-show="run.status === 'RUNNING'">Still running; the log fills in as each step ends.</p>
+            <p class="message" id="no-log" x-show="run.log.length === 0 && run.status !== 'RUNNING'"
+               x-text="run.log_note || 'No job log was recorded for this run. Runs from before AutoApp kept job logs have none.'"></p>
+            <p class="muted small" x-show="run.status === 'RUNNING'">Still running; the log fills in as it goes.</p>
         </section>
     </template>
 </main>

@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session
 
 from app.database import SessionLocal
 from app.models import Job, Variable
-from engine import job_log, return_codes
+from engine import job_log, log_files, return_codes
 from engine.executor import Executor
 from engine.preflight import describe_problems, prepare_job
 from engine.scope_engine import ScopeResolutionEngine
@@ -41,16 +41,13 @@ def run_job(db: Session, job_key: str, instance_id: str, spool_dir: str,
     environment = dict(os.environ) if environment is None else environment
     with LocalSpoolTelemetryClient(spool_dir=spool_dir, instance_id=instance_id, api_url=api_url,
                                    run_id=run_id) as telemetry:
-        def send_log():
-            # The job log goes with the run's records, so it can be read with the run
-            telemetry.log_lines(job_log.take_lines())
-
+        log_file = log_files.start(telemetry.run_id)
         telemetry.start_run(job_key, run_number=run_number, scheduler=scheduler, business_date=business_date,
-                            parent_run_id=parent_run_id, workflow_path=workflow_path, attempt=attempt)
+                            parent_run_id=parent_run_id, workflow_path=workflow_path, attempt=attempt,
+                            log_file=log_file)
         job_log.summary(f"Job '{job_key}', instance {instance_id}, run number {run_number}"
                         + (f", business date {business_date.isoformat()}" if business_date else ""))
         job_log.debug(f"Run ID {telemetry.run_id}; spool file {telemetry.active_file_path}")
-        send_log()
         telemetry.deliver()         # so the run shows as running straight away
 
         executor, success_codes = None, None
@@ -77,35 +74,28 @@ def run_job(db: Session, job_key: str, instance_id: str, spool_dir: str,
             if problems:
                 raise ValueError(describe_problems(problems))
 
-            def after_step():
-                # Send what a step recorded; a failure here never affects the job
-                send_log()
-                telemetry.deliver()
-
-            executor = Executor(db, scope_engine, telemetry, after_step)
+            # Send what a step recorded; a failure here never affects the job
+            executor = Executor(db, scope_engine, telemetry, telemetry.deliver)
             executor.run_all(prepared_steps)
 
         except Exception as e:
             job_log.error(f"Job '{job_key}' failed: {e}")
-            send_log()
             code = executor.job_return_code if executor and executor.job_return_code is not None else 1
             telemetry.end_run("FAILED", error=str(e), return_code=code, reason="ERROR")
             return 1
-        return _finish(job_key, executor.job_return_code, success_codes, telemetry, send_log)
+        return _finish(job_key, executor.job_return_code, success_codes, telemetry)
 
 
-def _finish(job_key: str, code: Optional[int], success_codes: Optional[str], telemetry, send_log) -> int:
+def _finish(job_key: str, code: Optional[int], success_codes: Optional[str], telemetry) -> int:
     """Ends a job whose steps all went as they should: it succeeded if its return code is a success code."""
     code = 0 if code is None else code
     if not return_codes.matches(code, success_codes):
         message = (f"Job '{job_key}' ended with return code {code}, which its Success return codes "
                    f"({success_codes or return_codes.DEFAULT_SUCCESS}) do not include.")
         job_log.error(message)
-        send_log()
         telemetry.end_run("FAILED", error=message, return_code=code, reason="RETURN_CODE")
         return 1
     job_log.summary(f"Job '{job_key}' completed successfully" + (f", return code {code}." if code else "."))
-    send_log()
     telemetry.end_run("SUCCESS", return_code=code)
     return 0
 

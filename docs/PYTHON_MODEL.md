@@ -128,12 +128,8 @@ classDiagram
         +string(1000) WorkflowPath
         +int Attempt
         +datetime CancelRequestedDateTime
-    }
-    class JobRunLog {
-        +int id
-        +int JobRun_id
-        +int Seq
-        +text LogText
+        +string(500) LogFile
+        +datetime LogRemovedDateTime
     }
     class JobStep {
         +int id

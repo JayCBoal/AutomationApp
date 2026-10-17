@@ -2,6 +2,7 @@
  * The Run Job page (run.html) and a run's log page (log.html?run=<RunID>).
  *
  * API routes used:
+ *     GET  /api/v1/jobs                     finding a job to run, with the Job Search page's criteria
  *     GET  /api/v1/jobs/{job_key}/check     whether the chosen job would run
  *     POST /api/v1/launches                 start the runner for it, as a scheduler would
  *     GET  /api/v1/launches/{launch_id}     whether the runner process is still going
@@ -74,7 +75,7 @@ function followRun() {
 
 function runPage() {
     const address = new URLSearchParams(location.search);
-    return {
+    const page = {
         ...followRun(),
         levels: LOG_LEVELS,
         jobKey: address.get("key") || "",
@@ -94,7 +95,18 @@ function runPage() {
             } catch (e) {
                 this.error = e.message;
             }
+            this.startSearch();
             if (this.jobKey) this.checkJob();
+        },
+
+        jobContents: AutoApp.jobContents,
+        jobPage: AutoApp.jobPage,
+
+        /** Picks a job from the list found, and checks it. */
+        choose(job) {
+            this.jobKey = job.job_key;
+            this.checkJob();
+            this.$nextTick(() => document.getElementById("run-form").scrollIntoView({ block: "nearest" }));
         },
 
         get known() { return this.jobKeys.includes(this.jobKey.trim()); },
@@ -109,7 +121,7 @@ function runPage() {
             } catch (e) {
                 this.error = e.message;
             }
-            history.replaceState(null, "", "run.html?" + new URLSearchParams({ key }));
+            this.rememberInAddress();
         },
 
         get running() { return Boolean(this.launch) && (this.launch.state === "RUNNING" || (this.run && this.run.status === "RUNNING")); },
@@ -154,6 +166,15 @@ function runPage() {
             return this.launch.exit_code === 0 ? "SUCCESS" : "FAILED";
         },
     };
+    // Finding a job, as on the Job Search page. Copied as properties, so its worked-out fields stay worked out.
+    const search = AutoApp.searchPage({
+        criteria: ["job_key", "description", "job_type", "active", "endpoint", "tag"],
+        path: "/jobs",
+        noun: "job",
+        order: "in name order",
+        inAddress() { return { key: this.known ? this.jobKey.trim() : "" }; },
+    });
+    return Object.defineProperties(page, Object.getOwnPropertyDescriptors(search));
 }
 
 // ---------- A run's log page ----------

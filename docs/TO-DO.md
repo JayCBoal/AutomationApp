@@ -101,6 +101,8 @@ Designed with the owner and built in RunMyFiles on 2026-10-16, then brought over
 
 - **A workflow object type:** a set of jobs with dependencies between them, designed and run in AutoApp. It answers the RunMyJobs job-chain shortcomings listed in [PROJECT_GOALS.md](PROJECT_GOALS.md) goal 2. Being designed: the starting point, decisions and open questions are in [WORKFLOWS.md](WORKFLOWS.md).
 
+- **Reactions for every job, not only in workflows** (raised 2026-10-17): reacting to a job not started or not ended by a time, or running longer than a threshold, as well as to how it ended; one user-friendly mechanism in place of an SLA feature separate from job statuses, as RunMyJobs has. Designed with workflows in [WORKFLOWS.md](WORKFLOWS.md) (Reactions); a job that runs on its own needs it too.
+
 ### Then: breadth
 
 3. **Runner controls.** Depends on decision 6.

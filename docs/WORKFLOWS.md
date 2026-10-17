@@ -2,13 +2,13 @@
 
 The design record for AutoApp's workflows, built up in design sessions with the owner. What a workflow is for, and the RunMyJobs shortcomings it answers, are in [PROJECT_GOALS.md](PROJECT_GOALS.md) goal 2. This page holds everything else: the starting point, what is decided, what is proposed, and the open questions.
 
-Status: **being designed. Nothing is built.** On 2026-10-17 the session finished topic 2 of the agenda and proposed topic 3.
+Status: **being designed. Nothing is built.** On 2026-10-17 the session finished topic 2 of the agenda and most of topic 3.
 
 ## Agenda
 
 1. The objects and their names. *Done.*
 2. Dependencies: join rules, branches not taken, final statuses, disabled jobs. *Done.*
-3. Conditions: what they can test, and the language or builder (shortcoming 3). *Proposed; three questions open.*
+3. Conditions: what they can test, and the language or builder (shortcoming 3). *Language decided; outputs proposed.*
 4. Reactions to outcomes: return codes, rerunning upstream (shortcoming 2).
 5. Restarts and bypassing.
 6. The diagram and editor: cross-workflow links, density, full names (shortcomings 4 and 5).
@@ -97,23 +97,34 @@ The owner found it intuitive. A place to start, not to copy as-is.
 - Disabling a *shared definition* means it can run nowhere: a hard stop, shown on each workflow's diagram as disabled elsewhere.
 - Whenever a shared job is disabled, from a workflow that uses it or on its own page, the user is warned which workflows use it and what will happen in each.
 
+### Names of jobs in a workflow (2026-10-17)
+
+- Every job or workflow in a workflow has a name unique within it; conditions refer to it by that name.
+- An embedded job's name is its own. A used job takes its definition's name by default; only a second use of the same definition needs a name of its own (`Extract`, `Extract_EU`), which the editor suggests.
+- Unlike flow control's StepNames, these never repeat: jobs in a workflow can run at the same time, so "the later one wins" means nothing.
+
+### Conditions: flow control's language (2026-10-17)
+
+- Workflows use the condition language of flow control ([FLOW_CONTROL.md](FLOW_CONTROL.md)): a SQL `WHERE` clause over `%{Name.Output}` values, worked out by SQLite in a database that may only compute. One language for steps and workflows.
+- Why it answers shortcoming 3: SQL is documented everywhere and widely known; flow control already checks conditions before a run and logs the values each one used, which "Explain" against a past run can grow from.
+- A job's `Status` is one of the final statuses: `SUCCESS`, `FAILED`, `SKIPPED`, `NOT_RUN`, `DISABLED`, `BYPASSED` (the first three as for steps).
+- Every job in a workflow has the outputs `Status` and `ReturnCode`.
+- A builder that writes the SQL is still wanted for people who would rather not.
+
 ## Proposed, to settle
 
-- **Topic 3, conditions** (proposed 2026-10-17):
-  - what a condition can test: another job's final status and return code (by its name in the workflow); files present for an endpoint, and how many; a workflow variable or an earlier job's output (AutoApp jobs have no outputs yet); a time window; the same for a job in another workflow;
-  - text is the source of truth, written in words: `Extract.status is Succeeded and Load.returncode in 0..4`, `files("INBOUND_ORDERS") > 0`;
-  - a builder (job, test, value) writes the text, which stays editable for what the builder cannot express;
-  - checked as it is typed, with plain messages for unknown names and mismatched values;
-  - "Explain": evaluated against a past workflow run, showing each part's value and whether it held;
-  - read with Python's standard `ast` module, accepting only these forms (no new package).
-  - Questions for the owner:
-    1. is that the right set of things to test; do jobs need output values (like RunMyJobs' Out parameters);
-    2. text first with a builder, or builder first with text as the fallback;
-    3. words (`and`, `or`, `not`) rather than symbols (`&&`, `||`).
+- **A job's operations as an object downstream** (proposed 2026-10-17; the owner's idea, starting from the JSON records a run sends for its operation log):
+  - the shape is a tree (workflow → child workflow → job → step → operations), addressed by dotted paths: `%{Extract.FileCount}`, `%{MONTH_END.Extract_EU.FileCount}`, `%{MONTH_END.FileCount}` (the workflow's total);
+  - every node has the same small outputs, `Status`, `ReturnCode`, `FileCount`, `Bytes`, worked out when each job ends; a parent's are sums of its children's;
+  - the operations under any node are a table, readable in a condition as `Extract.Operations` or `MONTH_END.Operations`, each row with its Job path, plain column names and endpoints by name: `EXISTS (SELECT 1 FROM Extract.Operations WHERE DestEndpoint = 'FINANCE_IN' AND Status = 'SUCCESS')`;
+  - a downstream job's For Each File can loop over the files an upstream job delivered, rather than what matches a pattern; the trace links the handoff;
+  - nothing is copied between jobs: the object is a reference (this workflow run, this path), and only a condition that asks for `Operations` reads rows, from the database, under the node it names. A For Each over a huge number of files gets a limit, like While's `MaxIterations`.
+  - Questions for the owner: is this the shape wanted (JSON's shape for addressing, a table for querying, references not copies)?
+- **Which attempt counts** (proposed 2026-10-17): when a job runs more than once in a workflow run (a Reaction or a restart reruns it), downstream sees its latest attempt only. Example: Extract fails after delivering 3 of 5 files, and its rerun delivers all 5: `%{Extract.FileCount}` is 5, not 8. Earlier attempts stay in Job History and the trace.
 
 ## Open questions, by topic
 
-- **Conditions (3):** see the proposal above.
+- **Conditions (3):** what else a condition can test: files present for an endpoint (perhaps `files('INBOUND_ORDERS')`), workflow variables, a time window, a job in another workflow; the builder; "Explain" against a past run.
 - **Reactions (4):**
   - "go back upstream and rerun" as an action rather than an arrow (a graph has no cycles), with a limit on how many times;
   - when a workflow with a failed job counts as failed;

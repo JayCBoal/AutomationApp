@@ -16,9 +16,12 @@ DROP TABLE IF EXISTS Processes;
 DROP TABLE IF EXISTS Sources;
 DROP TABLE IF EXISTS Deliveries;
 DROP TABLE IF EXISTS Operations;
+DROP TABLE IF EXISTS WorkflowRunItems;
+DROP TABLE IF EXISTS WorkflowPrerequisites;
 DROP TABLE IF EXISTS JobStepParameters;
 DROP TABLE IF EXISTS JobRunLogs;
 DROP TABLE IF EXISTS Endpoints;
+DROP TABLE IF EXISTS WorkflowItems;
 DROP TABLE IF EXISTS TagAssignments;
 DROP TABLE IF EXISTS Sites;
 DROP TABLE IF EXISTS JobSteps;
@@ -116,9 +119,13 @@ CREATE TABLE `Jobs` (
 	`JobKey` VARCHAR(320) NOT NULL, 
 	`Description` TEXT, 
 	`IsActive` BOOL DEFAULT true, 
+	`JobType` VARCHAR(20) NOT NULL DEFAULT 'STEPS', 
+	`Owner_MasterObject_id` INTEGER, 
+	`SuccessReturnCodes` VARCHAR(100), 
 	PRIMARY KEY (`MasterObject_id`), 
 	FOREIGN KEY(`MasterObject_id`) REFERENCES `MasterObjects` (id) ON DELETE CASCADE, 
-	UNIQUE (`JobKey`)
+	UNIQUE (`JobKey`), 
+	FOREIGN KEY(`Owner_MasterObject_id`) REFERENCES `Jobs` (`MasterObject_id`) ON DELETE CASCADE
 )ENGINE=InnoDB CHARSET=utf8mb4 COLLATE utf8mb4_bin;
 
 CREATE TABLE `Schedulers` (
@@ -185,12 +192,22 @@ CREATE TABLE `JobRuns` (
 	`ErrorMessage` TEXT, 
 	`StartedDateTime` DATETIME(6), 
 	`EndedDateTime` DATETIME(6), 
+	`ReturnCode` INTEGER, 
+	`Reason` VARCHAR(40), 
+	`JobType` VARCHAR(20) NOT NULL DEFAULT 'STEPS', 
+	`ParentRun_id` INTEGER, 
+	`WorkflowPath` VARCHAR(1000), 
+	`Attempt` INTEGER NOT NULL DEFAULT 1, 
+	`CancelRequestedDateTime` DATETIME(6), 
 	PRIMARY KEY (id), 
 	UNIQUE (`RunID`), 
-	FOREIGN KEY(`Job_MasterObject_id`) REFERENCES `Jobs` (`MasterObject_id`) ON DELETE SET NULL
+	FOREIGN KEY(`Job_MasterObject_id`) REFERENCES `Jobs` (`MasterObject_id`) ON DELETE SET NULL, 
+	FOREIGN KEY(`ParentRun_id`) REFERENCES `JobRuns` (id) ON DELETE SET NULL
 )ENGINE=InnoDB CHARSET=utf8mb4 COLLATE utf8mb4_bin;
 
 CREATE INDEX `ix_JobRuns_JobKey` ON `JobRuns` (`JobKey`);
+
+CREATE INDEX `ix_JobRuns_ParentRun_id` ON `JobRuns` (`ParentRun_id`);
 
 CREATE INDEX `ix_JobRuns_SchedulerInstanceID` ON `JobRuns` (`SchedulerInstanceID`);
 
@@ -235,6 +252,21 @@ CREATE TABLE `TagAssignments` (
 	FOREIGN KEY(`Target_MasterObject_id`) REFERENCES `MasterObjects` (id) ON DELETE CASCADE
 )ENGINE=InnoDB CHARSET=utf8mb4 COLLATE utf8mb4_bin;
 
+CREATE TABLE `WorkflowItems` (
+	id INTEGER NOT NULL AUTO_INCREMENT, 
+	`Workflow_MasterObject_id` INTEGER NOT NULL, 
+	`ItemName` VARCHAR(100) NOT NULL, 
+	`Job_MasterObject_id` INTEGER NOT NULL, 
+	`JoinRule` VARCHAR(10) NOT NULL DEFAULT 'ALL', 
+	`ItemOrder` INTEGER NOT NULL DEFAULT 1, 
+	PRIMARY KEY (id), 
+	CONSTRAINT uq_workflow_item_name UNIQUE (`Workflow_MasterObject_id`, `ItemName`), 
+	FOREIGN KEY(`Workflow_MasterObject_id`) REFERENCES `Jobs` (`MasterObject_id`) ON DELETE CASCADE, 
+	FOREIGN KEY(`Job_MasterObject_id`) REFERENCES `Jobs` (`MasterObject_id`) ON DELETE RESTRICT
+)ENGINE=InnoDB CHARSET=utf8mb4 COLLATE utf8mb4_bin;
+
+CREATE INDEX `ix_WorkflowItems_Workflow_MasterObject_id` ON `WorkflowItems` (`Workflow_MasterObject_id`);
+
 CREATE TABLE `Endpoints` (
 	`MasterObject_id` INTEGER NOT NULL, 
 	`Name` VARCHAR(100) NOT NULL, 
@@ -268,6 +300,44 @@ CREATE TABLE `JobStepParameters` (
 	PRIMARY KEY (id), 
 	FOREIGN KEY(`JobStep_id`) REFERENCES `JobSteps` (id) ON DELETE CASCADE
 )ENGINE=InnoDB CHARSET=utf8mb4 COLLATE utf8mb4_bin;
+
+CREATE TABLE `WorkflowPrerequisites` (
+	id INTEGER NOT NULL AUTO_INCREMENT, 
+	`Item_id` INTEGER NOT NULL, 
+	`TargetItem_id` INTEGER, 
+	`Test` VARCHAR(20) NOT NULL DEFAULT 'SUCCESS', 
+	`ReturnCodes` VARCHAR(100), 
+	`Condition` TEXT, 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(`Item_id`) REFERENCES `WorkflowItems` (id) ON DELETE CASCADE, 
+	FOREIGN KEY(`TargetItem_id`) REFERENCES `WorkflowItems` (id) ON DELETE CASCADE
+)ENGINE=InnoDB CHARSET=utf8mb4 COLLATE utf8mb4_bin;
+
+CREATE INDEX `ix_WorkflowPrerequisites_Item_id` ON `WorkflowPrerequisites` (`Item_id`);
+
+CREATE TABLE `WorkflowRunItems` (
+	id INTEGER NOT NULL AUTO_INCREMENT, 
+	`WorkflowRun_id` INTEGER NOT NULL, 
+	`Item_id` INTEGER, 
+	`Path` VARCHAR(1000) NOT NULL, 
+	`ItemName` VARCHAR(100) NOT NULL, 
+	`JobKey` VARCHAR(320) NOT NULL, 
+	`ItemOrder` INTEGER NOT NULL DEFAULT 1, 
+	`Status` VARCHAR(20) NOT NULL DEFAULT 'PENDING', 
+	`Reason` VARCHAR(40), 
+	`ReturnCode` INTEGER, 
+	`ChildRun_id` INTEGER, 
+	`Attempt` INTEGER NOT NULL DEFAULT 0, 
+	`StartedDateTime` DATETIME(6), 
+	`EndedDateTime` DATETIME(6), 
+	PRIMARY KEY (id), 
+	CONSTRAINT uq_workflow_run_item_path UNIQUE (`WorkflowRun_id`, `Path`), 
+	FOREIGN KEY(`WorkflowRun_id`) REFERENCES `JobRuns` (id) ON DELETE CASCADE, 
+	FOREIGN KEY(`Item_id`) REFERENCES `WorkflowItems` (id) ON DELETE SET NULL, 
+	FOREIGN KEY(`ChildRun_id`) REFERENCES `JobRuns` (id) ON DELETE SET NULL
+)ENGINE=InnoDB CHARSET=utf8mb4 COLLATE utf8mb4_bin;
+
+CREATE INDEX `ix_WorkflowRunItems_WorkflowRun_id` ON `WorkflowRunItems` (`WorkflowRun_id`);
 
 CREATE TABLE `Operations` (
 	id INTEGER NOT NULL AUTO_INCREMENT, 

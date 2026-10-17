@@ -58,6 +58,9 @@ classDiagram
         +string(320) JobKey
         +text Description
         +bool IsActive
+        +string(20) JobType
+        +int Owner_MasterObject_id
+        +string(100) SuccessReturnCodes
     }
     MasterObject <|-- Job
     class Scheduler {
@@ -118,6 +121,13 @@ classDiagram
         +text ErrorMessage
         +datetime StartedDateTime
         +datetime EndedDateTime
+        +int ReturnCode
+        +string(40) Reason
+        +string(20) JobType
+        +int ParentRun_id
+        +string(1000) WorkflowPath
+        +int Attempt
+        +datetime CancelRequestedDateTime
     }
     class JobRunLog {
         +int id
@@ -204,10 +214,43 @@ classDiagram
         +bool IsSecret
         +text Description
     }
+    class WorkflowItem {
+        +int id
+        +int Workflow_MasterObject_id
+        +string(100) ItemName
+        +int Job_MasterObject_id
+        +string(10) JoinRule
+        +int ItemOrder
+    }
+    class WorkflowPrerequisite {
+        +int id
+        +int Item_id
+        +int TargetItem_id
+        +string(20) Test
+        +string(100) ReturnCodes
+        +text Condition
+    }
+    class WorkflowRunItem {
+        +int id
+        +int WorkflowRun_id
+        +int Item_id
+        +string(1000) Path
+        +string(100) ItemName
+        +string(320) JobKey
+        +int ItemOrder
+        +string(20) Status
+        +string(40) Reason
+        +int ReturnCode
+        +int ChildRun_id
+        +int Attempt
+        +datetime StartedDateTime
+        +datetime EndedDateTime
+    }
     Endpoint "*" --> "0..1" Site : site
     Endpoint "*" --> "0..1" Application : application
     Entity "1" --> "*" Site : sites
     Job "1" --> "*" JobStep : steps
+    Job "1" --> "*" WorkflowItem : items
     JobRun "*" --> "0..1" Job : job
     JobRun "1" --> "*" Operation : operations
     JobStep "*" --> "0..1" StepType : step_type
@@ -220,6 +263,10 @@ classDiagram
     StepType "1" --> "*" StepDefinition : definitions
     Tag "1" --> "*" Tag : children
     TagAssignment "*" --> "0..1" Tag : tag
+    WorkflowItem "*" --> "0..1" Job : job
+    WorkflowItem "1" --> "*" WorkflowPrerequisite : prerequisites
+    WorkflowPrerequisite "*" --> "0..1" WorkflowItem : target
+    WorkflowRunItem "*" --> "0..1" JobRun : child_run
 ```
 
 Relationships created in the other direction (for example `job_step.job`) exist too but are not drawn.

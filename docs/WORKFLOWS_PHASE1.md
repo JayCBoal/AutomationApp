@@ -25,7 +25,7 @@ Each step is committed and tested on its own.
 
 ### 1. Model and migration
 
-- **Jobs** gain `JobType` (`STEPS` for every existing job, or `WORKFLOW`), `OwnerJob_id` (the workflow an embedded job belongs to; empty until Phase 6) and, if agreed, `SuccessReturnCodes` (`0` unless set).
+- **Jobs** gain `JobType` (`STEPS` for every existing job, or `WORKFLOW`), `OwnerJob_id` (the workflow an embedded job belongs to; empty until Phase 6) and `SuccessReturnCodes` (`0` unless set).
 - **Workflow items:** each job a workflow uses: its name (unique within the workflow), the job it uses, its join rule (All or Any), and its place in the outline.
 - **Prerequisites:** the waiting item, the item it waits for, and the test: Succeeded, Failed, Ended, or return codes (`0-4`, `0, 4`). A column for a SQL condition exists now, empty until Phase 4.
 - **Job runs gain** `JobType`, `ParentRun_id` (the workflow run a job run belongs to), their path in it, their attempt (1 for now), their return code and `Reason`.

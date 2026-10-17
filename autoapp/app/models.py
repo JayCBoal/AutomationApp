@@ -180,16 +180,27 @@ class Scheduler(MasterObject):
 
 
 class Job(MasterObject):
+    """
+    Anything that runs. JobType says what it is made of: STEPS (its JobSteps) or WORKFLOW
+    (other jobs, its WorkflowItems, with prerequisites between them; docs/WORKFLOWS.md).
+    What all jobs share lives here; what belongs to one type lives in that type's tables.
+    """
     __tablename__ = 'Jobs'
 
     # JobKey doubles as the name of the job's working folder, so it must be a safe folder name
     JOB_KEY_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
+    TYPES = ("STEPS", "WORKFLOW")
 
     MasterObject_id = Column(Integer, ForeignKey('MasterObjects.id', ondelete='CASCADE'), primary_key=True)
     # The job's unique name: stable, environment-independent, and what the WLA scheduler passes to the runner
     JobKey = Column(String(320), nullable=False, unique=True)
     Description = Column(Text, nullable=True)
     IsActive = Column(Boolean, default=True, server_default=true())
+    JobType = Column(String(20), nullable=False, default="STEPS", server_default="STEPS")
+    # The workflow an embedded job belongs to (docs/WORKFLOWS.md); empty for a job of its own
+    Owner_MasterObject_id = Column(Integer, ForeignKey('Jobs.MasterObject_id', ondelete='CASCADE'), nullable=True)
+    # The return codes that mean the job succeeded, e.g. "0", "0, 4" or "0-4"; empty means 0
+    SuccessReturnCodes = Column(String(100), nullable=True)
 
     @validates("JobKey")
     def _validate_job_key(self, _attribute, value):
@@ -200,9 +211,13 @@ class Job(MasterObject):
         return value
 
     steps = relationship("JobStep", backref="job", cascade="all, delete-orphan", passive_deletes=True)
+    # A workflow's items, in outline order
+    items = relationship("WorkflowItem", foreign_keys="WorkflowItem.Workflow_MasterObject_id", backref="workflow",
+                         cascade="all, delete-orphan", passive_deletes=True, order_by="WorkflowItem.ItemOrder")
 
     __mapper_args__ = {
         'polymorphic_identity': 'JOB',
+        'inherit_condition': MasterObject_id == MasterObject.id,
     }
 
 
@@ -372,6 +387,55 @@ class JobStepParameter(Base):
 
 
 # ============================================================================
+# Workflows: the jobs a workflow uses, and the prerequisites between them
+# ============================================================================
+class WorkflowItem(Base):
+    """
+    One job a workflow uses, under a name of its own in that workflow, so the same job can
+    be used more than once. Conditions refer to it by that name (%{Name.Status}), so the
+    name holds no dots or spaces.
+    """
+    __tablename__ = 'WorkflowItems'
+    __table_args__ = (UniqueConstraint('Workflow_MasterObject_id', 'ItemName', name='uq_workflow_item_name'),)
+
+    NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
+    JOIN_RULES = ("ALL", "ANY")
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    Workflow_MasterObject_id = Column(Integer, ForeignKey('Jobs.MasterObject_id', ondelete='CASCADE'), nullable=False, index=True)
+    ItemName = Column(String(100), nullable=False)
+    # The job it runs; a job used by a workflow cannot be deleted
+    Job_MasterObject_id = Column(Integer, ForeignKey('Jobs.MasterObject_id', ondelete='RESTRICT'), nullable=False)
+    # ALL: it starts when all its prerequisites hold; ANY: when any one does
+    JoinRule = Column(String(10), nullable=False, default="ALL", server_default="ALL")
+    ItemOrder = Column(Integer, nullable=False, default=1, server_default=text('1'))
+
+    job = relationship("Job", foreign_keys=[Job_MasterObject_id])
+    prerequisites = relationship("WorkflowPrerequisite", foreign_keys="WorkflowPrerequisite.Item_id", backref="item",
+                                 cascade="all, delete-orphan", passive_deletes=True, order_by="WorkflowPrerequisite.id")
+
+
+class WorkflowPrerequisite(Base):
+    """
+    What a workflow's item waits for before it starts: another of the workflow's items, and
+    how that one must have ended. Test is SUCCESS, FAILED, ENDED (any final status) or RC
+    (one of ReturnCodes, e.g. "0-4"). Condition is for conditions written in SQL (a later phase).
+    """
+    __tablename__ = 'WorkflowPrerequisites'
+
+    TESTS = ("SUCCESS", "FAILED", "ENDED", "RC")
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    Item_id = Column(Integer, ForeignKey('WorkflowItems.id', ondelete='CASCADE'), nullable=False, index=True)
+    TargetItem_id = Column(Integer, ForeignKey('WorkflowItems.id', ondelete='CASCADE'), nullable=True)
+    Test = Column(String(20), nullable=False, default="SUCCESS", server_default="SUCCESS")
+    ReturnCodes = Column(String(100), nullable=True)
+    Condition = Column(Text, nullable=True)
+
+    target = relationship("WorkflowItem", foreign_keys=[TargetItem_id])
+
+
+# ============================================================================
 # Run History, File Operations & Change Audits
 # ============================================================================
 class JobRun(Base):
@@ -396,10 +460,49 @@ class JobRun(Base):
     ErrorMessage = Column(Text, nullable=True)
     StartedDateTime = Column(PreciseDateTime, nullable=True)
     EndedDateTime = Column(PreciseDateTime, nullable=True)
+    # What the job's steps reported (0 unless a step set one), and why it ended as it did: see docs/WORKFLOWS.md
+    ReturnCode = Column(Integer, nullable=True)
+    Reason = Column(String(40), nullable=True)
+    JobType = Column(String(20), nullable=False, default="STEPS", server_default="STEPS")
+    # A job run inside a workflow run: that run, the job's path in the workflow ("Transform/Stage"),
+    # and which attempt this is
+    ParentRun_id = Column(Integer, ForeignKey('JobRuns.id', ondelete='SET NULL'), nullable=True, index=True)
+    WorkflowPath = Column(String(1000), nullable=True)
+    Attempt = Column(Integer, nullable=False, default=1, server_default=text('1'))
+    # Set when someone asks a workflow run to start nothing more
+    CancelRequestedDateTime = Column(PreciseDateTime, nullable=True)
 
     job = relationship("Job")
     operations = relationship("Operation", back_populates="run", cascade="all, delete-orphan",
                               passive_deletes=True, order_by="Operation.Seq")
+
+
+class WorkflowRunItem(Base):
+    """
+    One item of a workflow run, and where it stands: PENDING (not started), WAITING,
+    RUNNING, SUCCESS, FAILED or NOT_RUN, with the Reason. An item that never started has
+    no job run of its own, so this is where the run says so.
+    """
+    __tablename__ = 'WorkflowRunItems'
+    __table_args__ = (UniqueConstraint('WorkflowRun_id', 'Path', name='uq_workflow_run_item_path'),)
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    WorkflowRun_id = Column(Integer, ForeignKey('JobRuns.id', ondelete='CASCADE'), nullable=False, index=True)
+    Item_id = Column(Integer, ForeignKey('WorkflowItems.id', ondelete='SET NULL'), nullable=True)
+    Path = Column(String(1000), nullable=False)
+    ItemName = Column(String(100), nullable=False)
+    JobKey = Column(String(320), nullable=False)
+    ItemOrder = Column(Integer, nullable=False, default=1, server_default=text('1'))
+    Status = Column(String(20), nullable=False, default="PENDING", server_default="PENDING")
+    Reason = Column(String(40), nullable=True)
+    ReturnCode = Column(Integer, nullable=True)
+    # The job run of its latest attempt
+    ChildRun_id = Column(Integer, ForeignKey('JobRuns.id', ondelete='SET NULL'), nullable=True)
+    Attempt = Column(Integer, nullable=False, default=0, server_default=text('0'))
+    StartedDateTime = Column(PreciseDateTime, nullable=True)
+    EndedDateTime = Column(PreciseDateTime, nullable=True)
+
+    child_run = relationship("JobRun", foreign_keys=[ChildRun_id])
 
 
 class Operation(Base):

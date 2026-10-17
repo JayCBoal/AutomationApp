@@ -21,12 +21,14 @@ erDiagram
     MasterObjects ||--o| Credentials : "MasterObject_id"
     MasterObjects ||--o| Entities : "MasterObject_id"
     MasterObjects ||--o| Jobs : "MasterObject_id"
+    Jobs |o--o{ Jobs : "Owner_MasterObject_id"
     MasterObjects ||--o| Schedulers : "MasterObject_id"
     StepTypes ||--o{ StepDefinitions : "StepType_id"
     MasterObjects ||--o| Tags : "MasterObject_id"
     Tags |o--o{ Tags : "Parent_MasterObject_id"
     MasterObjects ||--o{ Variables : "MasterObject_id"
     Jobs |o--o{ JobRuns : "Job_MasterObject_id"
+    JobRuns |o--o{ JobRuns : "ParentRun_id"
     Jobs ||--o{ JobSteps : "Job_MasterObject_id"
     StepTypes ||--o{ JobSteps : "StepType_id"
     JobSteps |o--o{ JobSteps : "ParentStep_id"
@@ -34,11 +36,18 @@ erDiagram
     Entities |o--o{ Sites : "Entity_MasterObject_id"
     Tags ||--o{ TagAssignments : "Tag_MasterObject_id"
     MasterObjects ||--o{ TagAssignments : "Target_MasterObject_id"
+    Jobs ||--o{ WorkflowItems : "Workflow_MasterObject_id"
+    Jobs ||--o{ WorkflowItems : "Job_MasterObject_id"
     MasterObjects ||--o| Endpoints : "MasterObject_id"
     Sites |o--o{ Endpoints : "Site_MasterObject_id"
     Applications |o--o{ Endpoints : "Application_MasterObject_id"
     JobRuns ||--o{ JobRunLogs : "JobRun_id"
     JobSteps ||--o{ JobStepParameters : "JobStep_id"
+    WorkflowItems ||--o{ WorkflowPrerequisites : "Item_id"
+    WorkflowItems |o--o{ WorkflowPrerequisites : "TargetItem_id"
+    JobRuns ||--o{ WorkflowRunItems : "WorkflowRun_id"
+    WorkflowItems |o--o{ WorkflowRunItems : "Item_id"
+    JobRuns |o--o{ WorkflowRunItems : "ChildRun_id"
     JobRuns ||--o{ Operations : "JobRun_id"
     JobSteps |o--o{ Operations : "JobStep_id"
     Endpoints |o--o{ Operations : "SourceEndpoint_id"
@@ -137,6 +146,9 @@ erDiagram
         string(320) JobKey UK "required"
         text Description
         bool IsActive
+        string(20) JobType "required"
+        int Owner_MasterObject_id FK
+        string(100) SuccessReturnCodes
     }
     JobSteps {
         int id PK
@@ -175,11 +187,92 @@ erDiagram
         text AllowedValues
     }
     MasterObjects ||--o| Jobs : "MasterObject_id"
+    Jobs |o--o{ Jobs : "Owner_MasterObject_id"
     StepTypes ||--o{ StepDefinitions : "StepType_id"
     Jobs ||--o{ JobSteps : "Job_MasterObject_id"
     StepTypes ||--o{ JobSteps : "StepType_id"
     JobSteps |o--o{ JobSteps : "ParentStep_id"
     JobSteps ||--o{ JobStepParameters : "JobStep_id"
+```
+
+## Workflows
+
+```mermaid
+erDiagram
+    Jobs {
+        int MasterObject_id PK, FK
+        string(320) JobKey UK "required"
+        text Description
+        bool IsActive
+        string(20) JobType "required"
+        int Owner_MasterObject_id FK
+        string(100) SuccessReturnCodes
+    }
+    WorkflowItems {
+        int id PK
+        int Workflow_MasterObject_id FK "required"
+        string(100) ItemName "required"
+        int Job_MasterObject_id FK "required"
+        string(10) JoinRule "required"
+        int ItemOrder "required"
+    }
+    WorkflowPrerequisites {
+        int id PK
+        int Item_id FK "required"
+        int TargetItem_id FK
+        string(20) Test "required"
+        string(100) ReturnCodes
+        text Condition
+    }
+    JobRuns {
+        int id PK
+        string(36) RunID UK "required"
+        string(320) JobKey "required"
+        int Job_MasterObject_id FK
+        string(64) SchedulerInstanceID "required"
+        int RunNumber "required"
+        string(100) SchedulerName
+        date BusinessDate
+        string(255) Host
+        string(20) Status "required"
+        text ErrorMessage
+        datetime StartedDateTime
+        datetime EndedDateTime
+        int ReturnCode
+        string(40) Reason
+        string(20) JobType "required"
+        int ParentRun_id FK
+        string(1000) WorkflowPath
+        int Attempt "required"
+        datetime CancelRequestedDateTime
+    }
+    WorkflowRunItems {
+        int id PK
+        int WorkflowRun_id FK "required"
+        int Item_id FK
+        string(1000) Path "required"
+        string(100) ItemName "required"
+        string(320) JobKey "required"
+        int ItemOrder "required"
+        string(20) Status "required"
+        string(40) Reason
+        int ReturnCode
+        int ChildRun_id FK
+        int Attempt "required"
+        datetime StartedDateTime
+        datetime EndedDateTime
+    }
+    MasterObjects ||--o| Jobs : "MasterObject_id"
+    Jobs |o--o{ Jobs : "Owner_MasterObject_id"
+    Jobs |o--o{ JobRuns : "Job_MasterObject_id"
+    JobRuns |o--o{ JobRuns : "ParentRun_id"
+    Jobs ||--o{ WorkflowItems : "Workflow_MasterObject_id"
+    Jobs ||--o{ WorkflowItems : "Job_MasterObject_id"
+    WorkflowItems ||--o{ WorkflowPrerequisites : "Item_id"
+    WorkflowItems |o--o{ WorkflowPrerequisites : "TargetItem_id"
+    JobRuns ||--o{ WorkflowRunItems : "WorkflowRun_id"
+    WorkflowItems |o--o{ WorkflowRunItems : "Item_id"
+    JobRuns |o--o{ WorkflowRunItems : "ChildRun_id"
 ```
 
 ## Endpoints, runs, operations, audits and settings
@@ -209,6 +302,13 @@ erDiagram
         text ErrorMessage
         datetime StartedDateTime
         datetime EndedDateTime
+        int ReturnCode
+        string(40) Reason
+        string(20) JobType "required"
+        int ParentRun_id FK
+        string(1000) WorkflowPath
+        int Attempt "required"
+        datetime CancelRequestedDateTime
     }
     JobRunLogs {
         int id PK
@@ -256,6 +356,7 @@ erDiagram
     }
     MasterObjects |o--o{ Audits : "MasterObject_id"
     Jobs |o--o{ JobRuns : "Job_MasterObject_id"
+    JobRuns |o--o{ JobRuns : "ParentRun_id"
     MasterObjects ||--o| Endpoints : "MasterObject_id"
     Sites |o--o{ Endpoints : "Site_MasterObject_id"
     Applications |o--o{ Endpoints : "Application_MasterObject_id"
@@ -273,5 +374,7 @@ erDiagram
 | `Tags` | `Parent_MasterObject_id`, `Name` |
 | `Variables` | `MasterObject_id`, `VarName` |
 | `TagAssignments` | `Tag_MasterObject_id`, `Target_MasterObject_id` |
+| `WorkflowItems` | `Workflow_MasterObject_id`, `ItemName` |
 | `JobRunLogs` | `JobRun_id`, `Seq` |
+| `WorkflowRunItems` | `WorkflowRun_id`, `Path` |
 | `Operations` | `JobRun_id`, `Seq` |

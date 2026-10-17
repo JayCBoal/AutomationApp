@@ -12,8 +12,8 @@ Status: **being designed. Nothing is built.** On 2026-10-17 the session finished
 4. Reactions to outcomes: return codes, rerunning upstream (shortcoming 2). *Done.*
 5. Restarts and bypassing. *Done.*
 6. The diagram and editor: cross-workflow links, density, full names (shortcomings 4 and 5). *Done.*
-7. Run records: Job History, the Operations Log, the trace.
-8. The first slice to build: the smallest thing that shows the idea.
+7. Run records: Job History, the Operations Log, the trace. *Core proposed in Phase 1.*
+8. The first slice to build: the smallest thing that shows the idea. *Proposed: phases, below.*
 
 ## Starting point: ActiveBatch's model
 
@@ -250,7 +250,23 @@ To be judged again in practice once built, above all the outside dependencies.
 
 ## Proposed, to settle
 
-- **A clickable mockup of the diagram** (offered 2026-10-17): a static page with a sample workflow (embedded workflows, outside dependencies both ways, a run in progress), to judge the colours, line styles and markers by eye before code.
+- **Implementation in phases** (proposed 2026-10-17). Each phase a working, demonstrable AutoApp built on the last, with tests, a migration and a CHANGE_LOG entry.
+  - Principles: the model is built for the full design from the start (names unique in a workflow, a path for every job, attempts on job runs), even where screens come later; the first screens use the Outline view, so the diagram can follow its mockup.
+  - **Phase 1, the MVP** (shortcoming 1): "a workflow of jobs with dependencies runs, and you can see what happened."
+    - model: Workflows; uses of existing jobs, each with its unique name; prerequisites between them (Succeeded, Failed, Ended, return codes; All or Any);
+    - a workflow runner, a separate process like the job runner, started from the workflow's page: starts each job once its prerequisites hold, as the Run Job page starts the runner; parallel unless prerequisites say otherwise; Not run cascading; a final status; `Reason`;
+    - run records (the core of topic 7): Workflow Runs; each job run knows its workflow run, path and attempt; Job History shows workflow runs with their job runs under them, and a job run links to its workflow; the Operations Log and the trace work unchanged, as they follow job runs;
+    - screens: a Workflows list (like the other search pages); a workflow page editing in Outline view (add a job, set its prerequisites); Run; the outline showing the run live;
+    - not in Phase 1: embedded jobs, Reactions, outside dependencies, restarts, the diagram, Find.
+  - **Phase 2, the diagram** (shortcoming 5): first a clickable mockup (a static page with a sample workflow: embedded workflows, outside dependencies both ways, a run in progress) to judge the look by eye; then elkjs, Diagram | Outline, coloured and styled lines, markers, run states.
+  - **Phase 3, return codes and Reactions** (shortcoming 2): Success return codes, and a step passing on a program's return code; Reactions on a job's end (What happens next and Also; Count as; Rerun this job and Rerun from… with limits; Cancel and Kill; Hold); Disable here (stop or pass through) and the shared-job warning.
+  - **Phase 4, conditions** (shortcoming 3): prerequisites in flow control's SQL language with `%{...}` paths; the Operations object downstream, with For Each File over an upstream job's files; the builder; Explain; workflow variables.
+  - **Phase 5, outside dependencies** (shortcoming 4): prerequisites on jobs in other workflows (current or latest run), on endpoints (minimum age, sharing code with the Check Files change), on time windows and dates; their markers; Needed by.
+  - **Phase 6, embedded and shared workflows** (shortcoming 6): embedded jobs and workflows, workflows used in workflows, frames, deep Find.
+  - **Phase 7, restarts:** the Rerun ▸ menu; Resume from the record (not done, partly done, unknown); flow control state; Advanced….
+  - **Phase 8, time-based Reactions** (the SLA reach): not started by, not ended by, runs longer than; Mark as late; Notify (needs a way to notify, such as the Send email step in TO-DO).
+  - The order follows the shortcomings' priority, except that the diagram comes second (every later phase has something to show on it), and restarts and time-based Reactions, the deepest engine work and the least needed to show the design, come last.
+  - Questions for the owner: the MVP's scope (are Disable here or return codes needed in the first demonstration); the mockup now, alongside planning Phase 1; the order of Phases 3 to 8; each phase planned in detail just before it is built (proposed), Phase 1 next.
 
 ## Open questions, by topic
 

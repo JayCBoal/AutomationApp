@@ -9,8 +9,8 @@ Status: **being designed. Nothing is built.** On 2026-10-17 the session finished
 1. The objects and their names. *Done.*
 2. Dependencies: join rules, branches not taken, final statuses, disabled jobs. *Done.*
 3. Conditions: what they can test, and the language or builder (shortcoming 3). *Language and outputs decided; what else to test, the builder and Explain open.*
-4. Reactions to outcomes: return codes, rerunning upstream (shortcoming 2).
-5. Restarts and bypassing.
+4. Reactions to outcomes: return codes, rerunning upstream (shortcoming 2). *Proposed; four questions open.*
+5. Restarts and bypassing. *Net result, Resume and the Rerun menu decided.*
 6. The diagram and editor: cross-workflow links, density, full names (shortcomings 4 and 5).
 7. Run records: Job History, the Operations Log, the trace.
 8. The first slice to build: the smallest thing that shows the idea.
@@ -134,13 +134,29 @@ The owner's idea, starting from the JSON records a run sends for its operation l
 
 ## Proposed, to settle
 
+- **Reactions, topic 4** (proposed 2026-10-17):
+  - a list on a job or a workflow, looked at when it ends; each entry is *When* (a condition in flow control's language about what just ended: `%{Load.ReturnCode} IN (4, 8)`) and *Then* (an action);
+  - the first entry that holds wins, as in If … ElseIf; if none holds, the job's own status stands (success carries on, failure cascades);
+  - actions:
+    - *Count as succeeded* / *Count as failed*: overrides the status (return code 4 as a warning); the real code and the counted status are shown side by side;
+    - *Rerun this job*: Resume or Restart from beginning, after a wait, at most N times;
+    - *Rerun from…*: resets a chosen upstream job and everything between it and this job, and runs them again, at most N times;
+    - *Skip…*: marks chosen jobs, or the rest of a branch, Skipped;
+    - *Stop the workflow*: ends the run now, as failed or as succeeded; jobs not started are Not run;
+    - *Hold for an operator*: pauses the workflow until someone chooses what next (Control-M's "leave it waiting", on purpose and visible);
+    - *Start a workflow*: the one push in the model, drawn as an outside link;
+  - each rerun's N counts per workflow run; when it is used up, the next entry is tried ("rerun twice, then hold");
+  - a workflow's own Reactions decide its final status; by default a workflow with a Failed job is Failed.
+  - Questions for the owner:
+    1. first match wins, rather than every matching entry;
+    2. an overridden status shown as both ("Succeeded (return code 4)") rather than a seventh status;
+    3. Stop the workflow while jobs run: let them finish or cancel them (proposed: a choice on the action, "let them finish" first);
+    4. whether steps' On failure should become Reactions too, one mechanism for both.
+
 ## Open questions, by topic
 
 - **Conditions (3):** what else a condition can test: files present for an endpoint (perhaps `files('INBOUND_ORDERS')`), workflow variables, a time window, a job in another workflow; the builder; "Explain" against a past run.
-- **Reactions (4):**
-  - "go back upstream and rerun" as an action rather than an arrow (a graph has no cycles), with a limit on how many times;
-  - when a workflow with a failed job counts as failed;
-  - for an outside prerequisite that times out: whether the job counts as failed or not run.
+- **Reactions (4):** see the proposal above; also, for an outside prerequisite that times out, whether the job counts as failed or not run.
 - **Restarts (5):** each job's attempts kept, so a restart resets only the jobs chosen; restarting from the point of failure, from a chosen job, or bypassing one; what Advanced… offers; the open points of resuming (above).
 - **Diagram and editor (6):**
   - how prerequisites outside the workflow (like RunMyJobs' Wait and Raise Events) are drawn (shortcoming 4);

@@ -9,7 +9,7 @@ Status: **being designed. Nothing is built.** On 2026-10-17 the session finished
 1. The objects and their names. *Done.*
 2. Dependencies: join rules, branches not taken, final statuses, disabled jobs. *Done.*
 3. Conditions: what they can test, and the language or builder (shortcoming 3). *Language and outputs decided; what else to test, the builder and Explain open.*
-4. Reactions to outcomes: return codes, rerunning upstream (shortcoming 2). *Decided, apart from what a cancelled or killed job ends as.*
+4. Reactions to outcomes: return codes, rerunning upstream (shortcoming 2). *Decided, apart from what a cancelled or killed job ends as (proposed: a Reason output).*
 5. Restarts and bypassing. *Net result, Resume and the Rerun menu decided.*
 6. The diagram and editor: cross-workflow links, density, full names (shortcomings 4 and 5).
 7. Run records: Job History, the Operations Log, the trace.
@@ -154,7 +154,7 @@ The kinds of When, the actions and how they combine are settled; what a cancelle
   - *side effects*, changing nothing in the run: Notify; Mark as late (a flag, not a status, shown on the diagram and in Job History and searchable: the record of a missed deadline); Start a workflow (the one push in the model, drawn as an outside link).
 - **How entries combine:** every entry is judged against a snapshot of what actually happened, so no entry's actions change what a later one sees. Of the matching entries, only the first one's decisions take effect; every matching entry's side effects fire.
   - Why: a job has one fate, but any number of people can hear about it. Example: A "failed: notify ops", B "return code 8: rerun, at most twice", C "failed: cancel the workflow". On a failure with code 8, ops are notified and the job reruns; C applies when the code is not 8, or once B's reruns are used up. With every match firing (Control-M's On-Do, in order, where an earlier Do can change how a later On evaluates) the rerun and the cancel would compete; with first match only, the notify would have to be copied into B.
-  - In the editor, two sections make the rule visible: **What happens next** (ordered; the first that holds wins, like If/ElseIf) and **Also** (every one that holds fires).
+  - In the editor (decided), two sections make the rule visible: **What happens next** (ordered; the first that holds wins, like If/ElseIf) and **Also** (every one that holds fires).
 - Each rerun's N counts per workflow run; when it is used up, the next matching decision applies ("rerun twice, then hold").
 - A workflow's own Reactions decide its final status; by default a workflow with a Failed job is Failed.
 - "Explain" shows which entries matched and which actions took effect.
@@ -163,17 +163,19 @@ The kinds of When, the actions and how they combine are settled; what a cancelle
 ### Success return codes (2026-10-17)
 
 - Every job has **Success return codes**, `0` unless set; lists and ranges (`0, 4`, `0-4`). A code on the list means Succeeded, and is not an override.
+- A use of a shared job in a workflow can override its definition's, as it can its variables.
 - It becomes meaningful once a step can run a program and pass its return code on; today a job's code is 0 or 1.
 
 ### One editor experience (2026-10-17)
 
-- The job editor and the workflow editor should be essentially the same UX: the properties panel, variables, the condition editor with Explain, the Reactions editor and the Rerun ▸ menu are shared. The canvas differs: a tree of steps, a graph of jobs.
+- The job editor and the workflow editor should be essentially the same UX: the properties panel, variables, the condition editor with Explain, the Reactions editor and the Rerun ▸ menu are shared. The canvas: a workflow is a graph; a job's steps can be shown as a graph too, with a tree as an option, since a tree is easier to read in some cases.
 
 ## Proposed, to settle
 
-- **What a cancelled or killed job ends as** (proposed 2026-10-17): keep the six statuses; a killed job is Failed with its reason shown ("Killed by a Reaction"), a cancelled one Not run ("Cancelled"). The alternative is Cancelled and Killed as statuses of their own, as in RunMyJobs.
-- **Success return codes on a use of a shared job** (proposed 2026-10-17): a use in a workflow can override its definition's, as it can its variables.
-- **The two sections of the Reactions editor** (proposed 2026-10-17): What happens next and Also, as above.
+- **What a cancelled or killed job ends as** (proposed 2026-10-17): keep the six statuses, and give every job a standard `Reason` output beside `Status`: `KILLED`, `TIMED_OUT`, `ERROR` (Failed); `CANCELLED`, `PREREQUISITES_NOT_MET` (Not run); `DISABLED_PASS_THROUGH`, `MARKED_DONE` (Bypassed).
+  - For separate Cancelled and Killed statuses, as in RunMyJobs: triage at a glance (it broke, or someone stopped it); failure rates that leave deliberate kills out; a killed process has no meaningful return code; migration maps one to one.
+  - Against: two more cases in every prerequisite, "ended" test, Reaction and default, almost always "same as Failed" or "same as Not run"; they are kinds of Failed and Not run; their main use in RunMyJobs, standing in for return codes in Status Handlers, goes away when return codes are handled directly.
+  - `Reason` keeps the advantages: conditions test it (`%{Extract.Status} = 'FAILED' AND %{Extract.Reason} = 'KILLED'`), Job History filters on it, reports can leave kills out, the diagram marks it, and an RMJ Killed handler translates into that condition. It also names which of their two meanings Not run and Bypassed have.
 
 ## Open questions, by topic
 
@@ -183,7 +185,7 @@ The kinds of When, the actions and how they combine are settled; what a cancelle
 - **Diagram and editor (6):**
   - how prerequisites outside the workflow (like RunMyJobs' Wait and Raise Events) are drawn (shortcoming 4);
   - a dense diagram that shows full names (shortcoming 5);
-  - whether a job's steps (with If and loops) can be drawn as a graph too, so the job and workflow canvases look alike;
+  - how a job's steps (with If and loops) are drawn as a graph, and switching between graph and tree;
   - how embedded and shared jobs are told apart.
 - **Run records (7):**
   - how a workflow's runs appear in Job History, the Operations Log and the trace (perhaps a parent run with each job's run as a child);

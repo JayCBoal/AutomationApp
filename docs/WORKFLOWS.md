@@ -11,7 +11,7 @@ Status: **being designed. Nothing is built.** On 2026-10-17 the session finished
 3. Conditions: what they can test, and the language or builder (shortcoming 3). *Done.*
 4. Reactions to outcomes: return codes, rerunning upstream (shortcoming 2). *Done.*
 5. Restarts and bypassing. *Done.*
-6. The diagram and editor: cross-workflow links, density, full names (shortcomings 4 and 5). *Proposed.*
+6. The diagram and editor: cross-workflow links, density, full names (shortcomings 4 and 5). *Done.*
 7. Run records: Job History, the Operations Log, the trace.
 8. The first slice to build: the smallest thing that shows the idea.
 
@@ -168,7 +168,7 @@ What a cancelled or killed job ends as: see Reason, below.
 
 ### One editor experience (2026-10-17)
 
-- The job editor and the workflow editor should be essentially the same UX: the properties panel, variables, the condition editor with Explain, the Reactions editor and the Rerun ▸ menu are shared. The canvas: a workflow is a graph; a job's steps can be shown as a graph too, with a tree as an option, since a tree is easier to read in some cases.
+- The job editor and the workflow editor should be essentially the same UX: the properties panel, variables, the condition editor with Explain, the Reactions editor and the Rerun ▸ menu are shared. The canvas: both editors have the same Diagram | Outline switch (topic 6); for a job's steps an outline is easier to read in some cases.
 
 ### Reason, not Cancelled and Killed statuses (2026-10-17)
 
@@ -223,25 +223,40 @@ What a cancelled or killed job ends as: see Reason, below.
   - flow control: an If whose branch had begun keeps that branch; a For Each File reuses attempt 1's list of files (to be recorded) and skips the passes done; a While picks up at its pass;
   - the run's spool, written as it goes, is the record for a killed runner and a failure of the code alike (the owner's control file is "the spool, read back"); when the last operation is not known to have finished, it counts as unknown or partly done, as above.
 
+### The diagram and the editor (topic 6, 2026-10-17)
+
+To be judged again in practice once built, above all the outside dependencies.
+
+- **Layout:** left to right by default (columns are the levels of the graph; parallel jobs stack down a column), top to bottom as a choice for portrait screens. Laid out automatically; no dragging (pinning perhaps later).
+- **Full names, always:** a box wraps its name onto as many lines as needed, so one long name does not widen its whole column. Never truncated.
+- **A box in the editor** shows what kind of thing it is: embedded or shared, job or workflow; disabled here or elsewhere; has Reactions. Everything else is in the side panel on selection, the same panel as the job editor. It has no status: statuses are for runs.
+- **Every kind of dependency is visible:**
+  - ones with a source are a box joined by a line: a job in the workflow (an arrow), a job or workflow elsewhere (a dashed box at the edge), an endpoint (a file box);
+  - ones without a source are icons on the job's box: a clock (a time window), a calendar (a date), `{x}` (a test on a variable). Each shows its exact condition on pointing at it.
+- **Lines are coloured, not labelled**, each colour with its own line style too, for colour-blind users (red against green is the commonest form):
+  - Succeeded (the default; Bypassed counts as succeeded): green, solid;
+  - Failed: red, dashed;
+  - Ended (any final status): black, solid;
+  - return codes: blue, labelled (`RC 4`, `RC 0-4`);
+  - any other status, or a combination: grey, labelled.
+  - *Any* rather than all is marked where arrows enter a job. Rerun from… Reactions are a dashed arrow back upstream.
+- **Embedded workflows** are a frame around their jobs, collapsible to one box with a summary ("Extract: 12 jobs"; in a run "2 running, 1 failed"). **Shared** ones are a single box, opening read-only.
+- **Outside dependencies, both ways** (shortcoming 4): what this workflow waits for as dashed boxes at the left edge (`⇢ MONTH_END / Extract`, linking there); what waits for this workflow as dashed boxes at the right edge (`Needed by ⇢ BILLING / Load`); Start a workflow Reactions as right-edge stubs.
+- **In a run**, boxes use the lines' colours and patterns: Succeeded green; Failed red; Running blue with a moving stripe; Waiting on a prerequisite an amber outline (the side panel says which); not started yet plain; Held a pause marker; Not run hollow grey; Skipped grey stripes; Disabled crossed out; Bypassed a dashed outline with an arrow through; late a red clock. Rerun ▸ on every box.
+- **Editing:** + Job (New job here, Use an existing job…); drag from box to box to make a prerequisite, select a line to change its test; Disable here and Rerun ▸ on each box's menu.
+- **Diagram | Outline**, the same switch and words in the job editor and the workflow editor. The outline is an indented list (embedded workflows nested, prerequisites under each job), for very large workflows and screen readers.
+- **Find:** matches as AutoApp's search pages do (case ignored, anywhere in the name), and looks everywhere: direct children, inside embedded workflows and inside shared ones, however deep. Results list their path (`MONTH_END / Extract / Stage_EU`). On the diagram, matches are highlighted, a collapsed frame says how many it holds ("2 matches inside"), and *Show matches* opens every frame on the way to them; shared workflows open inline for this, read-only and visibly distinct. Zoom and fit too.
+- **Layout engine:** elkjs (Eclipse Layout Kernel), vendored like Alpine, for positions only; AutoApp draws the SVG. Its licence is the Eclipse Public License 2.0: free, nothing to buy, and no obligation on AutoApp unless elkjs's own code were changed and distributed. Chosen over dagre (MIT), which handles nested frames poorly. The owner cares about the UX, not the means, provided nothing needs a paid licence.
+
 ## Proposed, to settle
 
-- **Topic 6, the diagram and the editor** (proposed 2026-10-17):
-  - *layout*: left to right (columns are the levels of the graph; parallel jobs stack down a column, compact for wide fan-outs); a job is a one-line box that grows to fit its name and wraps to a second line past about 40 characters, never truncated; laid out automatically (no dragging; pinning perhaps later);
-  - *a box*: a status colour, the name, and markers (shared or embedded, has Reactions, disabled here or elsewhere, late, attempt number from 2); everything else in the side panel on selection, the same panel as the job editor;
-  - *lines*: arrows are prerequisites in the workflow, unlabelled for the default ("succeeded"), else labelled (`ended`, `RC 4`, `FAILED`); *any* marked where arrows enter a job; Rerun from… Reactions as a dashed arrow back upstream;
-  - *embedded workflows*: a frame around their jobs, collapsible to one box with a summary ("Extract: 12 jobs"; in a run "2 running, 1 failed"); *shared* ones a single box, opening read-only;
-  - *outside dependencies, both ways* (shortcoming 4): what this workflow waits for as dashed boxes at the left edge (`⇢ MONTH_END / Extract`, linking there; an endpoint as a file marker; a time window as a clock on the job); what waits for this workflow as dashed boxes at the right edge (`Needed by ⇢ BILLING / Load`); Start a workflow Reactions as right-edge stubs;
-  - *in a run*: the same diagram, coloured by state and updating; Not run hollow grey, Skipped grey stripes, Disabled crossed out, Bypassed a dashed outline with an arrow through, late a red clock, held a pause marker; Rerun ▸ on every box;
-  - *editing*: + Job (New job here, Use an existing job…); drag from box to box to make a prerequisite, select an arrow to change its test; Disable here and Rerun ▸ on each box's menu;
-  - *other views*: an outline (an indented list, embedded workflows nested, prerequisites under each job), for very large workflows and screen readers; a job's steps as graph or tree; zoom, fit, find a job by name;
-  - *layout engine*: elkjs (Eclipse Layout Kernel, MIT), vendored like Alpine, for positions only, AutoApp drawing the SVG; it handles nested graphs, which embedded workflows need. Needs the owner's approval (a new package). The alternative, a layered layout of our own, is a few hundred lines of tricky code and usually worse with nested frames.
-  - Questions for the owner: elkjs; left to right or top to bottom; automatic layout only to start; "Needed by" at the right edge; a clickable mockup to judge it by eye.
+- **A clickable mockup of the diagram** (offered 2026-10-17): a static page with a sample workflow (embedded workflows, outside dependencies both ways, a run in progress), to judge the colours, line styles and markers by eye before code.
 
 ## Open questions, by topic
 
 - **Reactions on a use** (raised 2026-10-17): whether a use can add Reactions of its own to its definition's (proposed: yes, the use's looked at first).
 - **Reactions (4):** see the proposal above; also, for an outside prerequisite that times out, whether the job counts as failed or not run.
-- **Diagram and editor (6):** see the proposal above; also how a job's steps (with If and loops) are drawn as a graph.
+- **Diagram and editor (6):** how a job's steps (with If and loops) are drawn as a diagram.
 - **Run records (7):**
   - how a workflow's runs appear in Job History, the Operations Log and the trace (perhaps a parent run with each job's run as a child);
   - showing each job's state in a workflow run without a run record for jobs that have not started;

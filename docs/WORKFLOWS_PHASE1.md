@@ -2,12 +2,12 @@
 
 The MVP of [WORKFLOWS.md](WORKFLOWS.md) ("Implementation in phases"): **a workflow of jobs with dependencies runs, and you can see what happened.** It answers the first RunMyJobs shortcoming (flexible dependencies) and lays the foundations the later phases build on.
 
-Status: **reviewed with the owner 2026-10-17; one proposal open (below).**
+Status: **agreed with the owner 2026-10-17; being built.**
 
 ## What Phase 1 includes, and what it leaves out
 
 - **In:** workflows (a kind of Job) made of existing jobs; prerequisites between them (Succeeded, Failed, Ended, return codes; All or Any); running a workflow by hand; Not run cascading; a final status and `Reason`; a minimal Cancel; the Outline view for editing and for watching a run; one Job History for job and workflow runs.
-- **Proposed for Phase 1 as well:** the Simulate step type, a step setting the job's return code, and Success return codes on a job (see the open proposal).
+- **Also in, brought forward from Phase 3:** the Simulate step type, a step setting the job's return code, and Success return codes on a job (below).
 - **Out, for later phases:** embedded jobs and workflows (6), Reactions (3), outside dependencies and the rest of "prerequisites that aren't satisfied" (5), SQL conditions (4), restarts (7), the diagram (2), Find (2 and 6), Disable here (3), time-based Reactions (8).
 - **The model is built for the full design from the start:** names unique within a workflow, a path for every job, attempts on job runs, an owner column for embedded jobs, a column for conditions, so later phases add behaviour without reshaping data.
 
@@ -17,7 +17,7 @@ Status: **reviewed with the owner 2026-10-17; one proposal open (below).**
 - **The workflow runner works on the database directly**, beside the server (the server's own "virtual queue", in ActiveBatch terms). Job runners still report through the API, as now.
 - **One Job History:** a workflow's run is a job run; its job runs are listed as rows of their own with a **Parent run** column linking to it, and a filter for "this run and its children". It becomes a tree once the outline and diagram can show it.
 - **A minimal Cancel:** "start nothing more"; running jobs finish. The full Cancel and Kill come with Reactions (Phase 3).
-- **The sample:** a workflow made from the existing sample jobs, plus Simulate jobs if agreed, to show a fan-out and join, a failure path and a return-code branch.
+- **The sample:** a workflow made from the existing sample jobs, plus Simulate jobs, to show a fan-out and join, a failure path and a return-code branch.
 
 ## The steps
 
@@ -55,6 +55,7 @@ Each step is committed and tested on its own.
 - The sample workflow in the seed data, so the dev database and the demo have one.
 - CHANGE_LOG, PROJECT_BLUEPRINT, and tests at every step, including UI tests for editing and for a run.
 
-## Proposed, to settle
+## Simulate and return codes (agreed 2026-10-17)
 
-- **Simulate and return codes in Phase 1.** The Simulate step type (logs given lines, waits a given time, exits with a given return code, optionally fails with a message) lets workflows be built and tested without real jobs. With it, two small pieces of Phase 3 would move into Phase 1, so return-code prerequisites can be shown working: a step can set the job's return code (Simulate does), and Success return codes on a job (`0` unless set; a code on the list means Succeeded). A new step type comes with everything CLAUDE.md asks of one (help, preview, operation records, masking, tests).
+- **The Simulate step type** (logs given lines, waits a given time, exits with a given return code, optionally fails with a message) lets workflows be built and tested without real jobs. It comes with everything CLAUDE.md asks of a step type (help, preview, operation records, masking, tests).
+- Brought forward from Phase 3 so return-code prerequisites can be shown working: **a step can set the job's return code** (Simulate does), and **Success return codes on a job** (`0` unless set; a code on the list means Succeeded).

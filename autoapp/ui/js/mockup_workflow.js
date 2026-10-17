@@ -215,8 +215,9 @@
         const lines = wrapName(item.name);
         const icons = markers(item);
         const sub = subLine(item);
+        const unfold = item.kind === "workflow" ? ICON + 4 : 0;      // a folded frame's ▸ comes first in the marker row
         const width = Math.max(MIN_WIDTH,
-            ...lines.map(l => textWidth(l, NAME_FONT)), icons.length * (ICON + 4), sub ? Math.min(textWidth(sub, SMALL_FONT), 230) : 0);
+            ...lines.map(l => textWidth(l, NAME_FONT)), unfold + icons.length * (ICON + 4), sub ? Math.min(textWidth(sub, SMALL_FONT), 230) : 0);
         const height = PAD + (icons.length ? ICON + 4 : 0) + lines.length * LINE + (sub ? SUB_LINE + 2 : 0) + PAD - 2;
         return { lines, icons, sub, width: Math.ceil(width + 2 * PAD), height: Math.ceil(height) };
     }
@@ -254,6 +255,7 @@
     }
 
     const edgeWords = new Map();         // edge id: what pointing at the line says
+    const edgeInside = new Map();        // edge id: { start, end }: true where the line really begins or ends inside a folded frame
 
     function nameOf(path) {
         const stub = OUTSIDE.find(s => s.id === path);
@@ -272,19 +274,23 @@
 
     function elkEdges() {
         const seen = new Set(), edges = [];
-        edgeWords.clear();
-        const add = (from, to, test, label, kind = "prereq") => {
+        edgeWords.clear(); edgeInside.clear();
+        const shown = path => BY_PATH.has(path) ? visiblePath(path) : path;     // outside boxes are always shown
+        const add = (realFrom, realTo, test, label, kind = "prereq") => {
+            const from = shown(realFrom), to = shown(realTo);
             const key = `${from}>${to}>${test}`;
             if (from === to || seen.has(key)) return;
             seen.add(key);
+            const id = `e${edges.length}`;
             const labels = label ? [{ text: label, width: textWidth(label, SMALL_FONT) + 10, height: 16 }] : [];
-            edgeWords.set(`e${edges.length}`, describeEdge(from, to, test, label));
-            edges.push({ id: `e${edges.length}`, sources: [from], targets: [to], labels, test, kind });
+            edgeWords.set(id, describeEdge(realFrom, realTo, test, label));
+            edgeInside.set(id, { start: from !== realFrom, end: to !== realTo });
+            edges.push({ id, sources: [from], targets: [to], labels, test, kind });
         };
-        for (const p of PREREQS) add(visiblePath(p.from), visiblePath(p.to), p.test, p.label);
+        for (const p of PREREQS) add(p.from, p.to, p.test, p.label);
         for (const s of OUTSIDE) {
-            if (s.side === "in") add(s.id, visiblePath(s.to), s.test, null, "outside");
-            else add(visiblePath(s.from), s.id, s.test, null, "outside");
+            if (s.side === "in") add(s.id, s.to, s.test, null, "outside");
+            else add(s.from, s.id, s.test, null, "outside");
         }
         return edges;
     }
@@ -411,8 +417,8 @@
         svg("title", {}, g).textContent = displayPath(item.path);
         if (item.kind === "workflow") {         // folded: ▸ unfolds it (so does a double-click)
             const unfold = svg("g", { "data-toggle": item.path, cursor: "pointer" }, g);
-            svg("rect", { x: at.x + at.width - 22, y: at.y + 2, width: 20, height: 20, fill: "transparent" }, unfold);
-            svg("text", { x: at.x + at.width - 16, y: at.y + 16, fill: css("--muted"), style: `font: ${NAME_FONT}` }, unfold).textContent = "▸";
+            svg("rect", { x: at.x + 2, y: at.y + 2, width: 22, height: 22, fill: "transparent" }, unfold);
+            svg("text", { x: at.x + PAD + 2, y: at.y + PAD + 11, fill: css("--muted"), style: `font: ${NAME_FONT}` }, unfold).textContent = "▸";
             svg("title", {}, unfold).textContent = "Unfold";
         }
     }
@@ -420,7 +426,8 @@
     function drawBoxText(g, item, at, model, look) {
         let y = at.y + PAD;
         if (model.icons.length) {
-            model.icons.forEach(([name, words], i) => icon(g, name, at.x + PAD + i * (ICON + 4), y, name === "late" ? css("--failure") : css("--muted"), words));
+            const first = at.x + PAD + (item.kind === "workflow" ? ICON + 4 : 0);
+            model.icons.forEach(([name, words], i) => icon(g, name, first + i * (ICON + 4), y, name === "late" ? css("--failure") : css("--muted"), words));
             if (state.mode === "run" && runState(item.path).status === "HELD") icon(g, "pause", at.x + at.width - PAD - ICON, y, css("--text"), "Held for an operator");
             y += ICON + 4;
         } else if (state.mode === "run" && runState(item.path).status === "HELD") {
@@ -478,21 +485,42 @@
         svg("title", {}, g).textContent = stub.detail;
     }
 
-    function drawEdge(layer, edge, positions) {
+    const INTO_BOX = 16;                 // how far a line reaches into a folded frame's box
+
+    /** The point `distance` beyond `to`, carrying on in the direction from `from`. */
+    function beyond(from, to, distance) {
+        const dx = to.x - from.x, dy = to.y - from.y, length = Math.hypot(dx, dy) || 1;
+        return { x: to.x + dx / length * distance, y: to.y + dy / length * distance };
+    }
+
+    function drawEdge(layer, over, edge, positions) {
         const offset = positions.get(edge.container || "root") || { x: 0, y: 0 };
         const style = lineStyle(edge.test);
+        const inside = edgeInside.get(edge.id) || {};
         const g = svg("g", {}, layer);
         for (const section of edge.sections || []) {
-            const points = [section.startPoint, ...(section.bendPoints || []), section.endPoint];
-            const d = points.map((p, i) => `${i ? "L" : "M"}${p.x + offset.x} ${p.y + offset.y}`).join(" ");
-            svg("path", { d, fill: "none", stroke: style.color, "stroke-width": 1.6, "stroke-dasharray": style.dash, "marker-end": `url(#a-${edge.test})` }, g);
+            const points = [section.startPoint, ...(section.bendPoints || []), section.endPoint].map(p => ({ x: p.x + offset.x, y: p.y + offset.y }));
+            const d = points.map((p, i) => `${i ? "L" : "M"}${p.x} ${p.y}`).join(" ");
+            svg("path", { d, fill: "none", stroke: style.color, "stroke-width": 1.6, "stroke-dasharray": style.dash, "marker-end": inside.end ? null : `url(#a-${edge.test})` }, g);
             hoverArea(g, d, edgeWords.get(edge.id));
+            // Over the box: the line carries on into a folded frame, to show it reaches something inside
+            const n = points.length;
+            if (inside.end) drawInto(over, points[n - 1], beyond(points[n - 2], points[n - 1], INTO_BOX), style, edge, true);
+            if (inside.start) drawInto(over, beyond(points[1], points[0], INTO_BOX), points[0], style, edge, false);
         }
         for (const label of edge.labels || []) {
             const x = label.x + offset.x, y = label.y + offset.y;
             svg("rect", { x, y, width: label.width, height: label.height, rx: 3, fill: css("--page"), stroke: style.color }, layer);
             svg("text", { x: x + 5, y: y + 12, fill: style.color, style: `font: ${SMALL_FONT}` }, layer).textContent = label.text;
         }
+    }
+
+    function drawInto(layer, from, to, style, edge, arrow) {
+        const d = `M${from.x} ${from.y}L${to.x} ${to.y}`;
+        const g = svg("g", {}, layer);
+        svg("path", { d, fill: "none", stroke: style.color, "stroke-width": 1.6, "stroke-dasharray": style.dash, "marker-end": arrow ? `url(#a-${edge.test})` : null }, g);
+        if (!arrow) svg("circle", { cx: from.x, cy: from.y, r: 2.2, fill: style.color }, g);     // where it starts, inside
+        hoverArea(g, d, edgeWords.get(edge.id));
     }
 
     /** A wide, invisible copy of a line, so it is easy to point at; pointing at it says what the line means. */
@@ -565,7 +593,7 @@
         }
         const allEdges = [];
         (function collect(node) { allEdges.push(...(node.edges || [])); (node.children || []).forEach(collect); })(result);
-        allEdges.forEach(edge => drawEdge(edges, edge, positions));
+        allEdges.forEach(edge => drawEdge(edges, over, edge, positions));
         for (const item of allItems()) if (item.join === "any" && positions.has(visiblePath(item.path))) drawAnyMarker(over, positions.get(visiblePath(item.path)));
         RERUNS.forEach(rerun => drawRerun(edges, over, rerun, positions));
         drawMatchCounts(over, positions);

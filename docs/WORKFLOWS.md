@@ -8,7 +8,7 @@ Status: **being designed. Nothing is built.** On 2026-10-17 the session finished
 
 1. The objects and their names. *Done.*
 2. Dependencies: join rules, branches not taken, final statuses, disabled jobs. *Done.*
-3. Conditions: what they can test, and the language or builder (shortcoming 3). *Language decided; outputs proposed.*
+3. Conditions: what they can test, and the language or builder (shortcoming 3). *Language and outputs decided; what else to test, the builder and Explain open.*
 4. Reactions to outcomes: return codes, rerunning upstream (shortcoming 2).
 5. Restarts and bypassing.
 6. The diagram and editor: cross-workflow links, density, full names (shortcomings 4 and 5).
@@ -111,16 +111,25 @@ The owner found it intuitive. A place to start, not to copy as-is.
 - Every job in a workflow has the outputs `Status` and `ReturnCode`.
 - A builder that writes the SQL is still wanted for people who would rather not.
 
+### A job's operations as an object downstream (2026-10-17)
+
+The owner's idea, starting from the JSON records a run sends for its operation log.
+
+- The shape is a tree (workflow → child workflow → job → step → operations), addressed by dotted paths: `%{Extract.FileCount}`, `%{MONTH_END.Extract_EU.FileCount}`, `%{MONTH_END.FileCount}` (the workflow's total).
+- Every node has the same small outputs, `Status`, `ReturnCode`, `FileCount`, `Bytes`, worked out when each job ends; a parent's are sums of its children's.
+- The operations under any node are a table, readable in a condition as `Extract.Operations` or `MONTH_END.Operations`, each row with its Job path, plain column names and endpoints by name: `EXISTS (SELECT 1 FROM Extract.Operations WHERE DestEndpoint = 'FINANCE_IN' AND Status = 'SUCCESS')`.
+- A downstream job's For Each File can loop over the files an upstream job delivered, rather than what matches a pattern; the trace links the handoff.
+- Nothing is copied between jobs: the object is a reference (this workflow run, this path), and only a condition that asks for `Operations` reads rows, from the database, under the node it names. A For Each over a huge number of files gets a limit, like While's `MaxIterations`.
+
 ## Proposed, to settle
 
-- **A job's operations as an object downstream** (proposed 2026-10-17; the owner's idea, starting from the JSON records a run sends for its operation log):
-  - the shape is a tree (workflow → child workflow → job → step → operations), addressed by dotted paths: `%{Extract.FileCount}`, `%{MONTH_END.Extract_EU.FileCount}`, `%{MONTH_END.FileCount}` (the workflow's total);
-  - every node has the same small outputs, `Status`, `ReturnCode`, `FileCount`, `Bytes`, worked out when each job ends; a parent's are sums of its children's;
-  - the operations under any node are a table, readable in a condition as `Extract.Operations` or `MONTH_END.Operations`, each row with its Job path, plain column names and endpoints by name: `EXISTS (SELECT 1 FROM Extract.Operations WHERE DestEndpoint = 'FINANCE_IN' AND Status = 'SUCCESS')`;
-  - a downstream job's For Each File can loop over the files an upstream job delivered, rather than what matches a pattern; the trace links the handoff;
-  - nothing is copied between jobs: the object is a reference (this workflow run, this path), and only a condition that asks for `Operations` reads rows, from the database, under the node it names. A For Each over a huge number of files gets a limit, like While's `MaxIterations`.
-  - Questions for the owner: is this the shape wanted (JSON's shape for addressing, a table for querying, references not copies)?
-- **Which attempt counts** (proposed 2026-10-17): when a job runs more than once in a workflow run (a Reaction or a restart reruns it), downstream sees its latest attempt only. Example: Extract fails after delivering 3 of 5 files, and its rerun delivers all 5: `%{Extract.FileCount}` is 5, not 8. Earlier attempts stay in Job History and the trace.
+- **What downstream sees after a restart** (proposed 2026-10-17): a job's *net result* in the workflow run. Example: Extract fails after delivering 3 of 5 files.
+  - *Resumed* (the default, below): the attempts add up. Attempt 2 delivers the other 2, and `%{Extract.FileCount}` is 5.
+  - *Rerun from the start*: only the latest attempt counts. It delivers all 5, and `%{Extract.FileCount}` is 5.
+  - Every attempt stays in Job History and the trace.
+- **Resuming a failed job where it left off** (the owner's idea from the original prototype, a structured control file; topic 5): when a job fails in its own work, the engine has a record of exactly what it has done so far, and a restart picks up from there by default.
+  - AutoApp's runs already spool their operations as structured JSON as they go, which is most of that record: a resume skips the steps that finished, and in a For Each File the files already handled.
+  - To work out: reusing the first attempt's resolved values (a business date, a timestamp in a file name); a half-done step (a file copied but not recorded, a SQL step partly committed), perhaps with steps declaring that they cannot be resumed and must run again in full; flow control state (which branch an If took, which pass a loop was on); and a runner that was killed, whose spool is left as `.jsonl.tmp` (TO-DO "Killed runs").
 
 ## Open questions, by topic
 
@@ -129,7 +138,7 @@ The owner found it intuitive. A place to start, not to copy as-is.
   - "go back upstream and rerun" as an action rather than an arrow (a graph has no cycles), with a limit on how many times;
   - when a workflow with a failed job counts as failed;
   - for an outside prerequisite that times out: whether the job counts as failed or not run.
-- **Restarts (5):** each job's attempts kept, so a restart resets only the jobs chosen; restarting from the point of failure, from a chosen job, or bypassing one.
+- **Restarts (5):** each job's attempts kept, so a restart resets only the jobs chosen; restarting from the point of failure, from a chosen job, or bypassing one; resuming a job where it left off (proposed above).
 - **Diagram and editor (6):**
   - how prerequisites outside the workflow (like RunMyJobs' Wait and Raise Events) are drawn (shortcoming 4);
   - a dense diagram that shows full names (shortcoming 5);

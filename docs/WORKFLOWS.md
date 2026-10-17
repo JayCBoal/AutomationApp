@@ -2,7 +2,7 @@
 
 The design record for AutoApp's workflows, built up in design sessions with the owner. What a workflow is for, and the RunMyJobs shortcomings it answers, are in [PROJECT_GOALS.md](PROJECT_GOALS.md) goal 2. This page holds everything else: the starting point, what is decided, what is proposed, and the open questions.
 
-Status: **being designed. Nothing is built.** On 2026-10-17 the session finished topic 2 of the agenda and most of topic 3.
+Status: **being designed. Nothing is built.** On 2026-10-17 the session finished topic 2 of the agenda, most of topic 3, and the core of restarting (topic 5); it went on to topic 4.
 
 ## Agenda
 
@@ -121,15 +121,18 @@ The owner's idea, starting from the JSON records a run sends for its operation l
 - A downstream job's For Each File can loop over the files an upstream job delivered, rather than what matches a pattern; the trace links the handoff.
 - Nothing is copied between jobs: the object is a reference (this workflow run, this path), and only a condition that asks for `Operations` reads rows, from the database, under the node it names. A For Each over a huge number of files gets a limit, like While's `MaxIterations`.
 
-## Proposed, to settle
+### Restarting: net result, resume, and the Rerun menu (2026-10-17)
 
-- **What downstream sees after a restart** (proposed 2026-10-17): a job's *net result* in the workflow run. Example: Extract fails after delivering 3 of 5 files.
-  - *Resumed* (the default, below): the attempts add up. Attempt 2 delivers the other 2, and `%{Extract.FileCount}` is 5.
-  - *Rerun from the start*: only the latest attempt counts. It delivers all 5, and `%{Extract.FileCount}` is 5.
+- **Downstream sees a job's net result** in the workflow run. Example: Extract fails after delivering 3 of 5 files.
+  - *Resumed:* the attempts add up. Attempt 2 delivers the other 2, and `%{Extract.FileCount}` is 5.
+  - *Restarted from the beginning:* only the latest attempt counts. It delivers all 5, and `%{Extract.FileCount}` is 5.
   - Every attempt stays in Job History and the trace.
-- **Resuming a failed job where it left off** (the owner's idea from the original prototype, a structured control file; topic 5): when a job fails in its own work, the engine has a record of exactly what it has done so far, and a restart picks up from there by default.
+- **Resuming a failed job where it left off** (the owner's idea from the original prototype, a structured control file): when a job fails in its own work, the engine has a record of exactly what it has done so far, and Resume picks up from there.
   - AutoApp's runs already spool their operations as structured JSON as they go, which is most of that record: a resume skips the steps that finished, and in a For Each File the files already handled.
-  - To work out: reusing the first attempt's resolved values (a business date, a timestamp in a file name); a half-done step (a file copied but not recorded, a SQL step partly committed), perhaps with steps declaring that they cannot be resumed and must run again in full; flow control state (which branch an If took, which pass a loop was on); and a runner that was killed, whose spool is left as `.jsonl.tmp` (TO-DO "Killed runs").
+  - To work out (topic 5): reusing the first attempt's resolved values (a business date, a timestamp in a file name); a half-done step (a file copied but not recorded, a SQL step partly committed), perhaps with steps declaring that they cannot be resumed and must run again in full; flow control state (which branch an If took, which pass a loop was on); and a runner that was killed, whose spool is left as `.jsonl.tmp` (TO-DO "Killed runs").
+- **In the UI, Resume is the first choice, not a hidden default.** Jobs and workflows alike have a **Rerun ▸** menu: **Resume**, **Restart from beginning**, **Advanced…** (the other restart options, topic 5).
+
+## Proposed, to settle
 
 ## Open questions, by topic
 
@@ -138,7 +141,7 @@ The owner's idea, starting from the JSON records a run sends for its operation l
   - "go back upstream and rerun" as an action rather than an arrow (a graph has no cycles), with a limit on how many times;
   - when a workflow with a failed job counts as failed;
   - for an outside prerequisite that times out: whether the job counts as failed or not run.
-- **Restarts (5):** each job's attempts kept, so a restart resets only the jobs chosen; restarting from the point of failure, from a chosen job, or bypassing one; resuming a job where it left off (proposed above).
+- **Restarts (5):** each job's attempts kept, so a restart resets only the jobs chosen; restarting from the point of failure, from a chosen job, or bypassing one; what Advanced… offers; the open points of resuming (above).
 - **Diagram and editor (6):**
   - how prerequisites outside the workflow (like RunMyJobs' Wait and Raise Events) are drawn (shortcoming 4);
   - a dense diagram that shows full names (shortcoming 5);

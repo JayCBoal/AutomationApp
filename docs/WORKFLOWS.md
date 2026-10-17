@@ -9,7 +9,7 @@ Status: **being designed. Nothing is built.** On 2026-10-17 the session finished
 1. The objects and their names. *Done.*
 2. Dependencies: join rules, branches not taken, final statuses, disabled jobs. *Done.*
 3. Conditions: what they can test, and the language or builder (shortcoming 3). *Language and outputs decided; what else to test, the builder and Explain open.*
-4. Reactions to outcomes: return codes, rerunning upstream (shortcoming 2). *Decided, apart from what a cancelled or killed job ends as (proposed: a Reason output).*
+4. Reactions to outcomes: return codes, rerunning upstream (shortcoming 2). *Done.*
 5. Restarts and bypassing. *Net result, Resume and the Rerun menu decided.*
 6. The diagram and editor: cross-workflow links, density, full names (shortcomings 4 and 5).
 7. Run records: Job History, the Operations Log, the trace.
@@ -134,7 +134,7 @@ The owner's idea, starting from the JSON records a run sends for its operation l
 
 ### Reactions (topic 4, 2026-10-17)
 
-The kinds of When, the actions and how they combine are settled; what a cancelled or killed job ends as is still to settle (below).
+What a cancelled or killed job ends as: see Reason, below.
 
 - **A list on a job or a workflow.** Each entry is a *When* (an event, with a condition in flow control's language about the job: `%{Load.ReturnCode} IN (4, 8)`) and one or more actions.
 - **Kinds of When**, all in the one list and editor; to the user one mechanism, though the code paths differ:
@@ -170,12 +170,14 @@ The kinds of When, the actions and how they combine are settled; what a cancelle
 
 - The job editor and the workflow editor should be essentially the same UX: the properties panel, variables, the condition editor with Explain, the Reactions editor and the Rerun ▸ menu are shared. The canvas: a workflow is a graph; a job's steps can be shown as a graph too, with a tree as an option, since a tree is easier to read in some cases.
 
-## Proposed, to settle
+### Reason, not Cancelled and Killed statuses (2026-10-17)
 
-- **What a cancelled or killed job ends as** (proposed 2026-10-17): keep the six statuses, and give every job a standard `Reason` output beside `Status`: `KILLED`, `TIMED_OUT`, `ERROR` (Failed); `CANCELLED`, `PREREQUISITES_NOT_MET` (Not run); `DISABLED_PASS_THROUGH`, `MARKED_DONE` (Bypassed).
+- Statuses stay six. Every job has a standard `Reason` output beside `Status`: `KILLED`, `TIMED_OUT`, `ERROR` (Failed); `CANCELLED`, `PREREQUISITES_NOT_MET` (Not run); `DISABLED_PASS_THROUGH`, `MARKED_DONE` (Bypassed).
   - For separate Cancelled and Killed statuses, as in RunMyJobs: triage at a glance (it broke, or someone stopped it); failure rates that leave deliberate kills out; a killed process has no meaningful return code; migration maps one to one.
   - Against: two more cases in every prerequisite, "ended" test, Reaction and default, almost always "same as Failed" or "same as Not run"; they are kinds of Failed and Not run; their main use in RunMyJobs, standing in for return codes in Status Handlers, goes away when return codes are handled directly.
   - `Reason` keeps the advantages: conditions test it (`%{Extract.Status} = 'FAILED' AND %{Extract.Reason} = 'KILLED'`), Job History filters on it, reports can leave kills out, the diagram marks it, and an RMJ Killed handler translates into that condition. It also names which of their two meanings Not run and Bypassed have.
+
+## Proposed, to settle
 
 ## Open questions, by topic
 

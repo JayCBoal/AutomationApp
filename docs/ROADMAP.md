@@ -70,6 +70,20 @@ AutoApp's long-term features, beyond workflows. Each item is something RunMyJobs
   - what the alert shows: the job, the outcome, a link to the run and its Operations Log.
 - **Builds on:** a way to send messages (the Send email step planned in TO-DO.md).
 
+### Telemetry that never slows a job
+
+- **Not a RunMyJobs shortcoming:** AutoApp's own architecture, raised by the owner on 2026-10-18 and recorded here so it is not lost. Details and the current state: [TO-DO.md](TO-DO.md), decision 10.
+- **The principle:** "Telemetry must be recorded, but it must not harm the job's core purpose or performance." The operations log is an audit trail, asynchronous by design; Job History is core scheduling-engine data.
+- **Direction:** two paths. Job History reported promptly on its own; operations delivered in the background or by a periodic sweep, never holding up a step. Runners never write the database, since in production they run on the scheduler's agent hosts.
+- **Before:** agents, and hosting ([HOSTING.md](HOSTING.md)), where the server is no longer on the same machine as the runner.
+
+### Return values from a job
+
+- **The idea** (the owner, 2026-10-18; first noted under Workflows Phase 4, moved here the same day): **Set Return Code becomes Set Return Values**. It still sets the job's return code, and can also set named values of the job's own (`RowsRejected`, `BatchId`) that join its outputs. On its own, a job shows them with its run in Job History; in a workflow, jobs downstream read them as `%{Load.RowsRejected}` in conditions and in their steps' parameters.
+- **In RunMyJobs:** for the owner to describe.
+- **Why not in the workflows track:** nothing in the workflow phases depends on it. A condition can already test a job's status, return code, file count and bytes.
+- **Builds on:** Workflows Phase 4's `%{...}` paths to jobs downstream, and flow control's outputs (FLOW_CONTROL.md).
+
 ### Hosting in the cloud
 
 - **Why:** a demo the owner can open from anywhere and show colleagues, and the way to a RunMyJobs integration later.

@@ -56,6 +56,13 @@ Updated 2026-10-13. The order under "Work queue" is a proposal; the items under 
 
 Decided and removed from this list: telemetry direction (spool first, delivered through the API), the schema's source of truth (the Python models), what a file step does when nothing matches (fails unless `AllowNoFiles` is set), upper and lower case in names (case-sensitive everywhere), and the front end (static pages calling the API). See [CHANGE_LOG.md](CHANGE_LOG.md).
 
+10. **Telemetry: Job History apart from the operations audit trail** (the owner, 2026-10-18; important, not a workflow topic).
+    - **The principle:** "Telemetry must be recorded, but it must not harm the job's core purpose or performance." The operations log is an audit trail, asynchronous by design (as first agreed, before the work came from Gemini): it need not be real-time, and every second counts where jobs are many and short. Job History (a run's start, end, status, return code, process ID) is core scheduling-engine data, which schedulers, workflows and Reactions act on.
+    - **How it works now (found 2026-10-18):** one pipeline carries both. The runner writes every record to its spool file, then posts the new ones through the API after each step and at the end, waiting up to 5 seconds each time for the server to commit them, so a slow or unreachable server holds a job up. A run's end reaches Job History only in the same batch as its operations. Without an API, `engine.spool_delivery` and the workflow runner (`_load_spool`, when a job's end has not arrived) load spool files into the database themselves. Nothing runs the sweep periodically.
+    - **Direction:** Job History reported promptly on a small path of its own; operations sent in the background or by a periodic sweep, never holding up a step; the runner never writes the database itself, since in production it runs on the scheduler's agent hosts; the workflow runner learns a job's outcome from Job History alone.
+    - **For workflows:** not needed to finish the phases (the demonstrator runs everything on one machine), but no workflow feature may depend on the operations records. Phase 4's `FileCount` and `Bytes` come with the job's own end report; Phase 4b's Operations object and For Each File over an upstream job's files are to be reconsidered ([WORKFLOWS_PHASE4.md](WORKFLOWS_PHASE4.md)).
+    - **Related:** decision 2 (the runner using the API), "Killed runs" below, and agents. Also in [ROADMAP.md](ROADMAP.md).
+
 ## Work queue
 
 Ordered toward a demonstration: a job built in the job editor, run by a scheduler, and traced file by file. The job editor and the file trace are the two things to show.

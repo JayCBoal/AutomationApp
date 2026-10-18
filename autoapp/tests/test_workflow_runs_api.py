@@ -57,6 +57,26 @@ def test_job_history_shows_a_workflow_run_and_the_runs_inside_it(live_api, workf
     assert [r["job_key"] for r in get(f"{live_api}/api/v1/runs?job_type=WORKFLOW").json()] == ["FLOW"]
 
 
+def test_job_history_as_a_tree_lists_the_runs_inside_a_workflow_run_under_it(live_api, workflow):
+    """docs/WORKFLOWS_PHASE2.md, step 5: with tree=true, a run whose workflow run is listed too is left out."""
+    workflow()
+    _, run = follow(live_api, launch(live_api), timeout=90)
+    top = get(f"{live_api}/api/v1/runs?tree=true").json()
+    assert [(r["job_key"], r["child_count"]) for r in top] == [("FLOW", 2)]
+    inside = get(f"{live_api}/api/v1/runs?parent={run['run_id']}").json()
+    assert sorted(r["job_key"] for r in inside) == ["FIRST", "SECOND"]
+    assert all(r["child_count"] == 0 for r in inside)
+
+    # Found by the search when its workflow run is not: a row of its own, saying which run it was in
+    found = get(f"{live_api}/api/v1/runs?tree=true&job_key=FIRST").json()
+    assert [(r["job_key"], r["parent_run_id"]) for r in found] == [("FIRST", run["run_id"])]
+    # Within a run: that run alone at the top, the runs inside it under it
+    assert [r["job_key"] for r in get(f"{live_api}/api/v1/runs?tree=true&within={run['run_id']}").json()] == ["FLOW"]
+    # Without tree, as before: every run is a row
+    assert len(get(f"{live_api}/api/v1/runs").json()) == 3
+    assert get(f"{live_api}/api/v1/runs?parent=NO-SUCH-RUN").status_code == 404
+
+
 def test_a_cancelled_workflow_starts_nothing_more(live_api, workflow):
     workflow(wait=4)
     started = launch(live_api)

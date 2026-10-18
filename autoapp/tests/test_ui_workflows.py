@@ -9,6 +9,13 @@ from app.models import Job, WorkflowItem, WorkflowPrerequisite
 from conftest import wait_for_search
 
 
+@pytest.fixture(autouse=True)
+def outline_view(page):
+    """These tests are about the Outline view; the page remembers the view last used (the diagram's own are in
+    test_ui_workflow_diagram.py)."""
+    page.add_init_script("localStorage.setItem('autoapp.workflow.view', 'outline')")
+
+
 @pytest.fixture
 def sims(seed, db):
     """Two jobs of one Simulate step each: SIM_FIRST (waits 'wait' seconds) and SIM_SECOND."""
@@ -109,7 +116,7 @@ def test_workflows_on_the_job_search_and_job_detail_pages(page, saved_flow):
     wait_for_search(page)
     rows = page.locator("table.results tbody tr")
     assert rows.count() == 1
-    assert "Workflow" in rows.first.inner_text() and "2 jobs" in rows.first.inner_text()
+    assert rows.first.locator("td.job-type").inner_text() == "Workflow" and "2 jobs" in rows.first.inner_text()
     rows.first.locator("a.job-key").click()
     page.wait_for_url("**/workflow.html?key=FLOW")
 
@@ -140,7 +147,32 @@ def test_job_history_shows_a_workflow_run_with_its_jobs(page, saved_flow):
     wait_for_search(page)
     keys = sorted(k.inner_text() for k in page.locator("table.results a.job-key").all())
     assert keys == ["FLOW", "SIM_FIRST", "SIM_SECOND"]
-    assert page.locator("a.parent-link:visible").count() == 2
+    assert page.locator('table.results tr[data-depth="1"]').count() == 2      # unfolded, under their workflow run
+    assert page.locator("a.parent-link:visible").count() == 0                 # so they need no link to it
+
+
+def test_job_history_folds_a_workflow_run_and_unfolds_it(page, saved_flow):
+    """docs/WORKFLOWS_PHASE2.md, step 5: Job History as a tree."""
+    saved_flow()
+    page.goto("/ui/workflow.html?key=FLOW")
+    page.locator("#run-button").click()
+    wait_for_run_end(page)
+    page.goto("/ui/history.html")
+    wait_for_search(page)
+    keys = lambda: [k.inner_text() for k in page.locator("table.results a.job-key").all()]
+    assert keys() == ["FLOW"]
+    unfold = page.locator("button.unfold").first
+    assert unfold.inner_text() == "▸ 2 runs inside"
+    unfold.click()
+    page.locator('table.results tr[data-depth="1"]').first.wait_for()
+    assert sorted(keys()) == ["FLOW", "SIM_FIRST", "SIM_SECOND"]
+    unfold.click()
+    page.wait_for_function("() => document.querySelectorAll('table.results a.job-key').length === 1")
+
+    page.goto("/ui/history.html?job_key=SIM_FIRST")                           # found on its own: a row of its own
+    wait_for_search(page)
+    assert keys() == ["SIM_FIRST"]
+    assert page.locator("a.parent-link:visible").count() == 1
 
 
 def test_disabling_a_job_used_in_a_workflow_warns_first_and_the_workflow_says_so(page, saved_flow, db):

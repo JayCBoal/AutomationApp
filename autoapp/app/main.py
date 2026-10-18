@@ -130,4 +130,12 @@ def open_web_interface():
     return RedirectResponse("/ui/")
 
 
-app.mount("/ui", StaticFiles(directory=UI_DIR, html=True), name="ui")
+class _PageFiles(StaticFiles):
+    """The web interface's files, marked so a browser asks for a newer copy each time rather than using an old one."""
+    async def get_response(self, path, scope):
+        response = await super().get_response(path, scope)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
+app.mount("/ui", _PageFiles(directory=UI_DIR, html=True), name="ui")

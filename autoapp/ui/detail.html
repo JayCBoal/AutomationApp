@@ -31,7 +31,7 @@
                 <button type="button" class="secondary danger" id="delete-button" x-show="editing && !isNew" :disabled="busy" @click="remove()"
                         x-text="'Delete ' + spec.title.toLowerCase()"></button>
                 <button type="button" class="secondary" id="cancel-button" x-show="editing" :disabled="busy" @click="cancel()">Cancel</button>
-                <button type="button" class="primary" id="submit-button" x-show="editing" :disabled="busy || !changed" @click="submit()">Submit</button>
+                <button type="button" class="primary" id="submit-button" x-show="editing" :disabled="busy || !changed" @click="submit()">Save</button>
             </div>
 
             <p class="message error" id="page-error" x-show="error" x-text="error" role="alert" x-cloak></p>

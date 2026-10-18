@@ -2,7 +2,7 @@
 
 The second phase of [WORKFLOWS.md](WORKFLOWS.md) ("Implementation in phases"): **a workflow you can see at a glance, as it is defined and as it runs.** It answers shortcoming 5 (the diagram), and gives every later phase somewhere to show its work.
 
-Status: **agreed with the owner 2026-10-17.** Phase 1 must be committed, merged and pushed before anything here is built.
+Status: **agreed with the owner 2026-10-17; built and reviewed by the owner 2026-10-17 (steps 1 to 6, and the changes from the review below).** Phase 1 must be committed, merged and pushed before anything here is built.
 
 ## Starting point
 
@@ -42,3 +42,17 @@ Status: **agreed with the owner 2026-10-17.** Phase 1 must be committed, merged 
 5. A line made by dragging starts as Succeeded; its test is changed in the side panel.
 6. Editing on the diagram saves as the outline does (edit, then Save); switching Diagram | Outline while editing keeps unsaved changes.
 7. Job History tree: workflow runs folded by default with a count of their job runs; a search for a job's runs still finds them, shown with their workflow; paging counts top-level rows, so a workflow is never split across pages.
+
+## From the owner's review (2026-10-17)
+
+8. **Jobs & Workflows** is one page: the separate Workflows link is gone, and the page has a Type column (Job or Workflow).
+9. The Main Index has an **Administration** section for Settings, apart from the records of what happened.
+10. **Submit is Save** on every page: "Submit" reads as "submit to run" to anyone who uses a scheduler.
+11. A job's prerequisites sit in a **Prerequisites** box: each with **Job in this workflow** and **Outcome**; then the **Start rule** under the list (*When all prerequisites are satisfied*, *When any prerequisite is satisfied*, and *Custom rule*, greyed out until Phase 4 builds conditions; its rule box appears only once it is chosen). The Start rule is greyed out until the job waits for two jobs or more. **Remove this job** is below the box.
+12. Removing a line on the diagram: while editing, pointing at a line shows a small **×** a fixed distance before its arrowhead; clicking it removes the line. A selected line is also removed with Delete.
+13. The server tells browsers to check for a newer copy of every page, script and stylesheet each time, so changes show without a hard refresh.
+
+## Carried to the next phase
+
+- Jobs & Workflows says "*N* found" rather than "*N* jobs", since it lists workflows too.
+- Open for Phase 4: whether Custom rule is offered when a job waits for only one job (a condition such as "only on business days" could still be useful there).

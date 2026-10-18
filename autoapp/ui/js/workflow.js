@@ -4,11 +4,16 @@
  * one, and a run is shown in the same outline with each job's state, live while it goes.
  *
  * A workflow is a job of type WORKFLOW, saved through the jobs API. The page arrives
- * locked; Edit unlocks it; Submit saves the whole workflow; Cancel puts it back. The job
+ * locked; Edit unlocks it; Save saves the whole workflow; Cancel puts it back. The job
  * page sends a workflow here, so job.html?key=... works for both.
  *
  * Each job on the page has a uid of its own, and a prerequisite points at that uid, so
  * renaming a job keeps what waits for it.
+ *
+ * Diagram | Outline (docs/WORKFLOWS_PHASE2.md): the diagram (js/workflow_diagram.js) draws the
+ * same items; selecting a box shows that item's part of the outline beside it, where it is
+ * edited as in the outline; dragging from box to box adds a prerequisite. The page remembers
+ * the view and the direction last used, in this browser only.
  *
  * API routes used:
  *     GET    /api/v1/jobs/{key}, /api/v1/jobs/{key}/check, /api/v1/jobs
@@ -26,6 +31,8 @@ function workflowDetail() {
                       RETURN_CODE: "its return code is not a success code", ERROR: "a step failed",
                       JOB_FAILED: "a failure went unhandled" };
     const POLL_MS = 1500;
+    const VIEW_KEY = "autoapp.workflow.view", DIRECTION_KEY = "autoapp.workflow.direction";
+    const ZOOM_STEP = 1.2, ZOOM_MIN = 0.3, ZOOM_MAX = 2.5;
     let nextUid = 1;
     let pollTimer = null;
 
@@ -33,6 +40,17 @@ function workflowDetail() {
     const defaultName = key => {
         const name = (key || "").trim().replace(/[^A-Za-z0-9_-]/g, "_");
         return name && !/^[A-Za-z0-9]/.test(name) ? "J" + name : name;
+    };
+
+    /** A choice remembered in this browser, if it allows; the default otherwise. */
+    const remembered = (key, allowed, fallback) => {
+        try {
+            const value = localStorage.getItem(key);
+            return allowed.includes(value) ? value : fallback;
+        } catch (e) { return fallback; }
+    };
+    const remember = (key, value) => {
+        try { localStorage.setItem(key, value); } catch (e) { /* private browsing: not remembered */ }
     };
 
     return {
@@ -51,9 +69,18 @@ function workflowDetail() {
         error: "",
         notice: "",
         chosen: "",
+        view: remembered(VIEW_KEY, ["diagram", "outline"], "diagram"),
+        direction: remembered(DIRECTION_KEY, ["RIGHT", "DOWN"], "RIGHT"),
+        zoom: 1,                // a number, or "fit"
+        find: "",
+        selectedUid: null,      // the item selected on the diagram
+        selectedLine: null,     // the prerequisite selected on the diagram (its uid), if a line was
+        runSelected: "",        // the name of the item selected on a run's diagram
+        themeTick: 0,           // changes with the theme, so the diagrams are drawn again in its colours
 
         async init() {
             this.chosen = this.key;
+            new MutationObserver(() => this.themeTick++).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
             window.addEventListener("beforeunload", event => { if (this.changed) event.preventDefault(); });
             try {
                 this.allJobs = await AutoApp.get("/jobs");
@@ -160,11 +187,14 @@ function workflowDetail() {
         },
 
         addItem() {
-            this.form.items.push({ uid: nextUid++, id: null, name: "", job_key: "", join: "ALL", prerequisites: [] });
+            const uid = nextUid++;
+            this.form.items.push({ uid, id: null, name: "", job_key: "", join: "ALL", prerequisites: [] });
+            if (this.view === "diagram") this.select("item", uid);
         },
 
         removeItem(index) {
             const [gone] = this.form.items.splice(index, 1);
+            if (this.selectedUid === gone.uid) this.select(null, null);
             for (const item of this.form.items) item.prerequisites = item.prerequisites.filter(p => p.target !== gone.uid);
         },
 
@@ -180,7 +210,26 @@ function workflowDetail() {
             item.prerequisites.push({ uid: nextUid++, target: other ? other.uid : null, test: "SUCCESS", return_codes: "" });
         },
 
-        removePrerequisite(item, index) { item.prerequisites.splice(index, 1); },
+        removePrerequisite(item, index) {
+            const [gone] = item.prerequisites.splice(index, 1);
+            if (this.selectedLine === gone.uid) this.selectedLine = null;
+        },
+
+        /** A line on the diagram, removed: the prerequisite it draws. Says whether there was one. */
+        removeLine(uid) {
+            if (!this.editing) return false;
+            const item = this.form.items.find(i => i.prerequisites.some(p => p.uid === Number(uid)));
+            if (!item) return false;
+            this.removePrerequisite(item, item.prerequisites.findIndex(p => p.uid === Number(uid)));
+            return true;
+        },
+
+        /** Delete or Backspace while a line is selected on the diagram removes it, unless typing in a box. */
+        removeSelectedLine(event) {
+            if (!["Delete", "Backspace"].includes(event.key) || this.view !== "diagram" || !this.selectedLine) return;
+            if (event.target.closest("input, select, textarea")) return;
+            if (this.removeLine(this.selectedLine)) event.preventDefault();
+        },
 
         others(item) { return this.form.items.filter(i => i.uid !== item.uid); },
 
@@ -240,6 +289,127 @@ function workflowDetail() {
             }
         },
 
+        // ---------- The diagram ----------
+
+        setView(view) {
+            this.view = view;
+            remember(VIEW_KEY, view);
+        },
+
+        setDirection(direction) {
+            this.direction = direction;
+            remember(DIRECTION_KEY, direction);
+        },
+
+        /** step: 1 larger, -1 smaller, 0 fit to the window. */
+        setZoom(step) {
+            const now = this.zoom === "fit" ? 1 : this.zoom;
+            if (step === 0) this.zoom = "fit";
+            else this.zoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, step > 0 ? now * ZOOM_STEP : now / ZOOM_STEP));
+        },
+
+        /** What the diagram is told when a box or line is clicked: kind "item", "line", or null for neither. */
+        select(kind, id) {
+            this.selectedLine = null;
+            if (kind === "item") {
+                this.selectedUid = Number(id);
+            } else if (kind === "line") {
+                const owner = this.form.items.find(i => i.prerequisites.some(p => p.uid === Number(id)));
+                this.selectedUid = owner ? owner.uid : null;
+                this.selectedLine = owner ? Number(id) : null;
+            } else {
+                this.selectedUid = null;
+            }
+        },
+
+        /** Dragging from one box to another: the second waits for the first to succeed. */
+        connect(fromId, toId) {
+            if (!this.editing) return;
+            const from = Number(fromId), to = this.form.items.find(i => i.uid === Number(toId));
+            if (!to) return;
+            let prerequisite = to.prerequisites.find(p => p.target === from);
+            if (!prerequisite) {
+                prerequisite = { uid: nextUid++, target: from, test: "SUCCESS", return_codes: "" };
+                to.prerequisites.push(prerequisite);
+            }
+            this.select("line", prerequisite.uid);
+        },
+
+        isShown(item) { return this.view === "outline" || item.uid === this.selectedUid; },
+
+        get found() {
+            const text = this.find.trim().toLowerCase();
+            return text && this.form ? this.form.items.filter(i => this.nameOf(i.uid).toLowerCase().includes(text)) : [];
+        },
+
+        showFound(item) {
+            this.select("item", item.uid);
+            this.$nextTick(() => {
+                const box = document.querySelector(`#diagram .wf-box[data-id="${item.uid}"]`);
+                if (box) box.scrollIntoView({ block: "nearest", inline: "center" });
+            });
+        },
+
+        jobDisabledWords(jobKey) {
+            const job = this.allJobs.find(j => j.job_key === jobKey);
+            return job && !job.active ? `Its job ${jobKey} is disabled` : null;
+        },
+
+        jobKind(jobKey) {
+            const job = this.allJobs.find(j => j.job_key === jobKey);
+            return job ? job.job_type : "STEPS";
+        },
+
+        /** The workflow on screen, in the diagram's terms. */
+        definitionDiagram() {
+            const items = this.form.items.map(item => ({
+                id: String(item.uid), name: this.nameOf(item.uid), join: item.join, status: null,
+                sub: item.job_key ? "job " + item.job_key : "no job chosen yet",
+                kind: this.jobKind(item.job_key), disabled: this.jobDisabledWords(item.job_key) }));
+            const lines = this.form.items.flatMap(item => item.prerequisites.filter(p => p.target).map(p => ({
+                id: String(p.uid), from: String(p.target), to: String(item.uid), test: p.test, codes: p.return_codes.trim() })));
+            const selected = this.selectedLine ? { kind: "line", id: String(this.selectedLine) }
+                : this.selectedUid ? { kind: "item", id: String(this.selectedUid) } : null;
+            return { items, lines, selected };
+        },
+
+        /** Draws the workflow's diagram; Alpine calls it again whenever anything it reads changes. */
+        drawDefinition(canvas) {
+            if (!this.form || this.view !== "diagram") return;
+            const diagram = { ...this.definitionDiagram(), direction: this.direction, zoom: this.zoom, find: this.find.trim(),
+                              editing: this.editing, tick: this.themeTick };
+            WorkflowDiagram.draw(canvas, diagram, { select: (kind, id) => this.select(kind, id),
+                                                    connect: (from, to) => this.connect(from, to),
+                                                    remove: id => this.removeLine(id) });
+        },
+
+        /** A run in the diagram's terms: the workflow as last saved, each job in the state the run gives it. */
+        runDiagram() {
+            const definition = new Map((this.job ? this.job.items : []).map(item => [item.name, item]));
+            const items = this.run.items.map(item => {
+                const used = definition.get(item.name);
+                return { id: item.name, name: item.name, join: used ? used.join : "ALL", status: item.status,
+                         statusText: this.stateWords(item), kind: this.jobKind(item.job_key), disabled: null };
+            });
+            const shown = new Set(items.map(i => i.id));
+            const lines = [...definition.values()].filter(item => shown.has(item.name)).flatMap(item =>
+                item.prerequisites.filter(p => shown.has(p.target)).map((p, i) => ({
+                    id: `${item.name}>${i}`, from: p.target, to: item.name, test: p.test, codes: p.return_codes || "" })));
+            const selected = this.runSelected ? { kind: "item", id: this.runSelected } : null;
+            return { items, lines, selected };
+        },
+
+        drawRun(canvas) {
+            if (!this.run || !this.run.items || this.view !== "diagram") return;
+            const diagram = { ...this.runDiagram(), direction: this.direction, zoom: this.zoom, find: "", editing: false, tick: this.themeTick };
+            WorkflowDiagram.draw(canvas, diagram, { select: (kind, id) => { this.runSelected = kind === "item" ? id : ""; },
+                                                    connect: () => {}, remove: () => {} });
+        },
+
+        get runItem() { return this.run && this.run.items ? this.run.items.find(i => i.name === this.runSelected) : null; },
+
+        drawKey(element) { this.themeTick; WorkflowDiagram.key(element); },
+
         // ---------- Runs ----------
 
         async start() {
@@ -276,6 +446,7 @@ function workflowDetail() {
         closeRun() {
             clearTimeout(pollTimer);
             this.run = null;
+            this.runSelected = "";
             this.runId = "";
             history.replaceState(null, "", "workflow.html?" + new URLSearchParams({ key: this.key }));
         },

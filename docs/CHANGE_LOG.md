@@ -6,6 +6,30 @@ Notable structural, schema and design changes to AutoApp, newest first. Line-by-
 
 ## 2026-10-17
 
+### Workflows, Phase 2: the diagram
+
+- **Added:** the workflow page shows a workflow as a **diagram** as well as the outline, with a **Diagram | Outline** switch. The page opens in whichever view was used last, in that browser. Plan: [WORKFLOWS_PHASE2.md](WORKFLOWS_PHASE2.md).
+  - Laid out automatically, left to right or **top to bottom**; each column keeps the outline's order. Full names, wrapped, never cut short. Zoom in and out, and **Fit** to the window.
+  - Lines are coloured *and* styled by their test: succeeded green, failed red dashed, ended solid in the text colour, return codes purple and labelled (`RC 0-4`). **ANY** marks a job that needs only one of its lines. Pointing at a line says what it means ("Load waits until Extract succeeded").
+  - Markers on a box: the job used is a workflow; the job used is disabled. A **Key**, folded away, says what lines, states and markers mean.
+  - Selecting a box shows that job beside the diagram, as the outline shows it; selecting a line shows the job that waits, with that prerequisite marked.
+  - **Find** highlights the jobs whose names contain the text, and lists them; choosing one selects it and brings it into view.
+- **Added:** editing on the diagram. While editing, dragging from one box to another makes the second wait for the first to succeed; the job beside the diagram is edited as in the outline (its test, its other prerequisites, its job and name, Remove this job). Pointing at a line shows a small **×** on it that removes it; a selected line is also removed with **Delete**. **+ Add a job** adds a box and selects it. Changes are saved with Save, as before, and switching between Diagram and Outline keeps them.
+- **Added:** a run on the diagram: each box in its state (Succeeded, Failed, Running with a moving stripe, Waiting, Not run, Disabled), live while the run goes; selecting a box shows its state, times and log.
+  - The lines are the workflow's as last saved, not necessarily as it was when the run started.
+- **Changed:** **Job History** is a tree. A workflow run is one row, folded, saying how many runs are inside it (**▸ 2 runs inside**); unfolding it lists them under it. A run found by the search whose workflow run isn't found too (searching for a job's key, say) is a row of its own, linking to its workflow run, as before. **Within run** opens the run asked for unfolded. The 500-row limit counts the rows at the top.
+- **Added (API):** `GET /api/v1/runs` takes `tree=true` (leave out runs whose workflow run is listed too) and `parent=<run ID>` (the runs directly inside a workflow run), and each run says its `child_count`. Without them it answers as before.
+
+### Jobs & Workflows; Administration; Save; a job's prerequisites
+
+- **Changed:** the server tells browsers to check for a newer copy of every page, script and stylesheet each time, so a change shows without a hard refresh.
+
+- **Changed:** **Submit** is now **Save** on every page that has it (the job, workflow and detail pages). "Submit" reads as "submit to run" to anyone who uses a scheduler.
+- **Changed:** on the workflow page, while editing, a job's prerequisites sit in a box labelled **Prerequisites**: each with its **Job in this workflow** and **Outcome**, **+ Wait for another job**, then the **Start rule**: *When all prerequisites are satisfied* or *When any prerequisite is satisfied*, greyed out until the job waits for two jobs or more. A third, *Custom rule*, is shown greyed out until conditions are built (Phase 4). **Remove this job** is below the box.
+
+- **Changed:** **Job Search** is now **Jobs & Workflows**, one page for both, with a **Type** column (Job or Workflow) and its Type filter. The separate **Workflows** link in the navigation bar is gone; it opened the same page.
+- **Changed:** the Main Index has an **Administration** section, holding Settings, apart from the records of what happened.
+
 ### Workflows: a handled failure no longer fails the workflow
 
 - **Changed:** a workflow fails only if a failure went unhandled: a job failed and nothing that waits for it ran, or jobs were cancelled. A failure path that ran (the sample's Alert finance) leaves the workflow Succeeded, and its log says which failures were handled. A job that is Not run because something before it failed does not count against the workflow; the failure before it does. Design: [WORKFLOWS.md](WORKFLOWS.md), "When a workflow succeeds".

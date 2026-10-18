@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Jobs - AutoApp</title>
+    <title>Jobs &amp; Workflows - AutoApp</title>
     <link rel="icon" href="data:,">
     <link rel="stylesheet" href="css/autoapp.css">
     <script src="js/common.js"></script>
@@ -11,7 +11,7 @@
     <script defer src="vendor/alpine-3.17.4.min.js"></script>
 </head>
 <body>
-<div id="app-chrome" data-title="Job Search"></div>
+<div id="app-chrome" data-title="Jobs &amp; Workflows"></div>
 
 <main x-data="jobSearch()">
 
@@ -68,6 +68,7 @@
                 <thead>
                     <tr>
                         <th>Job</th>
+                        <th>Type</th>
                         <th>Status</th>
                         <th>Contents</th>
                         <th>Endpoints used</th>
@@ -82,9 +83,9 @@
                         <tr>
                             <td>
                                 <a class="job-key" :href="detailLink(job)" x-text="job.job_key"></a>
-                                <template x-if="job.job_type === 'WORKFLOW'"><span class="tag">Workflow</span></template>
                                 <div class="muted small" x-text="job.description"></div>
                             </td>
+                            <td class="job-type" x-text="job.job_type === 'WORKFLOW' ? 'Workflow' : 'Job'"></td>
                             <td>
                                 <span class="status" :class="job.active ? 'Enabled' : 'Disabled'"
                                       x-text="job.active ? 'Enabled' : 'Disabled'"></span>

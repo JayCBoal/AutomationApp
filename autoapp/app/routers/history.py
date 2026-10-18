@@ -12,8 +12,8 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import case, func
-from sqlalchemy.orm import Session
+from sqlalchemy import case, exists, func
+from sqlalchemy.orm import Session, aliased
 
 from app.database import get_db
 from app.log_agent import log_note, run_log
@@ -45,6 +45,7 @@ class RunOut(BaseModel):
     parent_run_id: Optional[str] = None
     workflow_path: Optional[str] = None
     attempt: int = 1
+    child_count: int = 0
 
 
 @router.get("/api/v1/runs", response_model=List[RunOut])
@@ -57,39 +58,76 @@ def list_runs(
     date_to: Optional[datetime] = Query(None, description="Runs that started at or before this time (UTC)"),
     job_type: Optional[str] = Query(None, description="STEPS for job runs, WORKFLOW for workflow runs"),
     within: Optional[str] = Query(None, description="A run's RunID: that run and the runs inside it, however deep"),
+    parent: Optional[str] = Query(None, description="A workflow run's RunID: the runs directly inside it, whatever else is asked"),
+    tree: bool = Query(False, description="Leave out runs whose workflow run is also listed: they are inside it (see child_count)"),
     limit: int = Query(MAX_RESULTS, ge=1, le=MAX_RESULTS),
     db: Session = Depends(get_db),
 ):
     """Job History: every run AutoApp has a record of, newest first, with how many files each handled."""
-    query = db.query(JobRun)
-    if job_type:
-        query = query.filter(JobRun.JobType == job_type.strip().upper())
-    if within:
-        query = query.filter(JobRun.id.in_(_run_and_inside(db, within)))
-    if job_key:
-        query = query.filter(JobRun.JobKey.ilike(f"%{job_key}%"))
-    if instance_id:
-        query = query.filter(JobRun.SchedulerInstanceID == instance_id)
-    if scheduler:
-        query = query.filter(JobRun.SchedulerName.ilike(f"%{scheduler}%"))
-    if status:
-        query = query.filter(JobRun.Status == status.upper())
-    if date_from:
-        query = query.filter(JobRun.StartedDateTime >= date_from)
-    if date_to:
-        query = query.filter(JobRun.StartedDateTime <= date_to)
+    if parent:
+        query = db.query(JobRun).filter(JobRun.ParentRun_id == _run_pk(db, parent))
+    else:
+        within_ids = _run_and_inside(db, within) if within else None
+        criteria = dict(job_key=job_key, instance_id=instance_id, scheduler=scheduler, status=status,
+                        date_from=date_from, date_to=date_to, job_type=job_type, within_ids=within_ids)
+        query = db.query(JobRun).filter(*_run_filters(JobRun, **criteria))
+        if tree:
+            # A run is shown inside its workflow run when that run is listed too
+            outer = aliased(JobRun)
+            query = query.filter(~exists().where(outer.id == JobRun.ParentRun_id, *_run_filters(outer, **criteria)))
     runs = query.order_by(JobRun.StartedDateTime.desc(), JobRun.id.desc()).limit(limit).all()
+    return _describe_runs(db, runs)
 
-    counts = {}
+
+def _run_filters(model, job_key, instance_id, scheduler, status, date_from, date_to, job_type, within_ids) -> list:
+    """The search's criteria as conditions on a run (model: JobRun, or another name for it)."""
+    conditions = []
+    if job_type:
+        conditions.append(model.JobType == job_type.strip().upper())
+    if within_ids is not None:
+        conditions.append(model.id.in_(within_ids))
+    if job_key:
+        conditions.append(model.JobKey.ilike(f"%{job_key}%"))
+    if instance_id:
+        conditions.append(model.SchedulerInstanceID == instance_id)
+    if scheduler:
+        conditions.append(model.SchedulerName.ilike(f"%{scheduler}%"))
+    if status:
+        conditions.append(model.Status == status.upper())
+    if date_from:
+        conditions.append(model.StartedDateTime >= date_from)
+    if date_to:
+        conditions.append(model.StartedDateTime <= date_to)
+    return conditions
+
+
+def _run_pk(db: Session, run_id: str) -> int:
+    found = db.query(JobRun.id).filter(JobRun.RunID == run_id).first()
+    if not found:
+        raise HTTPException(status_code=404, detail=f"No run has the ID '{run_id}'.")
+    return found[0]
+
+
+def _describe_runs(db: Session, runs) -> List[RunOut]:
+    """Each run, with its counts of operations and of the runs directly inside it."""
+    counts, children = {}, {}
     if runs:
+        ids = [run.id for run in runs]
         rows = (
             db.query(Operation.JobRun_id, func.count(Operation.id),
                      func.sum(case((Operation.OpStatus == "FAILED", 1), else_=0)))
-            .filter(Operation.JobRun_id.in_([run.id for run in runs])).group_by(Operation.JobRun_id)
+            .filter(Operation.JobRun_id.in_(ids)).group_by(Operation.JobRun_id)
         )
         counts = {run_id: (total, int(failed or 0)) for run_id, total, failed in rows}
+        children = dict(db.query(JobRun.ParentRun_id, func.count(JobRun.id))
+                        .filter(JobRun.ParentRun_id.in_(ids)).group_by(JobRun.ParentRun_id).all())
     parents = _parent_run_ids(db, runs)
-    return [_describe(run, counts.get(run.id, (0, 0)), _has_log(run), parents.get(run.ParentRun_id)) for run in runs]
+    described = []
+    for run in runs:
+        out = _describe(run, counts.get(run.id, (0, 0)), _has_log(run), parents.get(run.ParentRun_id))
+        out.child_count = children.get(run.id, 0)
+        described.append(out)
+    return described
 
 
 def _has_log(run: JobRun) -> bool:

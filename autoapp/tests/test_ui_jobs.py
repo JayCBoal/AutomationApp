@@ -306,5 +306,5 @@ def test_text_from_the_database_is_shown_as_text_not_run_as_html(page, db, seed)
 def test_jobs_is_marked_as_the_current_page_in_the_navigation(page, jobs):
     open_jobs(page)
 
-    assert "current" in page.locator("nav.app-nav").get_by_role("link", name="Jobs").get_attribute("class")
-    assert page.title() == "Jobs - AutoApp"
+    assert "current" in page.locator("nav.app-nav").get_by_role("link", name="Jobs & Workflows").get_attribute("class")
+    assert page.title() == "Jobs & Workflows - AutoApp"

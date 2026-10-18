@@ -54,7 +54,7 @@ def test_page_shows_the_job_and_how_a_scheduler_would_run_it(page, jobs):
     assert page.locator("#command-line").inner_text() == (
         "python3 -m engine.runner --job-key DEV-LEGAL-COLLECT --instance-id <the scheduler's instance ID>")
     assert page.title() == "DEV-LEGAL-COLLECT - AutoApp"
-    assert "current" in page.locator("nav.app-nav").get_by_role("link", name="Jobs").get_attribute("class")
+    assert "current" in page.locator("nav.app-nav").get_by_role("link", name="Jobs & Workflows").get_attribute("class")
 
 
 def test_the_page_arrives_locked(page, jobs):

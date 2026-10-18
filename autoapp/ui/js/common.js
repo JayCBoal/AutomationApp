@@ -22,8 +22,7 @@ const AutoApp = (() => {
         { group: "centre", name: "Applications", href: "search.html?kind=applications", about: "The systems that produce and consume files" },
         { group: "centre", name: "Entities", href: "search.html?kind=entities", about: "Outside parties: vendors, clients, partners" },
         { group: "centre", name: "Sites", href: "search.html?kind=sites", about: "An entity's servers" },
-        { group: "centre", name: "Jobs", href: "jobs.html", about: "Job definitions, steps and parameters" },
-        { group: "centre", name: "Workflows", href: "jobs.html?job_type=WORKFLOW", about: "Jobs that run other jobs, with dependencies between them" },
+        { group: "centre", name: "Jobs & Workflows", href: "jobs.html", about: "Jobs with their steps and parameters, and workflows that run jobs in order" },
         { group: "centre", name: "Run Job", href: "run.html", about: "Run a job now, as a scheduler would, and watch its log" },
         { group: "centre", name: "Endpoints", href: "search.html?kind=endpoints", about: "The registered places files come from and go to" },
         { group: "centre", name: "Tags", href: "search.html?kind=tags", about: "Labels anything can carry, and the variables they give" },
@@ -31,7 +30,7 @@ const AutoApp = (() => {
         { group: "right", name: "Operations Log", href: "operations.html", about: "Every file handled, and each file's trace" },
         { group: "right", name: "Job History", href: "history.html", about: "Every run of every job" },
         { group: "right", name: "Audit Log", href: "audit.html", about: "Who changed which definition, and when" },
-        { group: "right", name: "Settings", href: "settings.html", about: "System-wide settings, such as the order variables are looked for in" },
+        { group: "admin", name: "Settings", href: "settings.html", about: "System-wide settings, such as the order variables are looked for in" },
     ];
 
     // ---------- Embedded mode ----------
@@ -152,7 +151,7 @@ const AutoApp = (() => {
         const link = page => page.href
             ? `<a href="${page.href}" class="${page.href === here ? "current" : ""}">${escapeHtml(page.name)}</a>`
             : `<span class="planned" title="Not built yet">${escapeHtml(page.name)}</span>`;
-        const group = name => `<div class="group">${PAGES.filter(p => p.group === name).map(link).join("")}</div>`;
+        const group = (...names) => `<div class="group">${PAGES.filter(p => names.includes(p.group)).map(link).join("")}</div>`;
 
         holder.innerHTML = `
             <header class="app-header">
@@ -160,7 +159,7 @@ const AutoApp = (() => {
                 <span class="page-title">${escapeHtml(title)}</span>
                 <button type="button" class="theme-toggle" id="theme-toggle"></button>
             </header>
-            <nav class="app-nav" aria-label="Pages">${group("left")}${group("centre")}${group("right")}</nav>`;
+            <nav class="app-nav" aria-label="Pages">${group("left")}${group("centre")}${group("right", "admin")}</nav>`;
 
         document.getElementById("theme-toggle").addEventListener("click",
             () => setTheme(currentTheme() === "dark" ? "light" : "dark"));

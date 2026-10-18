@@ -60,14 +60,18 @@
             <table class="results">
                 <thead><tr><th>Job</th><th>Status</th><th>Started</th><th>Took</th><th>Scheduler</th><th>Files</th><th>Log</th></tr></thead>
                 <tbody>
-                    <template x-for="run in rows" :key="run.run_id">
-                        <tr>
-                            <td>
+                    <template x-for="run in shownRows" :key="run.run_id">
+                        <tr :class="{ inside: run.depth > 0 }" :data-depth="run.depth">
+                            <td :style="`padding-left: ${8 + run.depth * 22}px`">
+                                <button type="button" class="tool unfold" x-show="run.child_count" @click="toggle(run)"
+                                        :title="unfolded[run.run_id] ? 'Fold' : 'Show the runs inside it'"
+                                        :aria-expanded="Boolean(unfolded[run.run_id])"
+                                        x-text="(unfolded[run.run_id] ? '▾ ' : '▸ ') + insideWords(run)"></button>
                                 <a class="job-key" :href="jobLink(run)" x-text="run.job_key"></a>
                                 <template x-if="run.job_type === 'WORKFLOW'"><span class="tag">Workflow</span></template>
                                 <div class="small" x-show="run.job_type === 'WORKFLOW'">
                                     <a class="inside-link" :href="withinLink(run.run_id)">This run and its jobs</a></div>
-                                <div class="muted small" x-show="run.parent_run_id">
+                                <div class="muted small" x-show="run.parent_run_id && run.depth === 0">
                                     in a <a class="parent-link" :href="withinLink(run.parent_run_id)">workflow run</a>
                                     as <span x-text="run.workflow_path"></span></div>
                             </td>

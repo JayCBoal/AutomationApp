@@ -34,6 +34,17 @@
             </a>
         </template>
     </div>
+
+    <h2 class="section">Administration</h2>
+    <div class="index-grid">
+        <template x-for="page in pages.filter(p => p.group === 'admin')" :key="page.name">
+            <a class="index-card" :class="{ planned: !page.href }" :href="page.href || null"
+               :title="page.href ? '' : 'Not built yet'">
+                <div class="name" x-text="page.name"></div>
+                <div class="about" x-text="page.about + (page.href ? '' : ' (not built yet)')"></div>
+            </a>
+        </template>
+    </div>
 </main>
 </body>
 </html>

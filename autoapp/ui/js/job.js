@@ -6,7 +6,7 @@
  * each step type's parameters, in order, with their types. A new step type
  * therefore appears on this page without any change to it.
  *
- * The page arrives locked. Edit unlocks it; Submit saves the whole job (its own
+ * The page arrives locked. Edit unlocks it; Save saves the whole job (its own
  * fields, and every step in the order shown) in one request; Cancel puts
  * everything back.
  *
@@ -249,7 +249,7 @@ function jobDetail() {
 
         /**
          * Registers a new endpoint without leaving the page, starting from whatever was typed in the box,
-         * and puts it in that box. It is registered at once; it does not wait for Submit.
+         * and puts it in that box. It is registered at once; it does not wait for Save.
          */
         async newEndpoint(field) {
             const typed = field.endpoint.trim();

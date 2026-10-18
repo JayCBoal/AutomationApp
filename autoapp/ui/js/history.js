@@ -1,20 +1,53 @@
 /*
  * Job History and Audit Log pages: what has happened, read-only.
  *
- *     GET /api/v1/runs      every run of every job
+ * Job History is a tree (docs/WORKFLOWS_PHASE2.md): a workflow run is one row, folded, with the
+ * runs inside it shown when it is unfolded. A run found by the search whose workflow run is not
+ * found too is a row of its own, saying which workflow run it was in.
+ *
+ *     GET /api/v1/runs?tree=true            every run of every job, runs inside listed workflow runs left out
+ *     GET /api/v1/runs?parent=<run ID>      the runs inside a workflow run, for unfolding it
  *     GET /api/v1/audits    every change to a definition
  */
 function utcCriteria(values) {
     return { ...values, date_from: AutoApp.localInputToUtc(values.date_from), date_to: AutoApp.localInputToUtc(values.date_to) };
 }
 
+const MAX_INSIDE = 500;
+
 function jobHistory() {
     const search = AutoApp.searchPage({
         criteria: ["job_key", "job_type", "within", "instance_id", "scheduler", "status", "date_from", "date_to"],
-        path: "/runs", noun: "run", order: "newest first", toApi: utcCriteria,
+        path: "/runs", noun: "run", order: "newest first", toApi: values => ({ ...utcCriteria(values), tree: true }),
     });
-    return Object.assign(search, {
+    const searchRuns = search.search;
+    const page = Object.assign(search, {
+        unfolded: {},       // a workflow run's ID: the runs inside it, once it is unfolded
         init() { this.startSearch(); },
+
+        /** Searches, folding every workflow run; the one asked for by "Within run" opens unfolded. */
+        async search() {
+            this.unfolded = {};
+            await searchRuns.call(this);
+            const asked = this.rows.find(run => run.run_id === this.criteria.within.trim());
+            if (asked && asked.child_count) await this.toggle(asked);
+        },
+
+        async toggle(run) {
+            if (this.unfolded[run.run_id]) {
+                const { [run.run_id]: folded, ...rest } = this.unfolded;
+                this.unfolded = rest;
+                return;
+            }
+            try {
+                const inside = await AutoApp.get("/runs", { parent: run.run_id, limit: MAX_INSIDE });
+                this.unfolded = { ...this.unfolded, [run.run_id]: inside };
+            } catch (e) {
+                this.error = e.message;
+            }
+        },
+
+        insideWords(run) { return `${run.child_count} run${run.child_count === 1 ? "" : "s"} inside`; },
         time: AutoApp.formatTime,
         jobLink(run) {
             return run.job_type === "WORKFLOW" ? "workflow.html?" + new URLSearchParams({ key: run.job_key, run: run.run_id })
@@ -31,7 +64,7 @@ function jobHistory() {
             return s < 60 ? `${s.toFixed(1)} s` : `${Math.floor(s / 60)} min ${Math.round(s % 60)} s`;
         },
         exportCsv() {
-            AutoApp.download("autoapp_job_history.csv", AutoApp.toCsv(this.rows, [
+            AutoApp.download("autoapp_job_history.csv", AutoApp.toCsv(this.shownRows, [
                 ["Job", r => r.job_key], ["Type", r => r.job_type === "WORKFLOW" ? "Workflow" : "Job"],
                 ["Status", r => r.status], ["Return code", r => r.return_code], ["Reason", r => r.reason],
                 ["Within run", r => r.parent_run_id], ["Path in workflow", r => r.workflow_path],
@@ -43,6 +76,21 @@ function jobHistory() {
             ]));
         },
     });
+    // Worked out each time it is read (Object.assign above would read it once, too early)
+    Object.defineProperty(page, "shownRows", {
+        enumerable: true,
+        /** The rows on screen: each run, then the runs inside it if it is unfolded, each with its depth. */
+        get() {
+            const shown = [];
+            const add = (run, depth) => {
+                shown.push({ ...run, depth });
+                for (const inside of this.unfolded[run.run_id] || []) add(inside, depth + 1);
+            };
+            this.rows.forEach(run => add(run, 0));
+            return shown;
+        },
+    });
+    return page;
 }
 
 function auditLog() {

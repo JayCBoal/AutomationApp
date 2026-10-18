@@ -41,7 +41,7 @@ A header with the RunMyFiles name and the page title, and a navigation bar on ev
 - A selector at the top lists records as `<id> | <name>`. It is searchable: typing narrows the list.
 - Fields are locked (grey) on arrival.
 - **Edit** unlocks the editable fields (white). It is disabled if the user may not modify the record.
-- **Submit** is disabled until a field has changed.
+- **Save** is disabled until a field has changed.
 - Required fields are marked with a red asterisk.
 - ID, created and modified fields are always read-only.
 - **Proposed:** a **New** button beside the selector to create a record, and **Deactivate** in place of delete for anything a job might reference.
@@ -83,7 +83,7 @@ Job   id, JobKey*, Description, Active                             [Edit]
                     (o) Working folder path [incoming         ]
           Move      [ ]
                                                          [Add Step]
-[Submit]
+[Save]
 ```
 
 **From the mockup**
@@ -91,7 +91,7 @@ Job   id, JobKey*, Description, Active                             [Edit]
 - Steps expand and collapse with a triangle. Collapsed rows show the summary fields only.
 - Steps are reordered with up and down arrows. Each step has an Enabled checkbox.
 - **Add Step** appends a new row, expanded and ready to fill in.
-- One **Submit** saves the job with its steps and parameters.
+- One **Save** saves the job with its steps and parameters.
 
 **Changed from the mockup**
 
@@ -104,7 +104,7 @@ Job   id, JobKey*, Description, Active                             [Edit]
 - **Parameters come from the step catalog.** Choosing a step type shows that type's parameters as form fields, in a defined order, with required ones marked, defaults filled in and a description on hover. Boolean parameters are checkboxes. No free-form parameter names. The catalog is built and served at `GET /api/v1/step-types`.
 - **File locations are a choice, not a text box.** Each location parameter offers either an endpoint picker or a path inside the job's working folder. The picker is searchable and has **New...**, which opens a small form to register an endpoint without leaving the page.
 - **Placeholder preview.** Beside any value containing `${...}`, a preview shows what it resolves to for this job, or the error if it cannot be resolved.
-- **Validation before saving.** Submit reports problems against the field that caused them: a missing required parameter, an unknown endpoint, an unresolved placeholder, a path outside the working folder. The check itself is built (`GET /api/v1/jobs/{job_key}/check`); it reports problems per step, not yet per field.
+- **Validation before saving.** Save reports problems against the field that caused them: a missing required parameter, an unknown endpoint, an unresolved placeholder, a path outside the working folder. The check itself is built (`GET /api/v1/jobs/{job_key}/check`); it reports problems per step, not yet per field.
 - **Remove** on jobs and steps, with a confirmation.
 - A **Variables** panel on the job.
 - **Duplicate**, to start a new job from an existing one.

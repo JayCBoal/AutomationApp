@@ -33,7 +33,7 @@ def edit(page):
 
 
 def submit(page):
-    """Presses Submit and waits until the server has answered and the page has shown the result."""
+    """Presses Save and waits until the server has answered and the page has shown the result."""
     with page.expect_response(lambda r: "/api/v1/jobs" in r.url and r.request.method in ("POST", "PUT")):
         page.locator("#submit-button").click()
     page.wait_for_function("() => Alpine.$data(document.querySelector('main')).busy === false")
@@ -59,7 +59,7 @@ def titles(job):
     return [step["title"] for step in job["steps"]]
 
 
-# --- Locking, unlocking and Submit --------------------------------------------------------------
+# --- Locking, unlocking and Save ----------------------------------------------------------------
 
 def test_edit_unlocks_and_submit_waits_for_a_change(page, job):
     open_job(page)

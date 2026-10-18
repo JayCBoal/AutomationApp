@@ -41,7 +41,7 @@
                 @click="remove()">Delete job</button>
         <button type="button" class="secondary" id="cancel-button" x-show="editing" :disabled="busy" @click="cancel()">Cancel</button>
         <button type="button" class="primary" id="submit-button" x-show="editing" :disabled="busy || !changed"
-                @click="submit()">Submit</button>
+                @click="submit()">Save</button>
     </div>
 
     <p class="message error" id="page-error" x-show="error" x-text="error" role="alert" x-cloak></p>

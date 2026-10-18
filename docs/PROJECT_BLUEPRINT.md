@@ -119,7 +119,10 @@ A workflow is a job of type `WORKFLOW` (the design: [WORKFLOWS.md](WORKFLOWS.md)
 - Running: `engine/workflow_runner.py`, started by `engine.runner` when the job is a workflow, so a scheduler and the Run Job page start it as they start any job. It works on the database directly. It reads the workflow once, at the start; then, about every second, it starts each job whose prerequisites hold (each in a job runner of its own, as the scheduler "AutoApp workflow"), marks Not run each job whose prerequisites can never hold (which can cascade), ends Disabled a disabled job when its turn comes, and records each job's state in `WorkflowRunItems`. It ends Failed if a failure went unhandled, that is a job failed and nothing that waits for it ran (Reason `JOB_FAILED`), or if jobs were cancelled (`CANCELLED`); otherwise Succeeded, so a failure path that ran leaves it green. A job runner whose records did not arrive through the API has its spool loaded straight into the database.
 - Cancel (`POST /api/v1/runs/{run_id}/cancel`): starts nothing more; the jobs running finish; those not started are Not run (Reason `CANCELLED`).
 
-**Planned**: the later phases in WORKFLOWS.md (the diagram, Reactions, conditions, outside dependencies, embedded workflows, restarts, time-based Reactions).
+- The workflow page (Phase 2: [WORKFLOWS_PHASE2.md](WORKFLOWS_PHASE2.md)): Diagram | Outline. The diagram is `ui/js/workflow_diagram.js`: elkjs (`ui/vendor/elk-0.12.0.bundled.js`) lays the boxes and lines out, and it draws them as SVG; it knows nothing of the server, and is handed what to draw by `ui/js/workflow.js`. `ui/mockup_workflow.html` still shows the whole design, with what later phases add.
+- Job History is a tree: `GET /api/v1/runs?tree=true` leaves out runs whose workflow run is listed too; `parent=` lists the runs inside one.
+
+**Planned**: the later phases in WORKFLOWS.md (Reactions, conditions, outside dependencies, embedded workflows, restarts, time-based Reactions).
 
 `Jobs.JobKey` is the job's unique name. It is human-readable, independent of environment, and what the scheduler passes. The numeric primary key differs between databases and is never used outside RunMyFiles. Because the key also names the job's working folder, it is limited to letters, digits, `-`, `_` and `.`.
 
@@ -456,8 +459,8 @@ Nothing in this section is built in the rewrite. The 2024 prototype tracked exte
   - **Export as CSV** exports the rows on screen with every field.
   - A search, or an open trace, can be bookmarked: the criteria are kept in the page address.
   - Times are shown, and date criteria entered, in the viewer's time zone. The API works in UTC.
-- **Job Search** page:
-  - Search by job key, description, enabled or disabled, and an endpoint the job uses.
+- **Jobs & Workflows** page (`jobs.html`, once Job Search):
+  - Search by job key, description, type (job or workflow), enabled or disabled, and an endpoint the job uses. A Type column says which each is.
   - Each row shows the job's steps, the endpoints it uses and how its most recent run went, with the error if it failed.
   - Every job found is put through the pre-run check. A job that would run says **Ready to run** in green. One that would not has a bold red **Check** link, which checks the job again and lists every problem. A disabled job says **Disabled** in grey. Nothing is run.
   - The job key, and a **View** link, open the job's detail page.
@@ -467,7 +470,7 @@ Nothing in this section is built in the rewrite. The 2024 prototype tracked exte
   - Its steps in order, collapsed to one line each (`LEGAL_EXTRACTS -> incoming`), expandable one at a time or all at once.
   - Each step's form is drawn from the step catalog, not written into the page: a tick box for true or false, a list for a choice, and for a file location the choice between an endpoint and a working-folder path. A parameter the step leaves out shows its default, marked as such.
   - A parameter that the step type does not have is pointed out, and can be removed.
-  - The page arrives locked. **Edit** unlocks it; **Submit** is enabled once something has changed and saves the whole job in one request; **Cancel** puts everything back.
+  - The page arrives locked. **Edit** unlocks it; **Save** is enabled once something has changed and saves the whole job in one request; **Cancel** puts everything back.
   - Steps can be added, removed, reordered with arrows, retitled and enabled or disabled. A true-or-false parameter can be put back to its default, so the step stops storing a value of its own.
   - After a save the page says what changed and re-runs the pre-run check. A job is saved even if the check finds problems, which are then listed.
   - **New job** starts a blank job. Renaming a job asks for confirmation first, because the scheduler and the working folder use its key. **Delete job** works for a job that has never run; one with run history must be disabled instead.
@@ -481,7 +484,7 @@ Nothing in this section is built in the rewrite. The 2024 prototype tracked exte
 - **Application, Entity, Site, Endpoint, Tag and Scheduler** pages: one search page and one detail page serve all six (`search.html?kind=sites`, `detail.html?kind=sites&name=...`; a tag is named by its path, `detail.html?kind=tags&name=Finance/Reporting`), drawn from a short description of each kind in `definitions.js`.
   - Search by any field; each row says how much uses it. Every search page except the tags' own has a **Tag** box, which finds what carries a tag whose path contains the text, or any tag under it, and a Tags column.
   - **New** opens the detail page blank and unlocked, so a new one is created with its variables and its active flag in one go. The small "New..." windows remain for registering something from inside another form.
-  - The detail page arrives locked; Edit, Submit and Cancel work as on the job editor. Fields that name another kind have its drop-down and a **New...** link.
+  - The detail page arrives locked; Edit, Save and Cancel work as on the job editor. Fields that name another kind have its drop-down and a **New...** link.
   - **Used by** lists what refers to it, as links. Something still in use cannot be deleted, and the page says what uses it.
   - Applications, entities and sites have a Variables panel. An application's `Root`, which its endpoints' paths use, is set here.
   - An endpoint links to the files taken from it and delivered to it on the Operations Log. Renaming an endpoint renames it in every job step that names it.
@@ -495,7 +498,7 @@ Nothing in this section is built in the rewrite. The 2024 prototype tracked exte
   - The runner it starts keeps its spool in `autoapp/spool`, or where `AUTOAPP_SPOOL_DIR` says.
 - **Audit Log** page: every change to a definition or a setting, newest first, saying in words what changed, with a link to the thing changed if it still exists.
 - **Settings** page: each system-wide setting with what it means, drawn from the declarations in `engine/settings.py`. The variable precedence is a list put in order with arrows. Each setting is saved on its own, can be undone, or put back to its default.
-- **Main Index** page, linking to every page.
+- **Main Index** page, linking to every page, in three sections: Definitions, Records of what happened, and Administration (Settings).
 - **Embedded mode:** any page opened with `embed=1` in its address shows a thin bar instead of the header and navigation, for a scheduler to show inside its own interface. Its links stay embedded; `theme=` matches the host's look. The job editor then shows only its own job, and tells the window that opened it when it is ready, has saved (with the job key, whether it would run, and what changed), was cancelled or deleted. `job.html?new&key=...` starts a new job with a suggested key. The addresses and messages a WLA plug-in may rely on are in [INTEGRATION.md](INTEGRATION.md), and `tests/test_ui_embedded.py` keeps them working.
 
 **Planned**

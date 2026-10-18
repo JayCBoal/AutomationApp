@@ -1,6 +1,6 @@
 # To-Do
 
-Updated 2026-10-13. The order under "Work queue" is a proposal; the items under "Decisions needed" are waiting on a choice.
+Updated 2026-10-13. The order under "Work queue" is a proposal; the items under "Decisions needed" are waiting on a choice. Long-term features (security and permissions, credentials, alerting, hosting) are in [ROADMAP.md](ROADMAP.md).
 
 ## Decisions needed
 
@@ -111,7 +111,7 @@ Designed with the owner and built in RunMyFiles on 2026-10-16, then brought over
 
 ### Later
 
-- **AutoApp as a SaaS application** (the owner, 2026-10-18; long-term, not a workflow topic). It would fit RunMyJobs better, and may change the billing question (WORKFLOWS.md, "Jobs may still run on their own"). Builds on API authentication and the rest of item 6 (Security), and on runners using the API (decision 2).
+- **AutoApp as a SaaS application** (the owner, 2026-10-18; long-term, not a workflow topic). It would fit RunMyJobs better, and may change the billing question (WORKFLOWS.md, "Jobs may still run on their own"). Builds on API authentication and the rest of item 6 (Security), and on runners using the API (decision 2). The plan, in three steps (a hosted demo first, true SaaS last): [HOSTING.md](HOSTING.md).
 
 - **Exact differences in the audit log.** Each audit row records who changed what, as sentences ("Changed step 2 ('Archive'): parameters."), but not the values before and after. Store a before-and-after list with each row (each field; each step's parameters; steps added, removed or moved; variables, except that a secret variable says only that it changed), and add "Show details" on the Audit Log page. Applies to changes made from then on.
 

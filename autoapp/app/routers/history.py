@@ -4,9 +4,13 @@ The records of what happened: job runs, and changes to definitions.
     GET /api/v1/runs             Job History: one row per run of a job or a workflow
     GET /api/v1/runs/{run_id}    one run, with its job log, and a workflow run's jobs
     POST /api/v1/runs/{run_id}/cancel   asks a workflow run to start nothing more
+    POST /api/v1/runs/{run_id}/kill     kills a running job; a workflow kills what runs and cancels the rest
+    POST /api/v1/runs/{run_id}/items/{path}/kill   kills a job running in a workflow run, before its own record arrives
     GET /api/v1/audits    Audit Log: one row per change to a job, endpoint, application, entity or site
 """
 import json
+import os
+import signal
 from datetime import date, datetime
 from typing import List, Optional
 
@@ -17,7 +21,8 @@ from sqlalchemy.orm import Session, aliased
 
 from app.database import get_db
 from app.log_agent import log_note, run_log
-from app.models import Audit, JobRun, Operation, WorkflowRunItem, utcnow
+from app.models import Audit, JobRun, Operation, ReactionEvent, WorkflowRunItem, utcnow
+from engine import log_files
 
 MAX_RESULTS = 500
 router = APIRouter(tags=["History"])
@@ -46,6 +51,7 @@ class RunOut(BaseModel):
     workflow_path: Optional[str] = None
     attempt: int = 1
     child_count: int = 0
+    status_before_override: Optional[str] = None
 
 
 @router.get("/api/v1/runs", response_model=List[RunOut])
@@ -160,7 +166,7 @@ def _describe(run: JobRun, counts, has_log: bool, parent_run_id: Optional[str] =
         if run.StartedDateTime and run.EndedDateTime else None,
         error=run.ErrorMessage, operations=counts[0], failed_operations=counts[1], has_log=has_log,
         job_type=run.JobType or "STEPS", return_code=run.ReturnCode, reason=run.Reason, parent_run_id=parent_run_id,
-        workflow_path=run.WorkflowPath, attempt=run.Attempt or 1,
+        workflow_path=run.WorkflowPath, attempt=run.Attempt or 1, status_before_override=run.StatusBeforeOverride,
     )
 
 
@@ -176,6 +182,16 @@ class RunItemOut(BaseModel):
     run_id: Optional[str] = None
     started: Optional[datetime] = None
     ended: Optional[datetime] = None
+    status_before_override: Optional[str] = None
+
+
+class ReactionEventOut(BaseModel):
+    """A Reaction's action that fired, or was passed over at its limit."""
+    time: datetime
+    path: Optional[str] = None
+    action: str
+    result: str
+    message: Optional[str] = None
 
 
 class RunDetail(RunOut):
@@ -183,6 +199,8 @@ class RunDetail(RunOut):
     log_note: Optional[str] = None
     items: List[RunItemOut] = []
     cancel_requested: bool = False
+    kill_requested: bool = False
+    reactions: List[ReactionEventOut] = []
 
 
 @router.get("/api/v1/runs/{run_id}", response_model=RunDetail)
@@ -200,14 +218,28 @@ def get_run(run_id: str, db: Session = Depends(get_db)):
     parent = db.get(JobRun, run.ParentRun_id).RunID if run.ParentRun_id and db.get(JobRun, run.ParentRun_id) else None
     return RunDetail(**_describe(run, (total or 0, int(failed or 0)), _has_log(run), parent).model_dump(),
                      log=run_log(run), log_note=log_note(run),
-                     items=_run_items(db, run), cancel_requested=run.CancelRequestedDateTime is not None)
+                     items=_run_items(db, run), cancel_requested=run.CancelRequestedDateTime is not None,
+                     kill_requested=run.KillRequestedDateTime is not None, reactions=_reaction_events(db, run))
+
+
+def _reaction_events(db: Session, run: JobRun) -> List[ReactionEventOut]:
+    """For a workflow run, those of its jobs, and its own when it ran on its own; for a job's run, its own."""
+    if run.JobType == "WORKFLOW":
+        condition = (ReactionEvent.WorkflowRun_id == run.id) | (
+            (ReactionEvent.JobRun_id == run.id) & ReactionEvent.WorkflowRun_id.is_(None))
+    else:
+        condition = ReactionEvent.JobRun_id == run.id
+    rows = db.query(ReactionEvent).filter(condition).order_by(ReactionEvent.id)
+    return [ReactionEventOut(time=e.EventDateTime, path=e.WorkflowPath, action=e.Action, result=e.Result,
+                             message=e.Message) for e in rows]
 
 
 def _run_items(db: Session, run: JobRun) -> List[RunItemOut]:
     rows = db.query(WorkflowRunItem).filter(WorkflowRunItem.WorkflowRun_id == run.id).order_by(WorkflowRunItem.ItemOrder)
     return [RunItemOut(name=r.ItemName, path=r.Path, job_key=r.JobKey, status=r.Status, reason=r.Reason,
                        return_code=r.ReturnCode, attempt=r.Attempt, run_id=r.child_run.RunID if r.child_run else None,
-                       started=r.StartedDateTime, ended=r.EndedDateTime) for r in rows]
+                       started=r.StartedDateTime, ended=r.EndedDateTime,
+                       status_before_override=r.StatusBeforeOverride) for r in rows]
 
 
 @router.post("/api/v1/runs/{run_id}/cancel", response_model=RunDetail)
@@ -227,6 +259,63 @@ def cancel_run(run_id: str, db: Session = Depends(get_db)):
         run.CancelRequestedDateTime = utcnow()
         db.commit()
     return get_run(run_id, db)
+
+
+@router.post("/api/v1/runs/{run_id}/kill", response_model=RunDetail)
+def kill_run(run_id: str, db: Session = Depends(get_db)):
+    """
+    Kills a run that is still going. A job's runner is told to stop, and the job ends Failed,
+    Reason KILLED. A workflow kills its jobs that are running, down through workflows inside
+    it, and cancels those not started (Kill and Cancel); it ends Failed, KILLED.
+    """
+    run = db.query(JobRun).filter(JobRun.RunID == run_id).first()
+    if run is None:
+        raise HTTPException(404, f"AutoApp has no record of run '{run_id}'.")
+    if run.Status != "RUNNING":
+        raise HTTPException(409, f"'{run.JobKey}' has already ended ({run.Status}), so there is nothing to kill.")
+    if run.JobType == "WORKFLOW":
+        run.KillRequestedDateTime = run.KillRequestedDateTime or utcnow()
+        db.commit()
+    else:
+        item = db.query(WorkflowRunItem).filter(WorkflowRunItem.ChildRun_id == run.id).first()
+        _signal(run.JobKey, run.Host, run.ProcessID or (item.ProcessID if item else None))
+    return get_run(run_id, db)
+
+
+@router.post("/api/v1/runs/{run_id}/items/{path:path}/kill", response_model=RunDetail)
+def kill_run_item(run_id: str, path: str, db: Session = Depends(get_db)):
+    """
+    Kills a job running in a workflow run, by its place there. The workflow runner recorded its
+    process as it started it, so this works before the job's own records arrive.
+    """
+    run = db.query(JobRun).filter(JobRun.RunID == run_id).first()
+    if run is None:
+        raise HTTPException(404, f"AutoApp has no record of run '{run_id}'.")
+    item = db.query(WorkflowRunItem).filter(WorkflowRunItem.WorkflowRun_id == run.id, WorkflowRunItem.Path == path).first()
+    if item is None:
+        raise HTTPException(404, f"Workflow run '{run_id}' has no job '{path}'.")
+    if item.Status != "RUNNING":
+        raise HTTPException(409, f"'{item.ItemName}' is not running ({item.Status}), so there is nothing to kill.")
+    child = item.child_run
+    if child is not None and child.JobType == "WORKFLOW":
+        child.KillRequestedDateTime = child.KillRequestedDateTime or utcnow()
+        db.commit()
+    else:
+        _signal(item.ItemName, run.Host, item.ProcessID)
+    return get_run(run_id, db)
+
+
+def _signal(name: str, host: Optional[str], process_id: Optional[int]) -> None:
+    """Tells a job's runner to stop. Only on this machine: there is no agent to ask on another yet."""
+    if not process_id:
+        raise HTTPException(409, f"'{name}' has not said which process it runs in yet. Try again in a moment.")
+    if host and host != log_files.this_host():
+        raise HTTPException(409, f"'{name}' runs on {host}, and AutoApp can only kill jobs on this machine "
+                                 f"({log_files.this_host()}) for now.")
+    try:
+        os.kill(process_id, signal.SIGTERM)
+    except ProcessLookupError:
+        raise HTTPException(409, f"'{name}' has already ended, so there is nothing to kill.")
 
 
 class AuditOut(BaseModel):

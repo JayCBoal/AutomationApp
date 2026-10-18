@@ -160,6 +160,8 @@
                 <h2 class="section" style="margin-top: 0">The run</h2>
                 <span class="status" id="run-outcome" :class="outcomeClass" x-text="outcome"></span>
                 <span class="muted small" x-show="launch.exit_code !== null" x-text="'exit code ' + launch.exit_code"></span>
+                <button type="button" class="secondary danger" id="kill-button" x-show="run && run.status === 'RUNNING'"
+                        @click="kill()" x-text="killWords(run)"></button>
             </div>
             <p class="small"><code id="run-command" x-text="launch.command"></code></p>
             <p class="small" x-show="run">

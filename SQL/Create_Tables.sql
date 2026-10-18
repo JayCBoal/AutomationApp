@@ -15,9 +15,12 @@ DROP TABLE IF EXISTS AsyncParentInstances;
 DROP TABLE IF EXISTS Processes;
 DROP TABLE IF EXISTS Sources;
 DROP TABLE IF EXISTS Deliveries;
+DROP TABLE IF EXISTS ReactionEvents;
+DROP TABLE IF EXISTS ReactionActions;
 DROP TABLE IF EXISTS Operations;
 DROP TABLE IF EXISTS WorkflowRunItems;
 DROP TABLE IF EXISTS WorkflowPrerequisites;
+DROP TABLE IF EXISTS Reactions;
 DROP TABLE IF EXISTS JobStepParameters;
 DROP TABLE IF EXISTS Endpoints;
 DROP TABLE IF EXISTS WorkflowItems;
@@ -198,6 +201,9 @@ CREATE TABLE `JobRuns` (
 	`WorkflowPath` VARCHAR(1000), 
 	`Attempt` INTEGER NOT NULL DEFAULT 1, 
 	`CancelRequestedDateTime` DATETIME(6), 
+	`KillRequestedDateTime` DATETIME(6), 
+	`ProcessID` INTEGER, 
+	`StatusBeforeOverride` VARCHAR(20), 
 	`LogFile` VARCHAR(500), 
 	`LogRemovedDateTime` DATETIME(6), 
 	PRIMARY KEY (id), 
@@ -260,6 +266,8 @@ CREATE TABLE `WorkflowItems` (
 	`Job_MasterObject_id` INTEGER NOT NULL, 
 	`JoinRule` VARCHAR(10) NOT NULL DEFAULT 'ALL', 
 	`ItemOrder` INTEGER NOT NULL DEFAULT 1, 
+	`DisabledHere` VARCHAR(20), 
+	`ReactionsOverridden` BOOL NOT NULL DEFAULT false, 
 	PRIMARY KEY (id), 
 	CONSTRAINT uq_workflow_item_name UNIQUE (`Workflow_MasterObject_id`, `ItemName`), 
 	FOREIGN KEY(`Workflow_MasterObject_id`) REFERENCES `Jobs` (`MasterObject_id`) ON DELETE CASCADE, 
@@ -292,6 +300,25 @@ CREATE TABLE `JobStepParameters` (
 	FOREIGN KEY(`JobStep_id`) REFERENCES `JobSteps` (id) ON DELETE CASCADE
 )ENGINE=InnoDB CHARSET=utf8mb4 COLLATE utf8mb4_bin;
 
+CREATE TABLE `Reactions` (
+	id INTEGER NOT NULL AUTO_INCREMENT, 
+	`Job_MasterObject_id` INTEGER, 
+	`Item_id` INTEGER, 
+	`Section` VARCHAR(10) NOT NULL DEFAULT 'NEXT', 
+	`ReactionOrder` INTEGER NOT NULL DEFAULT 1, 
+	`WhenTest` VARCHAR(20) NOT NULL DEFAULT 'FAILED', 
+	`WhenReturnCodes` VARCHAR(100), 
+	`WhenCondition` TEXT, 
+	PRIMARY KEY (id), 
+	CONSTRAINT ck_reaction_one_owner CHECK ((Job_MasterObject_id IS NULL) <> (Item_id IS NULL)), 
+	FOREIGN KEY(`Job_MasterObject_id`) REFERENCES `Jobs` (`MasterObject_id`) ON DELETE CASCADE, 
+	FOREIGN KEY(`Item_id`) REFERENCES `WorkflowItems` (id) ON DELETE CASCADE
+)ENGINE=InnoDB CHARSET=utf8mb4 COLLATE utf8mb4_bin;
+
+CREATE INDEX `ix_Reactions_Item_id` ON `Reactions` (`Item_id`);
+
+CREATE INDEX `ix_Reactions_Job_MasterObject_id` ON `Reactions` (`Job_MasterObject_id`);
+
 CREATE TABLE `WorkflowPrerequisites` (
 	id INTEGER NOT NULL AUTO_INCREMENT, 
 	`Item_id` INTEGER NOT NULL, 
@@ -317,6 +344,8 @@ CREATE TABLE `WorkflowRunItems` (
 	`Status` VARCHAR(20) NOT NULL DEFAULT 'PENDING', 
 	`Reason` VARCHAR(40), 
 	`ReturnCode` INTEGER, 
+	`StatusBeforeOverride` VARCHAR(20), 
+	`ProcessID` INTEGER, 
 	`ChildRun_id` INTEGER, 
 	`Attempt` INTEGER NOT NULL DEFAULT 0, 
 	`StartedDateTime` DATETIME(6), 
@@ -366,3 +395,40 @@ CREATE INDEX `ix_Operations_DestFilename` ON `Operations` (`DestFilename`);
 CREATE INDEX `ix_Operations_JobRun_id` ON `Operations` (`JobRun_id`);
 
 CREATE INDEX `ix_Operations_SourceFilename` ON `Operations` (`SourceFilename`);
+
+CREATE TABLE `ReactionActions` (
+	id INTEGER NOT NULL AUTO_INCREMENT, 
+	`Reaction_id` INTEGER NOT NULL, 
+	`ActionOrder` INTEGER NOT NULL DEFAULT 1, 
+	`Action` VARCHAR(30) NOT NULL, 
+	`MaxTimes` INTEGER, 
+	`WaitSeconds` INTEGER, 
+	`TargetItem_id` INTEGER, 
+	`TargetJob_MasterObject_id` INTEGER, 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(`Reaction_id`) REFERENCES `Reactions` (id) ON DELETE CASCADE, 
+	FOREIGN KEY(`TargetItem_id`) REFERENCES `WorkflowItems` (id) ON DELETE CASCADE, 
+	FOREIGN KEY(`TargetJob_MasterObject_id`) REFERENCES `Jobs` (`MasterObject_id`) ON DELETE RESTRICT
+)ENGINE=InnoDB CHARSET=utf8mb4 COLLATE utf8mb4_bin;
+
+CREATE INDEX `ix_ReactionActions_Reaction_id` ON `ReactionActions` (`Reaction_id`);
+
+CREATE TABLE `ReactionEvents` (
+	id INTEGER NOT NULL AUTO_INCREMENT, 
+	`JobRun_id` INTEGER NOT NULL, 
+	`WorkflowRun_id` INTEGER, 
+	`WorkflowPath` VARCHAR(1000), 
+	`ReactionAction_id` INTEGER, 
+	`Action` VARCHAR(30) NOT NULL, 
+	`Result` VARCHAR(20) NOT NULL DEFAULT 'TOOK_EFFECT', 
+	`Message` TEXT, 
+	`EventDateTime` DATETIME(6) NOT NULL, 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(`JobRun_id`) REFERENCES `JobRuns` (id) ON DELETE CASCADE, 
+	FOREIGN KEY(`WorkflowRun_id`) REFERENCES `JobRuns` (id) ON DELETE CASCADE, 
+	FOREIGN KEY(`ReactionAction_id`) REFERENCES `ReactionActions` (id) ON DELETE SET NULL
+)ENGINE=InnoDB CHARSET=utf8mb4 COLLATE utf8mb4_bin;
+
+CREATE INDEX `ix_ReactionEvents_JobRun_id` ON `ReactionEvents` (`JobRun_id`);
+
+CREATE INDEX `ix_ReactionEvents_WorkflowRun_id` ON `ReactionEvents` (`WorkflowRun_id`);

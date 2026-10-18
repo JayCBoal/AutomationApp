@@ -20,16 +20,22 @@
  *     POST   /api/v1/jobs, PUT /api/v1/jobs/{key}, DELETE /api/v1/jobs/{key}
  *     POST   /api/v1/launches                    Run
  *     GET    /api/v1/runs?job_key=...&job_type=WORKFLOW, GET /api/v1/runs/{run_id}
- *     POST   /api/v1/runs/{run_id}/cancel
+ *     POST   /api/v1/runs/{run_id}/cancel, /api/v1/runs/{run_id}/kill (Kill and Cancel)
+ *     POST   /api/v1/runs/{run_id}/items/{path}/kill (Kill one job of the run)
+ *
+ * Reactions (docs/WORKFLOWS_PHASE3.md, js/reactions.js): the workflow's own, and on each job its
+ * job's, or this use's own once Override here is chosen. Disable here stops a job or lets it
+ * pass through, in this workflow only.
  */
 function workflowDetail() {
     const address = new URLSearchParams(location.search);
     const TESTS = { SUCCESS: "succeeded", FAILED: "failed", ENDED: "ended, whatever happened", RC: "gave return codes" };
     const STATES = { PENDING: "Not started yet", WAITING: "Waiting", RUNNING: "Running", SUCCESS: "Succeeded",
-                     FAILED: "Failed", NOT_RUN: "Not run", DISABLED: "Disabled" };
+                     FAILED: "Failed", NOT_RUN: "Not run", DISABLED: "Disabled", BYPASSED: "Bypassed", SKIPPED: "Skipped" };
     const REASONS = { PREREQUISITES_NOT_MET: "its prerequisites can't be met", CANCELLED: "the workflow was cancelled",
                       RETURN_CODE: "its return code is not a success code", ERROR: "a step failed",
-                      JOB_FAILED: "a failure went unhandled" };
+                      JOB_FAILED: "a failure went unhandled", KILLED: "killed",
+                      DISABLED_PASS_THROUGH: "disabled here, to pass through" };
     const POLL_MS = 1500;
     const VIEW_KEY = "autoapp.workflow.view", DIRECTION_KEY = "autoapp.workflow.direction";
     const ZOOM_STEP = 1.2, ZOOM_MIN = 0.3, ZOOM_MAX = 2.5;
@@ -54,6 +60,7 @@ function workflowDetail() {
     };
 
     return {
+        ...AutoApp.reactionEditing(),
         key: address.get("key") || "",
         isNew: address.has("new"),
         runId: address.get("run") || "",
@@ -84,12 +91,13 @@ function workflowDetail() {
             window.addEventListener("beforeunload", event => { if (this.changed) event.preventDefault(); });
             try {
                 this.allJobs = await AutoApp.get("/jobs");
+                AutoApp.loadReactionWorkflows();
             } catch (e) {
                 this.error = e.message;
                 return;
             }
             if (this.isNew) {
-                this.show({ job_key: "", description: "", active: true, items: [] });
+                this.show({ job_key: "", description: "", active: true, items: [], reactions: [] });
                 this.editing = true;
             } else if (this.key) {
                 await this.load();
@@ -133,13 +141,16 @@ function workflowDetail() {
             const uids = {};
             const items = (job.items || []).map(item => {
                 uids[item.name] = nextUid++;
-                return { uid: uids[item.name], id: item.id, name: item.name, job_key: item.job_key, join: item.join, prerequisites: [] };
+                return { uid: uids[item.name], id: item.id, name: item.name, job_key: item.job_key, join: item.join, prerequisites: [],
+                         disabled_here: item.disabled_here || "", reactions_overridden: Boolean(item.reactions_overridden),
+                         reactions: this.reactionsForm(item.reactions), job_reactions: this.reactionsForm(item.job_reactions) };
             });
             (job.items || []).forEach((item, index) => {
                 items[index].prerequisites = item.prerequisites.map(p => ({
                     uid: nextUid++, target: uids[p.target], test: p.test, return_codes: p.return_codes || "" }));
             });
-            this.form = { job_key: job.job_key, description: job.description || "", active: job.active, items };
+            this.form = { job_key: job.job_key, description: job.description || "", active: job.active, items,
+                          reactions: this.reactionsForm(job.reactions) };
             this.saved = JSON.stringify(this.payload());
             document.title = `${job.job_key || "New workflow"} - AutoApp`;
         },
@@ -163,7 +174,11 @@ function workflowDetail() {
                     prerequisites: item.prerequisites.map(p => ({
                         target: this.nameOf(p.target), test: p.test,
                         return_codes: p.test === "RC" ? (p.return_codes.trim() || null) : null })),
+                    disabled_here: item.disabled_here || null,
+                    reactions_overridden: item.reactions_overridden,
+                    reactions: item.reactions_overridden ? this.reactionsPayload(item.reactions) : [],
                 })),
+                reactions: this.reactionsPayload(this.form.reactions),
             };
         },
 
@@ -188,7 +203,8 @@ function workflowDetail() {
 
         addItem() {
             const uid = nextUid++;
-            this.form.items.push({ uid, id: null, name: "", job_key: "", join: "ALL", prerequisites: [] });
+            this.form.items.push({ uid, id: null, name: "", job_key: "", join: "ALL", prerequisites: [], disabled_here: "",
+                                   reactions_overridden: false, reactions: [], job_reactions: [] });
             if (this.view === "diagram") this.select("item", uid);
         },
 
@@ -232,6 +248,37 @@ function workflowDetail() {
         },
 
         others(item) { return this.form.items.filter(i => i.uid !== item.uid); },
+
+        // ---------- Disable here, and a use's Reactions ----------
+
+        disabledHereWords(item) {
+            return { STOP: "Disabled here: stops", PASS_THROUGH: "Disabled here: passes through" }[item.disabled_here] || "";
+        },
+
+        /** Override here: starts from a copy of the job's, to change. */
+        overrideReactions(item) {
+            item.reactions = this.reactionsForm(this.reactionsPayload(item.job_reactions));
+            item.reactions_overridden = true;
+        },
+
+        useJobReactions(item) {
+            item.reactions = [];
+            item.reactions_overridden = false;
+        },
+
+        reactionsShown(item) { return item.reactions_overridden ? item.reactions : item.job_reactions; },
+
+        /** The jobs Rerun from... and Skip... can name: for Rerun from, those it waits for, directly or not; for Skip, any other. */
+        reactionTargets(item) { return this.others(item).map(i => this.nameOf(i.uid)).filter(Boolean); },
+
+        /** Rerun from... Reactions, for the diagram's ↺ arcs: from each job back to the job it reruns from. */
+        reruns(items, idOf) {
+            return items.flatMap(item => (item.reactions_overridden ? item.reactions : []).flatMap(r =>
+                r.actions.filter(a => a.action === "RERUN_FROM" && a.target).map(a => ({
+                    from: idOf(item), to: idOf(this.form.items.find(i => this.nameOf(i.uid) === a.target) || null),
+                    words: `${this.nameOf(item.uid)}: ${this.reactionWords(r)}` }))))
+                .filter(r => r.to);
+        },
 
         placeholder(item) { return defaultName(item.job_key) || "Made from the job key"; },
 
@@ -365,12 +412,21 @@ function workflowDetail() {
             const items = this.form.items.map(item => ({
                 id: String(item.uid), name: this.nameOf(item.uid), join: item.join, status: null,
                 sub: item.job_key ? "job " + item.job_key : "no job chosen yet",
-                kind: this.jobKind(item.job_key), disabled: this.jobDisabledWords(item.job_key) }));
+                kind: this.jobKind(item.job_key), disabled: this.jobDisabledWords(item.job_key),
+                disabledHere: item.disabled_here || null, reactions: this.reactionsTip(item) }));
             const lines = this.form.items.flatMap(item => item.prerequisites.filter(p => p.target).map(p => ({
                 id: String(p.uid), from: String(p.target), to: String(item.uid), test: p.test, codes: p.return_codes.trim() })));
             const selected = this.selectedLine ? { kind: "line", id: String(this.selectedLine) }
                 : this.selectedUid ? { kind: "item", id: String(this.selectedUid) } : null;
-            return { items, lines, selected };
+            return { items, lines, selected, reruns: this.reruns(this.form.items, item => item && String(item.uid)) };
+        },
+
+        /** What the Reactions marker says when pointed at, or null for a job without any. */
+        reactionsTip(item) {
+            const shown = this.reactionsShown(item);
+            if (!shown.length) return null;
+            const whose = item.reactions_overridden ? "Its own Reactions here" : "Its job's Reactions";
+            return `${whose}: ` + shown.map(r => this.reactionWords(r)).join(" ");
         },
 
         /** Draws the workflow's diagram; Alpine calls it again whenever anything it reads changes. */
@@ -389,14 +445,17 @@ function workflowDetail() {
             const items = this.run.items.map(item => {
                 const used = definition.get(item.name);
                 return { id: item.name, name: item.name, join: used ? used.join : "ALL", status: item.status,
-                         statusText: this.stateWords(item), kind: this.jobKind(item.job_key), disabled: null };
+                         statusText: this.stateWords(item), kind: this.jobKind(item.job_key), disabled: null,
+                         disabledHere: used ? used.disabled_here : null,
+                         reactions: used && this.form ? this.reactionsTip(this.form.items.find(i => i.id === used.id) || { reactions_overridden: false, job_reactions: [] }) : null };
             });
             const shown = new Set(items.map(i => i.id));
             const lines = [...definition.values()].filter(item => shown.has(item.name)).flatMap(item =>
                 item.prerequisites.filter(p => shown.has(p.target)).map((p, i) => ({
                     id: `${item.name}>${i}`, from: p.target, to: item.name, test: p.test, codes: p.return_codes || "" })));
             const selected = this.runSelected ? { kind: "item", id: this.runSelected } : null;
-            return { items, lines, selected };
+            const saved = this.form ? this.form.items.filter(i => i.id && shown.has(this.nameOf(i.uid))) : [];
+            return { items, lines, selected, reruns: this.reruns(saved, item => item && this.nameOf(item.uid)) };
         },
 
         drawRun(canvas) {
@@ -468,6 +527,26 @@ function workflowDetail() {
             }
         },
 
+        async killRun() {
+            if (!confirm("Kill the jobs running now, and start nothing more?")) return;
+            try {
+                this.run = await AutoApp.send("POST", `/runs/${encodeURIComponent(this.runId)}/kill`);
+            } catch (e) {
+                this.error = e.message;
+            }
+        },
+
+        async killItem(item) {
+            if (!confirm(`Kill '${item.name}'?`)) return;
+            try {
+                this.run = await AutoApp.send("POST", `/runs/${encodeURIComponent(this.runId)}/items/${item.path.split("/").map(encodeURIComponent).join("/")}/kill`);
+            } catch (e) {
+                this.error = e.message;
+            }
+        },
+
+        eventsFor(path) { return this.run && this.run.reactions ? this.run.reactions.filter(e => e.path === path) : []; },
+
         async cancelRun() {
             try {
                 this.run = await AutoApp.send("POST", `/runs/${encodeURIComponent(this.runId)}/cancel`);
@@ -477,9 +556,14 @@ function workflowDetail() {
         },
 
         stateWords(item) {
-            const reason = item.reason && REASONS[item.reason] ? `: ${REASONS[item.reason]}` : "";
             const code = item.return_code !== null && item.return_code !== undefined ? ` · return code ${item.return_code}` : "";
-            return (STATES[item.status] || item.status) + reason + (["SUCCESS", "FAILED"].includes(item.status) ? code : "");
+            const attempt = item.attempt > 1 ? ` · attempt ${item.attempt}` : "";
+            if (item.status_before_override) {         // counted otherwise by a Reaction: shown as both
+                const was = (STATES[item.status_before_override] || item.status_before_override).toLowerCase();
+                return `${STATES[item.status]} (counted; it ${was === "failed" ? "failed" : was})${code}${attempt}`;
+            }
+            const reason = item.reason && REASONS[item.reason] ? `: ${REASONS[item.reason]}` : "";
+            return (STATES[item.status] || item.status) + reason + (["SUCCESS", "FAILED"].includes(item.status) ? code : "") + attempt;
         },
 
         runWords(run) {

@@ -7,6 +7,7 @@
     <link rel="icon" href="data:,">
     <link rel="stylesheet" href="css/autoapp.css">
     <script src="js/common.js"></script>
+    <script src="js/reactions.js"></script>
     <script src="js/job.js"></script>
     <script defer src="vendor/alpine-3.17.4.min.js"></script>
 </head>
@@ -74,7 +75,7 @@
                         <input id="job-success-codes" type="text" x-model="form.success_return_codes" :disabled="!editing"
                                placeholder="0" maxlength="100" style="max-width: 200px">
                         <span class="muted small" x-show="editing">The return codes that mean the job succeeded, as 0, or
-                            0, 4, or 0-4. Empty means 0. A step such as Simulate sets the job's return code.</span>
+                            0, 4, or 0-4. Empty means 0. A Set Return Code step sets the job's return code (so does Simulate).</span>
                     </div>
 
                     <span class="label">Would it run?</span>
@@ -528,10 +529,18 @@
                     <button type="button" class="secondary" id="add-step" @click="addStep()">Add step</button>
                 </div>
             </section>
+
+            <!-- What happens after it ends -->
+            <section class="panel" aria-label="Reactions" id="reactions-panel">
+                <h2 class="section" style="margin-top: 0">Reactions</h2>
+                <p class="muted small">What happens after the job ends, chosen by how it ended. They apply wherever it runs; a
+                    workflow can override them for its use of the job, and only there can they rerun or skip other jobs.</p>
+                <div data-reactions-box data-list="form.reactions" data-in-workflow="false"></div>
+            </section>
         </div>
     </template>
 
 </main>
-<script>AutoApp.fillTagPanels()</script>
+<script>AutoApp.fillTagPanels(); AutoApp.fillReactionBoxes()</script>
 </body>
 </html>

@@ -7,6 +7,7 @@
  *     POST /api/v1/launches                 start the runner for it, as a scheduler would
  *     GET  /api/v1/launches/{launch_id}     whether the runner process is still going
  *     GET  /api/v1/runs/{run_id}            the run as recorded, with its job log so far
+ *     POST /api/v1/runs/{run_id}/kill       Kill (a workflow: Kill and Cancel)
  */
 const LOG_LEVELS = ["DETAIL", "SUMMARY", "DEBUG", "SILENT"];
 const POLL_MS = 1000;
@@ -31,6 +32,19 @@ function followRun() {
                 else throw e;
             }
         },
+
+        /** Kill: a job's runner is told to stop; a workflow kills what runs and cancels the rest. */
+        async kill() {
+            const words = this.run.job_type === "WORKFLOW" ? "Kill the jobs running now, and start nothing more?" : "Kill this run?";
+            if (!confirm(words)) return;
+            try {
+                this.run = await AutoApp.send("POST", `/runs/${encodeURIComponent(this.run.run_id)}/kill`);
+            } catch (e) {
+                this.error = e.message;
+            }
+        },
+
+        killWords(run) { return run && run.job_type === "WORKFLOW" ? "Kill and Cancel" : "Kill"; },
 
         /** Asks again every second while step() says to. */
         poll(step) {

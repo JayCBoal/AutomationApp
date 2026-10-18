@@ -10,12 +10,15 @@ Rules:
   - A prerequisite names another item of the same workflow. There are no loops: a job never
     ends up waiting, directly or not, for itself. A workflow never uses itself, directly or
     through another workflow.
+  - Disable here is empty, STOP or PASS_THROUGH. A use's own Reactions are kept only when it
+    overrides its job's; they follow app/reaction_store.py's rules.
 """
 import re
 from typing import Dict, List, Optional, Set
 
 from sqlalchemy.orm import Session
 
+from app import reaction_store
 from app.models import Job, WorkflowItem, WorkflowPrerequisite
 from app.schemas import PrerequisiteOut, WorkflowItemOut, WorkflowItemSave
 from engine import return_codes
@@ -38,7 +41,11 @@ def describe_items(job: Job) -> List[WorkflowItemOut]:
         WorkflowItemOut(
             id=item.id, name=item.ItemName, job_key=item.job.JobKey, job_type=item.job.JobType, join=item.JoinRule,
             prerequisites=[PrerequisiteOut(target=p.target.ItemName, test=p.Test, return_codes=p.ReturnCodes)
-                           for p in item.prerequisites if p.target is not None])
+                           for p in item.prerequisites if p.target is not None],
+            disabled_here=item.DisabledHere, job_active=bool(item.job.IsActive),
+            reactions_overridden=bool(item.ReactionsOverridden),
+            reactions=reaction_store.describe(item.reactions) if item.ReactionsOverridden else [],
+            job_reactions=reaction_store.describe(item.job.reactions))
         for item in job.items
     ]
 
@@ -106,6 +113,31 @@ def find_loop(waits_for: Dict[str, List[str]]) -> Optional[List[str]]:
     return None
 
 
+def _upstream(name: str, waits_for: Dict[str, List[str]]) -> Set[str]:
+    """Every job name waits for, directly or not."""
+    found: Set[str] = set()
+    queue = list(waits_for.get(name, []))
+    while queue:
+        target = queue.pop()
+        if target not in found:
+            found.add(target)
+            queue += waits_for.get(target, [])
+    return found
+
+
+def _check_uses(db: Session, workflow: Job, names: List[str], submitted: List[WorkflowItemSave]) -> None:
+    """Disable here, and each use's own Reactions."""
+    waits_for = {name: [p.target for p in item.prerequisites] for name, item in zip(names, submitted)}
+    for name, item in zip(names, submitted):
+        if item.disabled_here not in (None, "") + WorkflowItem.DISABLED_HERE:
+            raise WorkflowError(f"'{name}': Disable here must be STOP or PASS_THROUGH, not '{item.disabled_here}'.")
+        if item.reactions_overridden:
+            try:
+                reaction_store.check(db, f"'{name}'", item.reactions, workflow, _upstream(name, waits_for), names, name)
+            except reaction_store.ReactionError as e:
+                raise WorkflowError(str(e))
+
+
 def _check_no_loops(names: List[str], submitted: List[WorkflowItemSave]) -> None:
     loop = find_loop({name: [p.target for p in item.prerequisites] for name, item in zip(names, submitted)})
     if loop:
@@ -123,6 +155,11 @@ def _jobs_used(db: Session, submitted: List[WorkflowItemSave], names: List[str])
             raise WorkflowError(f"'{name}' runs the job '{key}', which does not exist.")
         jobs[name] = job
     return jobs
+
+
+def uses(workflow: Job, target_id: int) -> bool:
+    """Whether the workflow uses the job target_id, directly or through workflows it uses."""
+    return workflow.JobType == "WORKFLOW" and _uses(None, workflow, target_id, {workflow.MasterObject_id})
 
 
 def _uses(db: Session, workflow: Job, target_id: int, seen: Set[int]) -> bool:
@@ -157,6 +194,7 @@ def apply_items(db: Session, workflow: Job, submitted: List[WorkflowItemSave], c
     _check_no_loops(names, submitted)
     jobs = _jobs_used(db, submitted, names)
     _check_not_itself(db, workflow, jobs)
+    _check_uses(db, workflow, names, submitted)
 
     current = {item.id: item for item in workflow.items}
     for s in submitted:
@@ -172,6 +210,9 @@ def apply_items(db: Session, workflow: Job, submitted: List[WorkflowItemSave], c
     for name, s in zip(names, submitted):
         if _apply_prerequisites(by_name[name], s, by_name) and not creating and s.id is not None:
             changes.append(f"Changed what '{name}' waits for.")
+        changed = _apply_use(db, by_name[name], s, by_name)
+        if changed and not creating and s.id is not None:
+            changes.append(f"Changed '{name}': {', '.join(changed)}.")
     if not creating and old_order != submitted_ids:
         changes.append("Reordered the jobs.")
     return changes
@@ -219,6 +260,27 @@ def _apply_prerequisites(item: WorkflowItem, submitted: WorkflowItemSave, by_nam
     for target, test, codes in wanted:
         item.prerequisites.append(WorkflowPrerequisite(target=by_name[target], Test=test, ReturnCodes=codes))
     return True
+
+
+def _apply_use(db: Session, item: WorkflowItem, submitted: WorkflowItemSave, by_name: Dict[str, WorkflowItem]) -> List[str]:
+    """Disable here and the use's own Reactions. Returns what changed, in words."""
+    changed = []
+    disabled = submitted.disabled_here or None
+    if disabled != item.DisabledHere:
+        changed.append({None: "enabled here", "STOP": "disabled here (stop)",
+                        "PASS_THROUGH": "disabled here (pass through)"}[disabled])
+        item.DisabledHere = disabled
+    if bool(submitted.reactions_overridden) != bool(item.ReactionsOverridden):
+        changed.append("its own Reactions replace its job's" if submitted.reactions_overridden
+                       else "uses its job's Reactions again")
+        item.ReactionsOverridden = bool(submitted.reactions_overridden)
+    wanted = submitted.reactions if submitted.reactions_overridden else []
+    if item.id is None:
+        db.flush()
+    if reaction_store.apply(db, item.reactions, wanted, {"Item_id": item.id}, by_name) and item.ReactionsOverridden \
+            and "its own Reactions replace its job's" not in changed:
+        changed.append("changed its Reactions")
+    return changed
 
 
 # ---------- Checking before a run, and who uses what ----------

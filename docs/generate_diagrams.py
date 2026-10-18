@@ -23,7 +23,8 @@ TABLE_GROUPS = {
     "Domain registry": ["MasterObjects", "Applications", "Entities", "Sites", "Credentials", "Schedulers", "Tags",
                         "Variables", "TagAssignments"],
     "Jobs and steps": ["Jobs", "JobSteps", "JobStepParameters", "StepTypes", "StepDefinitions"],
-    "Workflows": ["Jobs", "WorkflowItems", "WorkflowPrerequisites", "JobRuns", "WorkflowRunItems"],
+    "Workflows": ["Jobs", "WorkflowItems", "WorkflowPrerequisites", "Reactions", "ReactionActions", "JobRuns",
+                  "WorkflowRunItems", "ReactionEvents"],
     "Endpoints, runs, operations, audits and settings": ["Endpoints", "JobRuns", "Operations", "Audits", "Settings"],
 }
 

@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session, object_session
 
 from app.models import Audit, Job, JobRun, JobStep, JobStepParameter, StepType, Variable, utcnow
 from app.schemas import JobDetail, JobSave, JobStepOut, JobStepSave, VariableOut
-from app import workflow_store
+from app import reaction_store, workflow_store
 from engine import return_codes, step_tree
 from engine.handlers import HANDLER_REGISTRY
 from engine.handlers.flow import BRANCH_NAMES, BRANCHES, structure_problems, top_level_problems
@@ -100,6 +100,7 @@ def describe_job(job: Job) -> JobDetail:
         inherited_variables=inherited_variables(db, job) if db is not None else [],
         items=workflow_store.describe_items(job) if job.JobType == "WORKFLOW" else [],
         used_in=workflow_store.workflows_using(db, job) if db is not None else [],
+        reactions=reaction_store.describe(job.reactions),
     )
 
 
@@ -409,6 +410,15 @@ def apply_job(db: Session, payload: JobSave, existing_key: Optional[str], who: s
     else:
         changes += _apply_steps(job, entries, step_types, creating)
 
+    if payload.reactions is not None:
+        try:
+            reaction_store.check(db, "The job", payload.reactions, job)
+        except reaction_store.ReactionError as e:
+            raise JobStoreError(str(e))
+        if reaction_store.apply(db, job.reactions, payload.reactions, {"Job_MasterObject_id": job.MasterObject_id}) \
+                and not creating:
+            changes.append("Changed the Reactions.")
+
     if payload.variables is not None:
         changes += apply_variables(job, payload.variables, creating)
 
@@ -457,6 +467,10 @@ def delete_job(db: Session, job_key: str, who: str) -> None:
         raise JobStoreError(f"Job '{job_key}' is used by the workflow{'s' if len(using) > 1 else ''} "
                             f"{', '.join(repr(k) for k in using)}, so it cannot be deleted. Take it out of "
                             f"{'them' if len(using) > 1 else 'it'} first.", status=409)
+    starters = reaction_store.started_by(db, job)
+    if starters:
+        raise JobStoreError(f"Workflow '{job_key}' is started by Reactions of {', '.join(starters)}, so it cannot be "
+                            f"deleted. Change those Reactions first.", status=409)
     runs = db.query(JobRun).filter((JobRun.Job_MasterObject_id == job.MasterObject_id) | (JobRun.JobKey == job_key)).count()
     if runs:
         raise JobStoreError(

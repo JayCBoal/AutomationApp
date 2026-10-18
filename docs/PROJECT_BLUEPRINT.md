@@ -108,7 +108,7 @@ What every job shares lives in `Jobs`: its key, description, whether it is enabl
 
 ### Workflows
 
-A workflow is a job of type `WORKFLOW` (the design: [WORKFLOWS.md](WORKFLOWS.md); Phase 1: [WORKFLOWS_PHASE1.md](WORKFLOWS_PHASE1.md)).
+A workflow is a job of type `WORKFLOW` (the design: [WORKFLOWS.md](WORKFLOWS.md); Phase 1: [WORKFLOWS_PHASE1.md](WORKFLOWS_PHASE1.md); Phase 3, Reactions: [WORKFLOWS_PHASE3.md](WORKFLOWS_PHASE3.md)).
 
 **Built**
 
@@ -121,8 +121,13 @@ A workflow is a job of type `WORKFLOW` (the design: [WORKFLOWS.md](WORKFLOWS.md)
 
 - The workflow page (Phase 2: [WORKFLOWS_PHASE2.md](WORKFLOWS_PHASE2.md)): Diagram | Outline. The diagram is `ui/js/workflow_diagram.js`: elkjs (`ui/vendor/elk-0.12.0.bundled.js`) lays the boxes and lines out, and it draws them as SVG; it knows nothing of the server, and is handed what to draw by `ui/js/workflow.js`. `ui/mockup_workflow.html` still shows the whole design, with what later phases add.
 - Job History is a tree: `GET /api/v1/runs?tree=true` leaves out runs whose workflow run is listed too; `parent=` lists the runs inside one.
+- **Reactions** (Phase 3): what happens after a job ends, chosen by how it ended. `Reactions` belong to a job (`Job_MasterObject_id`) or to one use of it in a workflow (`Item_id`, when `WorkflowItems.ReactionsOverridden`: the use's list then replaces the job's, even when empty). `Section` `NEXT` (What happens next: in order, the first that holds decides) or `ALSO` (every one that holds fires); the When is `WhenTest` (`SUCCESS`, `FAILED`, `ENDED`, `RC` with `WhenReturnCodes`). `ReactionActions`: `COUNT_AS_SUCCEEDED`, `COUNT_AS_FAILED`, `RERUN` and `RERUN_FROM` (`MaxTimes`, `WaitSeconds`, `TargetItem_id`), `SKIP` (`TargetItem_id`), `SKIP_BRANCH`, `KILL_WORKFLOW`; and under Also `START_WORKFLOW` (`TargetJob_MasterObject_id`). Rerun from, Skip, Skip the rest of the branch and Kill the workflow only on a use.
+  - Saving checks them (`app/reaction_store.py`); `engine/reactions.py` judges them; the workflow runner carries them out for a job in a workflow, the job runner for a job (or workflow) run on its own. Each entry is judged on what really happened; once a rerun has used up its limit, the next entry that holds decides. "The rest of the branch" is what waits for the job, directly or not, except what waits for the outcome it had (a failure path, a clean-up) and what follows that.
+  - A Count as keeps the run's own outcome in `StatusBeforeOverride`. Each action that fired, or was passed over at its limit, is a `ReactionEvents` row (job runners send theirs as `REACTION` spool records). A killed job's Reactions do not apply.
+- **Disable here** (`WorkflowItems.DisabledHere`): `STOP` ends the job Disabled; `PASS_THROUGH` ends it Bypassed (Reason `DISABLED_PASS_THROUGH`), which prerequisites treat as succeeded with return code 0.
+- **Kill**: `POST /api/v1/runs/{run_id}/kill`. A job's runner is sent SIGTERM (its `ProcessID`, on this machine only) and ends Failed, `KILLED`, with no return code. A workflow's run gets `KillRequestedDateTime`; its runner kills its running jobs (down through workflows inside) and cancels the rest (Kill and Cancel). The workflow runner records each job's process on its `WorkflowRunItems` row as it starts it, so `POST /api/v1/runs/{run_id}/items/{path}/kill` works before the job's own records arrive.
 
-**Planned**: the later phases in WORKFLOWS.md (Reactions, conditions, outside dependencies, embedded workflows, restarts, time-based Reactions).
+**Planned**: the later phases in WORKFLOWS.md (conditions, outside dependencies, embedded workflows, restarts, time-based Reactions).
 
 `Jobs.JobKey` is the job's unique name. It is human-readable, independent of environment, and what the scheduler passes. The numeric primary key differs between databases and is never used outside RunMyFiles. Because the key also names the job's working folder, it is limited to letters, digits, `-`, `_` and `.`.
 
@@ -177,7 +182,8 @@ An endpoint has no direction. The same folder can be a destination for one job a
   - `JobKey`, start and end time, status and the error message.
   - `ReturnCode` (0 unless a step set one) and `Reason`: why it ended as it did (`ERROR`, `RETURN_CODE`, `JOB_FAILED`, `CANCELLED`).
   - `JobType`, and for a run inside a workflow run: `ParentRun_id`, `WorkflowPath` (its place in the workflow) and `Attempt`. A workflow's own run is a `JobRuns` row too.
-- `WorkflowRunItems`: one row per job of a workflow run, with its state (`PENDING`, `WAITING`, `RUNNING`, `SUCCESS`, `FAILED`, `NOT_RUN`), Reason, return code and its job run. A job that never started has no job run, so this is where the run says so.
+- `WorkflowRunItems`: one row per job of a workflow run, with its state (`PENDING`, `WAITING`, `RUNNING`, `SUCCESS`, `FAILED`, `NOT_RUN`, `DISABLED`, `BYPASSED`, `SKIPPED`), Reason, return code, `StatusBeforeOverride`, attempt, the `ProcessID` of its runner and its latest job run. A job that never started has no job run, so this is where the run says so.
+- `ReactionEvents`: each Reaction's action that fired after a job ended, or was passed over at its limit (`TOOK_EFFECT` or `LIMIT_REACHED`), with the job run it was judged on and, in a workflow, the workflow run and path.
 - `Operations`: a register of what steps actually did. It points at its `JobRuns` row.
   - For a file step, one row per file: a source side and a destination side (endpoint if registered, path, filename, size), the operation type, status, error, times, and an optional SHA-256 checksum.
   - A step that only looks at a file (`CHECK`) or removes it (`DELETE`) fills in the source side only.
@@ -316,6 +322,7 @@ This is what makes a file trace possible: an operation that reads from an endpoi
   - `Dest` may name a new filename only when one file is taken. Several files aimed at one filename fail the step before anything is copied.
   - `RenameMask` gives each file a new name on the way: `${FILE:STEM}_${DATE:yyyyMMdd}${FILE:EXT}` turns `Legal_Batch_1.csv` into `Legal_Batch_1_20261013.csv`. `${FILE:NAME}` is the file's own name, `${FILE:STEM}` its name without the extension, `${FILE:EXT}` its extension with the full stop. It works whether the destination is a folder or an endpoint. A mask that would give two files the same name fails the step before anything is copied, and a mistake in a mask is found before the job starts.
   - A step parameter can be declared as holding per-file placeholders. Those are left for the handler to fill in for each file; anywhere else, `${FILE:...}` is an unresolved placeholder.
+- `engine/handlers/set_return_code.py`: step type `SET_RETURN_CODE` (Set Return Code): sets the job's return code to `ReturnCode` and carries on; the last one run wins. `Message` goes to the job log beside it. Operation type `SET_RETURN_CODE`, one row per step.
 - `engine/handlers/simulate.py`: step type `SIMULATE` (Simulate), for building and trying workflows before the real jobs exist. It writes the `Messages` it is given to the job log at `MessageLevel`, takes `WaitSeconds`, sets the job's return code to `ReturnCode`, and with `Fail` fails with `FailMessage`. Operation type `SIMULATE`, one row per step.
 - A step can set the job's return code (`job_return_code` on its handler; Simulate does). The last one set counts; otherwise it is 0, or 1 when a step failed. The job succeeded if its steps did and the code is one of its Success return codes; if not, it fails with Reason `RETURN_CODE`. The runner's exit code stays 0 or 1 (docs/INTEGRATION.md); the code is recorded with the run.
 - `engine/handlers/file_tools.py`: four more file steps. Each records every file it handles, and each fails when it finds nothing unless `AllowNoFiles=True` (Check Files counts instead).

@@ -62,7 +62,10 @@ class LocalSpoolTelemetryClient:
                   attempt: int = 1, log_file: Optional[str] = None) -> None:
         # A job run inside a workflow run says which, where in the workflow it is, and which attempt
         workflow = {"ParentRunID": parent_run_id, "WorkflowPath": workflow_path, "Attempt": attempt} if parent_run_id else {}
+        if attempt > 1:
+            workflow["Attempt"] = attempt           # a rerun on its own too
         self._write("RUN_START", {**workflow,
+            "ProcessID": os.getpid(),
             "JobKey": job_key,
             "InstanceID": self.instance_id,
             "RunNumber": run_number,
@@ -122,9 +125,15 @@ class LocalSpoolTelemetryClient:
         })
 
     def end_run(self, status: str, error: Optional[str] = None, return_code: Optional[int] = None,
-                reason: Optional[str] = None) -> None:
-        self._write("RUN_END", {"Status": status, "Error": error, "ReturnCode": return_code, "Reason": reason,
-                                "EndedAtUtc": utc_now_iso()})
+                reason: Optional[str] = None, status_before_override: Optional[str] = None) -> None:
+        override = {"StatusBeforeOverride": status_before_override} if status_before_override else {}
+        self._write("RUN_END", {**override, "Status": status, "Error": error, "ReturnCode": return_code,
+                                "Reason": reason, "EndedAtUtc": utc_now_iso()})
+
+    def record_reaction(self, action: str, result: str, message: str, action_id: Optional[int] = None) -> None:
+        """A Reaction's action that fired after the job ended, or was passed over at its limit."""
+        self._write("REACTION", {"Action": action, "Result": result, "Message": message, "ReactionActionID": action_id,
+                                 "AtUtc": utc_now_iso()})
 
     def deliver(self) -> bool:
         """

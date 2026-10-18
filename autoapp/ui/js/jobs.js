@@ -12,6 +12,7 @@ function jobSearch() {
         path: "/jobs",
         noun: "job",
         order: "in name order",
+        found: true,                // it lists workflows too
     });
 
     return Object.assign(search, {

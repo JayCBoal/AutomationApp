@@ -51,7 +51,7 @@ def test_page_lists_jobs_in_name_order_with_what_each_uses(page, jobs):
 
     assert [row.locator(".job-key").inner_text() for row in rows.all()] == [
         "dev-billing-pickup", "DEV-BROKEN", "DEV-LEGAL-COLLECT", "DEV-RETIRED"]
-    assert "4 jobs, in name order" in page.locator("#result-summary").inner_text()
+    assert "4 found, in name order" in page.locator("#result-summary").inner_text()
 
     collect = row_for(rows, "DEV-LEGAL-COLLECT")
     assert "Collects legal extracts and delivers them to billing" in collect.inner_text()
@@ -101,7 +101,7 @@ def test_criteria_narrow_the_results_and_clear_restores_them(page, jobs):
 
     page.locator("select[name=active]").select_option("false")
     assert search(page).count() == 0
-    assert page.locator("#result-summary").inner_text() == "No jobs match these criteria."
+    assert page.locator("#result-summary").inner_text() == "Nothing matches these criteria."
 
     page.locator("input[name=endpoint]").fill("")
     rows = search(page)

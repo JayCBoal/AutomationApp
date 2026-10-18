@@ -435,7 +435,7 @@ body.embedded main { padding-top: 12px; }
 .wf-side h3 { margin: 0 0 6px; font-size: 15px; }
 .wf-side > div > * + * { margin-top: 4px; }
 .wf-side .wf-outline > li { border-bottom: 0; padding: 0; }
-.wf-side .wf-prereqs { margin-left: 0; }
+.wf-side .wf-prereqs, .wf-side .wf-item-reactions { margin-left: 0; }
 .wf-side .wf-prerequisites > li.wf-row + li.wf-row { border-top: 1px dashed var(--border); padding-top: 8px; margin-top: 4px; }
 .wf-side .wf-row input[type=text] { min-width: 0; width: 100%; }
 .wf-side .wf-row label { flex-wrap: wrap; }
@@ -453,3 +453,19 @@ body.embedded main { padding-top: 12px; }
 /* Job History as a tree: the runs inside a workflow run, under it */
 .results button.unfold { margin-right: 6px; font-size: 12px; white-space: nowrap; }
 .results tr.inside td { background: var(--panel-raised); }
+
+/* Reactions (js/reactions.js): the same box on the job page and the workflow page */
+.reactions h4 { margin: 10px 0 4px; font-size: 13px; display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; }
+.reaction-list { margin: 4px 0; padding-left: 22px; }
+.reaction-entries { list-style: none; margin: 0; padding: 0; }
+.reaction { border: 1px solid var(--border); border-radius: 5px; padding: 6px 10px; margin: 6px 0; }
+.reaction-actions { list-style: none; margin: 4px 0 0 18px; padding: 0; }
+.reaction select, .reaction input { width: auto; max-width: 100%; }
+.wf-item-reactions { border: 1px solid var(--border); border-radius: 5px; margin: 8px 0 6px 58px; padding: 4px 10px 10px; min-width: 0; }
+.wf-item-reactions legend { padding: 0 6px; color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.6px; }
+.wf-disabled-here select { width: auto; max-width: 100%; }
+.wf-reactions { margin: 2px 0 0; padding-left: 18px; }
+.reaction-events { margin-top: 8px; }
+.reaction-events ul { margin: 4px 0; padding-left: 20px; }
+.wf-side .wf-disabled-here { width: 100%; }
+.wf-side .wf-disabled-here select { width: 100%; min-width: 0; }

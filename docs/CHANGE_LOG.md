@@ -4,6 +4,29 @@ Notable structural, schema and design changes to AutoApp, newest first. Line-by-
 
 ---
 
+## 2026-10-18
+
+### Workflows, Phase 3: return codes and Reactions
+
+Plan: [WORKFLOWS_PHASE3.md](WORKFLOWS_PHASE3.md).
+
+- **Schema:** Reactions and their actions (`Reactions`, `ReactionActions`), on a job or on one use of it in a workflow; the record of Reactions that fired (`ReactionEvents`); on a workflow's job, Disable here (`DisabledHere`) and whether it overrides its job's Reactions (`ReactionsOverridden`); on runs, the status before a Reaction counted it otherwise (`StatusBeforeOverride`), the runner's `ProcessID` and a Kill request. `SQL/migrate_reactions.py` brings a Phase 2 database up to date, keeping its data; `autoapp_dev` was migrated (backup: `demo/output/autoapp_dev_before_reactions.sql`).
+- **Added (engine):** **Reactions** are carried out when a job ends: by the workflow runner for a job in a workflow, before anything that waits for it is looked at; by the job runner for a job run on its own. Of *What happens next*, the first entry that holds decides; every *Also* entry that holds fires. Each is judged on what really happened, not on an earlier Count as.
+  - **Count as succeeded / failed:** the run keeps what it ended as on its own (`StatusBeforeOverride`), to show both.
+  - **Rerun this job**, after a wait, at most N times; **Rerun from…** a chosen job and every job between it and this one. Each rerun is a new attempt in the same run (on its own: a new run, same instance ID, next attempt). Once a rerun has used up its limit, the next entry that holds decides ("rerun twice, then count as succeeded").
+  - **Skip…** a chosen job, or **the rest of the branch**: what has not started ends Skipped.
+  - **Kill the workflow**; **Start a workflow** (a run of its own, scheduler "AutoApp reaction").
+  - Every action that fired, or was passed over at its limit, is in the job log and in `ReactionEvents`. A killed job's Reactions do not apply: someone stopped it.
+- **Added (engine):** **Kill.** A job runner told to stop ends Failed, Reason `KILLED`, with no return code; a runner killed before it could record anything is recorded so by the workflow. A workflow's **Kill and Cancel** kills its running jobs, down through workflows inside it, and cancels the rest; it ends Failed, `KILLED`. Each runner records its process ID; the workflow runner records each job's as it starts it.
+- **Added (engine):** **Disable here** on a job in a workflow: *Stop here* ends it Disabled; *Pass through* ends it **Bypassed** (Reason `DISABLED_PASS_THROUGH`), which counts as succeeded with return code 0.
+- **Added (pages):** a **Reactions** box, the same on the job page and the workflow page: **What happens next** (in order, ▲▼) and **Also**, each entry a When (it succeeds, fails, ends, or a return code) and what it does; the choices offered are only those that fit (a job's own: Count as, Rerun this job; a use: also Rerun from…, Skip…, Skip the rest of the branch, Kill the workflow; Also: Start a workflow). Locked, each reads as a sentence ("When its return code is 8: rerun this job, at most 2 times.").
+- **Added (pages):** on the workflow page, each job shows its job's Reactions, marked "from the job"; **Override here** gives the use its own, starting from a copy; **Use the job's again** drops them. **Here it** runs / is disabled: stop here / is disabled: pass through. The workflow's own Reactions are in a panel of their own.
+- **Added (pages):** a run shows "Succeeded (counted; it failed)", attempts, Bypassed and Skipped, and the **Reactions that fired**. **Kill and Cancel** on a running workflow; **Kill** on a running job in it (outline and diagram), on the Run Job page and on a run's log page. Job History shows "(counted; …)" and attempts.
+- **Added (diagram):** markers for Reactions, disabled here (stop) and pass through; Bypassed (dashed, an arrow through) and Skipped (grey stripes) boxes, in a run and, for Disable here, in the editor; **Rerun from…** drawn as a dash-dot ↺ arc back to the job it reruns from. The key says what each means.
+- **Changed:** **Jobs & Workflows** says "*N* found", as it lists workflows too.
+- **Added (sample):** `DEV-REACTIONS_SAMPLE` in the seed data and `autoapp_dev` (backup first: `demo/output/autoapp_dev_before_reactions_sample.sql`): a feed rerun twice then carried on without, return code 4 from a Set Return Code step counted as succeeded, a Rerun from… loop with its limit then Skip the rest of the branch, and a job disabled here to pass through.
+- **Added:** the **Set Return Code** step type. It sets the job's return code and the job carries on; if several run, the last one wins. Inside an If, a job chooses its own code. Its **Message** is written to the job log beside the code ("Return code set to 4: No files arrived"). When the job ends, its Success return codes decide whether the code means Succeeded or Failed, as for Simulate.
+
 ## 2026-10-17
 
 ### Workflows, Phase 2: the diagram

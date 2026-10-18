@@ -160,6 +160,26 @@ class PrerequisiteOut(BaseModel):
     return_codes: Optional[str] = Field(None, description="For RC: the codes, as 0, 4 or 0-4")
 
 
+class ReactionActionIO(BaseModel):
+    """One thing a Reaction does (docs/WORKFLOWS_PHASE3.md)."""
+    action: str = Field(..., description=(
+        "COUNT_AS_SUCCEEDED, COUNT_AS_FAILED, RERUN, RERUN_FROM, SKIP, SKIP_BRANCH or KILL_WORKFLOW "
+        "(What happens next); START_WORKFLOW (Also)"))
+    max_times: Optional[int] = Field(None, description="RERUN and RERUN_FROM: at most this many times in a run")
+    wait_seconds: Optional[int] = Field(None, description="RERUN and RERUN_FROM: how long to wait first")
+    target: Optional[str] = Field(None, max_length=100, description="RERUN_FROM and SKIP: a job in the workflow, by its name there")
+    workflow: Optional[str] = Field(None, max_length=320, description="START_WORKFLOW: the workflow's key")
+
+
+class ReactionIO(BaseModel):
+    """What happens after a job ends, chosen by how it ended."""
+    section: str = Field("NEXT", description="NEXT (What happens next: the first that holds decides) or ALSO "
+                                             "(every one that holds fires)")
+    when: str = Field("FAILED", description="SUCCESS, FAILED, ENDED or RC (one of return_codes)")
+    return_codes: Optional[str] = Field(None, max_length=100, description="For RC: the codes, as 0, 4 or 0-4")
+    actions: List[ReactionActionIO] = Field(default_factory=list)
+
+
 class WorkflowItemOut(BaseModel):
     """One job a workflow uses, under its name in the workflow."""
     id: int
@@ -168,6 +188,11 @@ class WorkflowItemOut(BaseModel):
     job_type: str = Field(..., description="STEPS or WORKFLOW: the type of the job it runs")
     join: str = Field("ALL", description="ALL: it starts when all its prerequisites hold; ANY: when any one does")
     prerequisites: List[PrerequisiteOut] = Field(default_factory=list)
+    disabled_here: Optional[str] = Field(None, description="STOP or PASS_THROUGH: disabled in this workflow only")
+    job_active: bool = Field(True, description="Whether the job it runs is enabled")
+    reactions_overridden: bool = Field(False, description="True: reactions below replace the job's own")
+    reactions: List[ReactionIO] = Field(default_factory=list, description="This use's own, when it overrides the job's")
+    job_reactions: List[ReactionIO] = Field(default_factory=list, description="The job's own Reactions, as it has them")
 
 
 class JobDetail(BaseModel):
@@ -188,6 +213,7 @@ class JobDetail(BaseModel):
         default_factory=list, description="What the job's tags give it, in name order")
     items: List[WorkflowItemOut] = Field(default_factory=list, description="A workflow's jobs, in outline order")
     used_in: List[str] = Field(default_factory=list, description="The workflows that use it, in name order")
+    reactions: List[ReactionIO] = Field(default_factory=list, description="What happens after it ends, in order")
 
 
 class PrerequisiteSave(BaseModel):
@@ -203,6 +229,9 @@ class WorkflowItemSave(BaseModel):
     job_key: str = Field(..., max_length=320, description="The job it runs")
     join: str = Field("ALL", description="ALL or ANY")
     prerequisites: List[PrerequisiteSave] = Field(default_factory=list)
+    disabled_here: Optional[str] = Field(None, description="Empty, STOP (it ends Disabled) or PASS_THROUGH (Bypassed)")
+    reactions_overridden: bool = Field(False, description="True: reactions replace the job's own, even when empty")
+    reactions: List[ReactionIO] = Field(default_factory=list, description="Kept only when reactions_overridden")
 
 
 class JobStepSave(BaseModel):
@@ -233,6 +262,8 @@ class JobSave(BaseModel):
         None, description="The job's own variables. Leave out to keep them as they are; send a list to replace them")
     tags: Optional[List[str]] = Field(
         None, description="Paths of the tags the job carries. Leave out to keep them as they are")
+    reactions: Optional[List[ReactionIO]] = Field(
+        None, description="What happens after it ends. Leave out to keep them as they are; send a list to replace them")
 
 
 class JobSaveResult(BaseModel):
@@ -291,6 +322,7 @@ class RunStartRecord(BaseModel):
     ParentRunID: Optional[str] = Field(None, max_length=36, description="The workflow run this job run is part of")
     WorkflowPath: Optional[str] = Field(None, max_length=1000, description="Its place in that workflow: Transform/Stage")
     Attempt: int = 1
+    ProcessID: Optional[int] = Field(None, description="The runner's process on Host, so the run can be killed")
 
 
 class OperationRecord(BaseModel):
@@ -325,8 +357,22 @@ class RunEndRecord(BaseModel):
     Status: str = Field(..., max_length=20)
     Error: Optional[str] = None
     ReturnCode: Optional[int] = Field(None, description="The job's return code: 0 unless a step set one")
-    Reason: Optional[str] = Field(None, max_length=40, description="Why it failed: ERROR or RETURN_CODE")
+    Reason: Optional[str] = Field(None, max_length=40, description="Why it failed: ERROR, RETURN_CODE or KILLED")
+    StatusBeforeOverride: Optional[str] = Field(None, max_length=20, description=(
+        "What it ended as before a Reaction counted it as succeeded or failed"))
     EndedAtUtc: datetime
+
+
+class ReactionRecord(BaseModel):
+    """A Reaction's action that fired after a job run on its own ended, or was passed over at its limit."""
+    Record: Literal["REACTION"]
+    RunID: str
+    Seq: int
+    Action: str = Field(..., max_length=30)
+    Result: str = Field(..., max_length=20, description="TOOK_EFFECT or LIMIT_REACHED")
+    Message: Optional[str] = None
+    ReactionActionID: Optional[int] = None
+    AtUtc: datetime
 
 
 class LogRecord(BaseModel):
@@ -340,7 +386,7 @@ class LogRecord(BaseModel):
     Lines: List[str]
 
 
-TelemetryRecord = Annotated[Union[RunStartRecord, OperationRecord, LogRecord, RunEndRecord],
+TelemetryRecord = Annotated[Union[RunStartRecord, OperationRecord, LogRecord, RunEndRecord, ReactionRecord],
                             Field(discriminator="Record")]
 
 

@@ -42,12 +42,12 @@ COLUMNS = [
 NEW_TABLES = [WorkflowItem.__table__, WorkflowPrerequisite.__table__, WorkflowRunItem.__table__]
 
 
-def add_missing_columns(connection) -> list:
-    """Adds each column the database lacks. Returns the names of those added."""
+def add_missing_columns(connection, columns=COLUMNS) -> list:
+    """Adds each of columns the database lacks. Returns the names of those added."""
     inspector = inspect(connection)
     mariadb = connection.dialect.name in ("mysql", "mariadb")
     added = []
-    for table, column, definition, reference in COLUMNS:
+    for table, column, definition, reference in columns:
         if column in {c["name"] for c in inspector.get_columns(table)}:
             continue
         definition = definition.format(datetime="DATETIME(6)" if mariadb else "DATETIME")

@@ -12,8 +12,9 @@ from typing import Any, Dict, List, Optional
 
 from sqlalchemy.orm import Session
 
-from app.models import Endpoint, Job, JobRun, JobStep, Operation
-from app.schemas import LogRecord, OperationRecord, RunEndRecord, RunStartRecord, TelemetryBatch, TelemetryIngestResult
+from app.models import Endpoint, Job, JobRun, JobStep, Operation, ReactionAction, ReactionEvent
+from app.schemas import (LogRecord, OperationRecord, ReactionRecord, RunEndRecord, RunStartRecord, TelemetryBatch,
+                         TelemetryIngestResult)
 
 
 def _naive_utc(value: Optional[datetime]) -> Optional[datetime]:
@@ -68,6 +69,7 @@ def ingest_batch(db: Session, batch: TelemetryBatch) -> TelemetryIngestResult:
                     ParentRun_id=parent.id if parent else None,
                     WorkflowPath=record.WorkflowPath,
                     Attempt=record.Attempt,
+                    ProcessID=record.ProcessID,
                 )
                 db.add(run)
                 db.flush()
@@ -123,8 +125,18 @@ def ingest_batch(db: Session, batch: TelemetryBatch) -> TelemetryIngestResult:
                 run.ErrorMessage = record.Error
                 run.ReturnCode = record.ReturnCode
                 run.Reason = record.Reason
+                run.StatusBeforeOverride = record.StatusBeforeOverride
                 run.EndedDateTime = _naive_utc(record.EndedAtUtc)
                 result.runs_ended += 1
+
+            elif isinstance(record, ReactionRecord):
+                if db.query(ReactionEvent.id).filter(ReactionEvent.JobRun_id == run.id, ReactionEvent.Action == record.Action,
+                                                     ReactionEvent.EventDateTime == _naive_utc(record.AtUtc)).first():
+                    result.duplicates_skipped += 1
+                    continue
+                action_id = existing_id(ReactionAction, record.ReactionActionID)
+                db.add(ReactionEvent(JobRun_id=run.id, ReactionAction_id=action_id, Action=record.Action,
+                                     Result=record.Result, Message=record.Message, EventDateTime=_naive_utc(record.AtUtc)))
 
         db.commit()
     except Exception:

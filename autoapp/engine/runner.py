@@ -6,15 +6,22 @@ Runs the active steps of one Job, in order (with its If, For Each File and While
 deciding which of the steps inside them run, and how often: engine/executor.py), and
 returns an OS exit code (0 = the job succeeded, 1 = it failed) for the calling WLA scheduler.
 
-The job's return code is 0 unless a step sets another (the Simulate step does); the job
+The job's return code is 0 unless a step sets another (Set Return Code and Simulate do); the job
 succeeded if its steps did and that code is one of its Success return codes ("0" unless set).
 The code is recorded with the run; the exit code stays 0 or 1 (docs/INTEGRATION.md).
 
 A job that is a workflow is handed to engine/workflow_runner.py, so it is started the same way.
+
+Told to stop (SIGTERM, as Kill sends), the job ends Failed, Reason KILLED, with no return code.
+A job run on its own carries out its own Reactions (engine/reactions.py): Count as, Rerun this
+job (a new run, the next attempt, in this same process) and Start a workflow. In a workflow,
+the workflow runner carries them out instead.
 """
 import argparse
 import os
+import signal
 import sys
+import time
 import uuid
 from datetime import date, datetime
 from typing import Dict, Optional
@@ -26,19 +33,31 @@ from app.models import Job, Variable
 from engine import job_log, log_files, return_codes
 from engine.executor import Executor
 from engine.preflight import describe_problems, prepare_job
+from engine.reactions import OwnReactions, read_rules
 from engine.scope_engine import ScopeResolutionEngine
 from engine.telemetry_client import LocalSpoolTelemetryClient
+
+class Killed(BaseException):
+    """Raised when the runner is told to stop. Not an Exception, so no step's On failure can carry on past it."""
+
+
+def _killed(_signal_number, _frame):
+    raise Killed()
+
 
 def run_job(db: Session, job_key: str, instance_id: str, spool_dir: str,
             working_root: Optional[str] = None, run_number: int = 1,
             scheduler: Optional[str] = None, api_url: Optional[str] = None, run_id: Optional[str] = None,
             business_date: Optional[date] = None, environment: Optional[Dict[str, str]] = None,
-            parent_run_id: Optional[str] = None, workflow_path: Optional[str] = None, attempt: int = 1) -> int:
+            parent_run_id: Optional[str] = None, workflow_path: Optional[str] = None, attempt: int = 1,
+            own: Optional[OwnReactions] = None) -> int:
     """
     Executes the job and returns the exit code to hand back to the scheduler.
     environment is what ${ENV:...} and the ENV level read: this process's own, unless given.
+    own: the job's own Reactions, when it runs on its own.
     """
     environment = dict(os.environ) if environment is None else environment
+    signal.signal(signal.SIGTERM, _killed)
     with LocalSpoolTelemetryClient(spool_dir=spool_dir, instance_id=instance_id, api_url=api_url,
                                    run_id=run_id) as telemetry:
         log_file = log_files.start(telemetry.run_id)
@@ -78,26 +97,42 @@ def run_job(db: Session, job_key: str, instance_id: str, spool_dir: str,
             executor = Executor(db, scope_engine, telemetry, telemetry.deliver)
             executor.run_all(prepared_steps)
 
+        except Killed:
+            job_log.error(f"Job '{job_key}' was killed.")
+            telemetry.end_run("FAILED", error="Killed while running.", return_code=None, reason="KILLED")
+            return 1
         except Exception as e:
             job_log.error(f"Job '{job_key}' failed: {e}")
             code = executor.job_return_code if executor and executor.job_return_code is not None else 1
-            telemetry.end_run("FAILED", error=str(e), return_code=code, reason="ERROR")
-            return 1
-        return _finish(job_key, executor.job_return_code, success_codes, telemetry)
+            return _end(telemetry, own, "FAILED", code, "ERROR", str(e))
+        return _finish(job_key, executor.job_return_code, success_codes, telemetry, own)
 
 
-def _finish(job_key: str, code: Optional[int], success_codes: Optional[str], telemetry) -> int:
+def _finish(job_key: str, code: Optional[int], success_codes: Optional[str], telemetry,
+            own: Optional[OwnReactions] = None) -> int:
     """Ends a job whose steps all went as they should: it succeeded if its return code is a success code."""
     code = 0 if code is None else code
     if not return_codes.matches(code, success_codes):
         message = (f"Job '{job_key}' ended with return code {code}, which its Success return codes "
                    f"({success_codes or return_codes.DEFAULT_SUCCESS}) do not include.")
         job_log.error(message)
-        telemetry.end_run("FAILED", error=message, return_code=code, reason="RETURN_CODE")
-        return 1
+        return _end(telemetry, own, "FAILED", code, "RETURN_CODE", message)
     job_log.summary(f"Job '{job_key}' completed successfully" + (f", return code {code}." if code else "."))
-    telemetry.end_run("SUCCESS", return_code=code)
-    return 0
+    return _end(telemetry, own, "SUCCESS", code)
+
+
+def _end(telemetry, own: Optional[OwnReactions], status: str, code: Optional[int], reason: Optional[str] = None,
+         error: Optional[str] = None) -> int:
+    """Records the run's end, after its own Reactions, if it has any. Returns the exit code."""
+    counted = status
+    if own is not None:
+        def record(act, result, message):
+            (job_log.warning if result == "LIMIT_REACHED" else job_log.summary)(message)
+            telemetry.record_reaction(act.action, result, message, act.id)
+        counted = own.after(status, code, record)
+    telemetry.end_run(counted, error=error, return_code=code, reason=reason,
+                      status_before_override=status if counted != status else None)
+    return 0 if counted == "SUCCESS" else 1
 
 
 def business_date_argument(text: str) -> date:
@@ -110,6 +145,7 @@ def business_date_argument(text: str) -> date:
 
 
 def main():
+    signal.signal(signal.SIGTERM, _killed)          # from the start: Kill can come at any moment
     parser = argparse.ArgumentParser(description="AutoApp Lightweight Execution Runner")
     parser.add_argument("--job-key", required=True, help="JobKey of the target Job (e.g. DEV-LEGAL-CLIENT_EXTRACT)")
     parser.add_argument("--instance-id", required=True, help="The scheduler's unique ID for this job instance")
@@ -152,29 +188,51 @@ def main():
         secrets = [value for (value,) in db.query(Variable.VarValue).filter(Variable.IsSecret.is_(True))]
         secrets += [os.environ[name.strip()] for name in args.mask_env.split(",") if name.strip() in os.environ]
         job_log.configure(args.log_level, secrets=secrets)
-        job = db.query(Job).filter(Job.JobKey == args.job_key).first()
-        if job is not None and job.JobType == "WORKFLOW":
-            exit_code = start_workflow(db, job, args)
-        else:
-            exit_code = run_job(db, args.job_key, args.instance_id, args.spool_dir, args.working_root,
-                                run_number=args.run_number, scheduler=args.scheduler, api_url=args.api_url,
-                                run_id=str(args.run_id) if args.run_id else None, business_date=args.business_date,
-                                parent_run_id=args.parent_run_id, workflow_path=args.workflow_path,
-                                attempt=args.attempt)
+        exit_code = run_with_reactions(db, args)
     finally:
         db.close()
     sys.exit(exit_code)
 
 
-def start_workflow(db: Session, workflow: Job, args) -> int:
+def run_with_reactions(db: Session, args) -> int:
+    """
+    Runs the job, or the workflow. On its own, its own Reactions may run it again: each time a new
+    run, the next attempt, under the same instance ID. In a workflow, the workflow runner decides.
+    """
+    job = db.query(Job).filter(Job.JobKey == args.job_key).first()
+    own = None
+    if job is not None and job.IsActive and not args.parent_run_id:
+        rules = read_rules(job)
+        if rules:
+            own = OwnReactions(rules, {"spool_dir": args.spool_dir, "api_url": args.api_url,
+                                       "working_root": args.working_root, "log_level": args.log_level})
+    run_id, attempt = str(args.run_id) if args.run_id else None, args.attempt
+    while True:
+        if job is not None and job.JobType == "WORKFLOW":
+            exit_code = start_workflow(db, job, args, run_id, attempt, own)
+        else:
+            exit_code = run_job(db, args.job_key, args.instance_id, args.spool_dir, args.working_root,
+                                run_number=args.run_number, scheduler=args.scheduler, api_url=args.api_url,
+                                run_id=run_id, business_date=args.business_date,
+                                parent_run_id=args.parent_run_id, workflow_path=args.workflow_path,
+                                attempt=attempt, own=own)
+        if own is None or own.rerun is None:
+            return exit_code
+        time.sleep(own.rerun.wait_seconds)
+        run_id, attempt = None, attempt + 1
+        db.expire_all()
+
+
+def start_workflow(db: Session, workflow: Job, args, run_id: Optional[str], attempt: int,
+                   own: Optional[OwnReactions]) -> int:
     from engine.workflow_runner import RunOptions, run_workflow
     options = RunOptions(instance_id=args.instance_id, spool_dir=args.spool_dir,
-                         run_id=str(args.run_id) if args.run_id else None, run_number=args.run_number,
+                         run_id=run_id, run_number=args.run_number,
                          scheduler=args.scheduler, api_url=args.api_url,
                          working_root=args.working_root or os.getenv("AUTOAPP_WORKING_ROOT"),
                          business_date=args.business_date, log_level=args.log_level,
-                         parent_run_id=args.parent_run_id, workflow_path=args.workflow_path, attempt=args.attempt)
-    return run_workflow(db, workflow, options)
+                         parent_run_id=args.parent_run_id, workflow_path=args.workflow_path, attempt=attempt)
+    return run_workflow(db, workflow, options, own)
 
 
 if __name__ == "__main__":

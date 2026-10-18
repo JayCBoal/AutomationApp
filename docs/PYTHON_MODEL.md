@@ -128,6 +128,9 @@ classDiagram
         +string(1000) WorkflowPath
         +int Attempt
         +datetime CancelRequestedDateTime
+        +datetime KillRequestedDateTime
+        +int ProcessID
+        +string(20) StatusBeforeOverride
         +string(500) LogFile
         +datetime LogRemovedDateTime
     }
@@ -171,6 +174,37 @@ classDiagram
         +text ErrorMessage
         +datetime StartedDateTime
         +datetime EndedDateTime
+    }
+    class Reaction {
+        +int id
+        +int Job_MasterObject_id
+        +int Item_id
+        +string(10) Section
+        +int ReactionOrder
+        +string(20) WhenTest
+        +string(100) WhenReturnCodes
+        +text WhenCondition
+    }
+    class ReactionAction {
+        +int id
+        +int Reaction_id
+        +int ActionOrder
+        +string(30) Action
+        +int MaxTimes
+        +int WaitSeconds
+        +int TargetItem_id
+        +int TargetJob_MasterObject_id
+    }
+    class ReactionEvent {
+        +int id
+        +int JobRun_id
+        +int WorkflowRun_id
+        +string(1000) WorkflowPath
+        +int ReactionAction_id
+        +string(30) Action
+        +string(20) Result
+        +text Message
+        +datetime EventDateTime
     }
     class SettingValue {
         +string(100) SettingKey
@@ -217,6 +251,8 @@ classDiagram
         +int Job_MasterObject_id
         +string(10) JoinRule
         +int ItemOrder
+        +string(20) DisabledHere
+        +bool ReactionsOverridden
     }
     class WorkflowPrerequisite {
         +int id
@@ -237,6 +273,8 @@ classDiagram
         +string(20) Status
         +string(40) Reason
         +int ReturnCode
+        +string(20) StatusBeforeOverride
+        +int ProcessID
         +int ChildRun_id
         +int Attempt
         +datetime StartedDateTime
@@ -246,6 +284,7 @@ classDiagram
     Endpoint "*" --> "0..1" Application : application
     Entity "1" --> "*" Site : sites
     Job "1" --> "*" JobStep : steps
+    Job "1" --> "*" Reaction : reactions
     Job "1" --> "*" WorkflowItem : items
     JobRun "*" --> "0..1" Job : job
     JobRun "1" --> "*" Operation : operations
@@ -256,10 +295,14 @@ classDiagram
     MasterObject "1" --> "*" TagAssignment : tag_assignments
     Operation "*" --> "0..1" Endpoint : source_endpoint
     Operation "*" --> "0..1" Endpoint : dest_endpoint
+    Reaction "1" --> "*" ReactionAction : actions
+    ReactionAction "*" --> "0..1" WorkflowItem : target_item
+    ReactionAction "*" --> "0..1" Job : target_job
     StepType "1" --> "*" StepDefinition : definitions
     Tag "1" --> "*" Tag : children
     TagAssignment "*" --> "0..1" Tag : tag
     WorkflowItem "*" --> "0..1" Job : job
+    WorkflowItem "1" --> "*" Reaction : reactions
     WorkflowItem "1" --> "*" WorkflowPrerequisite : prerequisites
     WorkflowPrerequisite "*" --> "0..1" WorkflowItem : target
     WorkflowRunItem "*" --> "0..1" JobRun : child_run

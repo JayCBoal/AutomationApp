@@ -1,7 +1,7 @@
 import datetime
 import re
 from sqlalchemy import (
-    BigInteger, Column, Integer, String, Text, Boolean, Date, DateTime, ForeignKey, Enum, UniqueConstraint,
+    BigInteger, CheckConstraint, Column, Integer, String, Text, Boolean, Date, DateTime, ForeignKey, Enum, UniqueConstraint,
     false, func, text, true
 )
 from sqlalchemy.dialects import mysql
@@ -211,6 +211,8 @@ class Job(MasterObject):
         return value
 
     steps = relationship("JobStep", backref="job", cascade="all, delete-orphan", passive_deletes=True)
+    reactions = relationship("Reaction", foreign_keys="Reaction.Job_MasterObject_id", cascade="all, delete-orphan",
+                             passive_deletes=True, order_by=lambda: [Reaction.Section, Reaction.ReactionOrder])
     # A workflow's items, in outline order
     items = relationship("WorkflowItem", foreign_keys="WorkflowItem.Workflow_MasterObject_id", backref="workflow",
                          cascade="all, delete-orphan", passive_deletes=True, order_by="WorkflowItem.ItemOrder")
@@ -383,6 +385,7 @@ class WorkflowItem(Base):
 
     NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
     JOIN_RULES = ("ALL", "ANY")
+    DISABLED_HERE = ("STOP", "PASS_THROUGH")
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     Workflow_MasterObject_id = Column(Integer, ForeignKey('Jobs.MasterObject_id', ondelete='CASCADE'), nullable=False, index=True)
@@ -392,8 +395,14 @@ class WorkflowItem(Base):
     # ALL: it starts when all its prerequisites hold; ANY: when any one does
     JoinRule = Column(String(10), nullable=False, default="ALL", server_default="ALL")
     ItemOrder = Column(Integer, nullable=False, default=1, server_default=text('1'))
+    # Disable here (docs/WORKFLOWS.md): empty, STOP (it ends Disabled) or PASS_THROUGH (it ends Bypassed)
+    DisabledHere = Column(String(20), nullable=True)
+    # True: this use's own Reactions replace its job's, even when it has none
+    ReactionsOverridden = Column(Boolean, nullable=False, default=False, server_default=false())
 
     job = relationship("Job", foreign_keys=[Job_MasterObject_id])
+    reactions = relationship("Reaction", foreign_keys="Reaction.Item_id", cascade="all, delete-orphan",
+                             passive_deletes=True, order_by=lambda: [Reaction.Section, Reaction.ReactionOrder])
     prerequisites = relationship("WorkflowPrerequisite", foreign_keys="WorkflowPrerequisite.Item_id", backref="item",
                                  cascade="all, delete-orphan", passive_deletes=True, order_by="WorkflowPrerequisite.id")
 
@@ -416,6 +425,63 @@ class WorkflowPrerequisite(Base):
     Condition = Column(Text, nullable=True)
 
     target = relationship("WorkflowItem", foreign_keys=[TargetItem_id])
+
+
+class Reaction(Base):
+    """
+    What happens after a job ends, chosen by how it ended (docs/WORKFLOWS_PHASE3.md). It belongs
+    to a job (Job_MasterObject_id), or to one use of a job in a workflow (Item_id), whose list
+    then replaces the job's. Section NEXT: in order, the first that holds decides what happens
+    next; ALSO: every one that holds fires. The When is a test as a prerequisite's is: SUCCESS,
+    FAILED, ENDED or RC (one of WhenReturnCodes). WhenCondition is for conditions written in SQL (later).
+    """
+    __tablename__ = 'Reactions'
+    __table_args__ = (
+        CheckConstraint('(Job_MasterObject_id IS NULL) <> (Item_id IS NULL)', name='ck_reaction_one_owner'),
+    )
+
+    SECTIONS = ("NEXT", "ALSO")
+    TESTS = ("SUCCESS", "FAILED", "ENDED", "RC")
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    Job_MasterObject_id = Column(Integer, ForeignKey('Jobs.MasterObject_id', ondelete='CASCADE'), nullable=True, index=True)
+    Item_id = Column(Integer, ForeignKey('WorkflowItems.id', ondelete='CASCADE'), nullable=True, index=True)
+    Section = Column(String(10), nullable=False, default="NEXT", server_default="NEXT")
+    ReactionOrder = Column(Integer, nullable=False, default=1, server_default=text('1'))
+    WhenTest = Column(String(20), nullable=False, default="FAILED", server_default="FAILED")
+    WhenReturnCodes = Column(String(100), nullable=True)
+    WhenCondition = Column(Text, nullable=True)
+
+    actions = relationship("ReactionAction", backref="reaction", cascade="all, delete-orphan",
+                           passive_deletes=True, order_by="ReactionAction.ActionOrder")
+
+
+class ReactionAction(Base):
+    """
+    One thing a Reaction does. Decisions change what happens next: COUNT_AS_SUCCEEDED,
+    COUNT_AS_FAILED, RERUN (this job, after WaitSeconds, at most MaxTimes), RERUN_FROM (TargetItem
+    and everything between it and this job, at most MaxTimes), SKIP (TargetItem), SKIP_BRANCH (what
+    waits for this job), KILL_WORKFLOW. A side effect changes nothing in the run: START_WORKFLOW
+    (TargetJob). RERUN_FROM, SKIP, SKIP_BRANCH and KILL_WORKFLOW only make sense on a use.
+    """
+    __tablename__ = 'ReactionActions'
+
+    DECISIONS = ("COUNT_AS_SUCCEEDED", "COUNT_AS_FAILED", "RERUN", "RERUN_FROM", "SKIP", "SKIP_BRANCH", "KILL_WORKFLOW")
+    SIDE_EFFECTS = ("START_WORKFLOW",)
+    ONLY_IN_WORKFLOWS = ("RERUN_FROM", "SKIP", "SKIP_BRANCH", "KILL_WORKFLOW")
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    Reaction_id = Column(Integer, ForeignKey('Reactions.id', ondelete='CASCADE'), nullable=False, index=True)
+    ActionOrder = Column(Integer, nullable=False, default=1, server_default=text('1'))
+    Action = Column(String(30), nullable=False)
+    MaxTimes = Column(Integer, nullable=True)
+    WaitSeconds = Column(Integer, nullable=True)
+    TargetItem_id = Column(Integer, ForeignKey('WorkflowItems.id', ondelete='CASCADE'), nullable=True)
+    # The workflow START_WORKFLOW starts; a workflow named here cannot be deleted
+    TargetJob_MasterObject_id = Column(Integer, ForeignKey('Jobs.MasterObject_id', ondelete='RESTRICT'), nullable=True)
+
+    target_item = relationship("WorkflowItem", foreign_keys=[TargetItem_id])
+    target_job = relationship("Job", foreign_keys=[TargetJob_MasterObject_id])
 
 
 # ============================================================================
@@ -454,6 +520,12 @@ class JobRun(Base):
     Attempt = Column(Integer, nullable=False, default=1, server_default=text('1'))
     # Set when someone asks a workflow run to start nothing more
     CancelRequestedDateTime = Column(PreciseDateTime, nullable=True)
+    # Set when someone asks a running workflow to kill what runs and cancel the rest
+    KillRequestedDateTime = Column(PreciseDateTime, nullable=True)
+    # The runner's process on Host, so a running job can be killed
+    ProcessID = Column(Integer, nullable=True)
+    # Where a Reaction counted the run as succeeded or failed: what it ended as on its own
+    StatusBeforeOverride = Column(String(20), nullable=True)
     # The job log is a file on the host that ran the job (engine/log_files.py): where it is within that
     # host's log folder, and when it was removed for being older than the Settings page's limit
     LogFile = Column(String(500), nullable=True)
@@ -483,6 +555,10 @@ class WorkflowRunItem(Base):
     Status = Column(String(20), nullable=False, default="PENDING", server_default="PENDING")
     Reason = Column(String(40), nullable=True)
     ReturnCode = Column(Integer, nullable=True)
+    StatusBeforeOverride = Column(String(20), nullable=True)
+    # The runner of its latest attempt, recorded by the workflow runner as it starts it, so Kill
+    # never waits for the job's own records to arrive
+    ProcessID = Column(Integer, nullable=True)
     # The job run of its latest attempt
     ChildRun_id = Column(Integer, ForeignKey('JobRuns.id', ondelete='SET NULL'), nullable=True)
     Attempt = Column(Integer, nullable=False, default=0, server_default=text('0'))
@@ -490,6 +566,26 @@ class WorkflowRunItem(Base):
     EndedDateTime = Column(PreciseDateTime, nullable=True)
 
     child_run = relationship("JobRun", foreign_keys=[ChildRun_id])
+
+
+class ReactionEvent(Base):
+    """
+    A Reaction's action that fired after a job ended, or would have but had reached its limit
+    (Result TOOK_EFFECT or LIMIT_REACHED). The record behind "at most N times", counted within
+    a workflow run, and what the run view and the job log show. JobRun is the attempt it was
+    judged on; Action and Message are kept as text, so they survive the Reaction being edited.
+    """
+    __tablename__ = 'ReactionEvents'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    JobRun_id = Column(Integer, ForeignKey('JobRuns.id', ondelete='CASCADE'), nullable=False, index=True)
+    WorkflowRun_id = Column(Integer, ForeignKey('JobRuns.id', ondelete='CASCADE'), nullable=True, index=True)
+    WorkflowPath = Column(String(1000), nullable=True)
+    ReactionAction_id = Column(Integer, ForeignKey('ReactionActions.id', ondelete='SET NULL'), nullable=True)
+    Action = Column(String(30), nullable=False)
+    Result = Column(String(20), nullable=False, default="TOOK_EFFECT", server_default="TOOK_EFFECT")
+    Message = Column(Text, nullable=True)
+    EventDateTime = Column(PreciseDateTime, nullable=False, default=lambda: utcnow())
 
 
 class Operation(Base):

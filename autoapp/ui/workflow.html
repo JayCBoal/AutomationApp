@@ -7,6 +7,7 @@
     <link rel="icon" href="data:,">
     <link rel="stylesheet" href="css/autoapp.css">
     <script src="js/common.js"></script>
+    <script src="js/reactions.js"></script>
     <script src="vendor/elk-0.12.0.bundled.js"></script>
     <script src="js/workflow_diagram.js"></script>
     <script src="js/workflow.js"></script>
@@ -56,7 +57,11 @@
                 <button type="button" class="secondary danger" id="cancel-run-button"
                         x-show="run.status === 'RUNNING' && !run.cancel_requested" @click="cancelRun()"
                         title="Start nothing more. The jobs running now finish.">Cancel what hasn't started</button>
-                <span class="muted small" x-show="run.cancel_requested && run.status === 'RUNNING'">Cancelling: waiting for the running jobs to finish</span>
+                <span class="muted small" x-show="run.cancel_requested && !run.kill_requested && run.status === 'RUNNING'">Cancelling: waiting for the running jobs to finish</span>
+                <button type="button" class="secondary danger" id="kill-run-button"
+                        x-show="run.status === 'RUNNING' && !run.kill_requested" @click="killRun()"
+                        title="Kill the jobs running now, and start nothing more">Kill and Cancel</button>
+                <span class="muted small" x-show="run.kill_requested && run.status === 'RUNNING'">Killing</span>
                 <a x-show="run.run_id" :href="logLink(run.run_id)">The workflow's log</a>
                 <button type="button" class="link" @click="closeRun()">Close</button>
             </div>
@@ -70,10 +75,14 @@
                             <h3 class="wf-name" x-text="runItem.name"></h3>
                             <div><span class="wf-state" :class="runItem.status" x-text="stateWords(runItem)"></span></div>
                             <div class="muted small" x-text="'job ' + runItem.job_key"></div>
-                            <div class="muted small" x-show="runItem.attempt > 1" x-text="'attempt ' + runItem.attempt"></div>
                             <div class="muted small" x-show="runItem.started" x-text="'started ' + time(runItem.started)"></div>
                             <div class="muted small" x-show="runItem.ended" x-text="'ended ' + time(runItem.ended)"></div>
                             <a x-show="runItem.run_id" :href="logLink(runItem.run_id)">Its log</a>
+                            <button type="button" class="secondary danger kill-item" x-show="runItem.status === 'RUNNING'"
+                                    @click="killItem(runItem)">Kill</button>
+                            <ul class="reaction-events small" x-show="eventsFor(runItem.path).length">
+                                <template x-for="e in eventsFor(runItem.path)"><li x-text="e.message"></li></template>
+                            </ul>
                         </div>
                     </template>
                 </aside>
@@ -84,11 +93,18 @@
                         <span class="wf-state" :class="item.status" x-text="stateWords(item)"></span>
                         <span class="wf-name" x-text="item.name"></span>
                         <span class="muted small" x-text="'job ' + item.job_key"></span>
-                        <span class="muted small" x-show="item.attempt > 1" x-text="'attempt ' + item.attempt"></span>
                         <a x-show="item.run_id" :href="logLink(item.run_id)">Log</a>
+                        <button type="button" class="link small kill-item" x-show="item.status === 'RUNNING'" @click="killItem(item)">Kill</button>
                     </li>
                 </template>
             </ul>
+            <details class="reaction-events" id="run-reactions" x-show="run.reactions && run.reactions.length">
+                <summary x-text="'Reactions that fired: ' + (run.reactions || []).length"></summary>
+                <ul class="small">
+                    <template x-for="e in run.reactions || []"><li :class="{ muted: e.result === 'LIMIT_REACHED' }"
+                        x-text="(e.path ? e.path + ': ' : '') + e.message"></li></template>
+                </ul>
+            </details>
         </section>
     </template>
 
@@ -120,6 +136,13 @@
                         </ul>
                     </div>
                 </div>
+            </section>
+
+            <!-- What happens after the workflow itself ends -->
+            <section class="panel" aria-label="Reactions" id="reactions-panel">
+                <h2 class="section" style="margin-top: 0">Reactions</h2>
+                <p class="muted small">What happens after the workflow ends, as a whole. Each job's own are with it, below.</p>
+                <div data-reactions-box data-list="form.reactions" data-in-workflow="false"></div>
             </section>
 
             <!-- The outline: each job, and what it waits for -->
@@ -170,8 +193,14 @@
                                         <span class="wf-name" x-text="nameOf(item.uid)"></span>
                                         <a class="small" :href="jobLink(item)" x-text="'job ' + item.job_key"></a>
                                         <span class="tag" x-show="item.join === 'ANY'" title="Starts when any one of its prerequisites holds">Any</span>
+                                        <span class="tag disabled-here" x-show="item.disabled_here" x-text="disabledHereWords(item)"></span>
                                     </div>
                                     <div class="wf-needs muted small" x-text="needs(item)"></div>
+                                    <ul class="wf-reactions muted small" x-show="reactionsShown(item).length">
+                                        <template x-for="r in reactionsShown(item)" :key="r.uid">
+                                            <li x-text="reactionWords(r) + (item.reactions_overridden ? '' : ' (from the job)')"></li>
+                                        </template>
+                                    </ul>
                                 </div>
                             </template>
                             <!-- Editing -->
@@ -185,6 +214,12 @@
                                                           placeholder="Type to find a job" autocomplete="off"></label>
                                         <label>Named <input type="text" class="item-name" x-model="item.name" maxlength="100"
                                                             :placeholder="placeholder(item)"></label>
+                                        <label class="wf-disabled-here" title="Only in this workflow: the job itself stays as it is">Here it
+                                            <select class="item-disabled-here" x-model="item.disabled_here">
+                                                <option value="">runs</option>
+                                                <option value="STOP">is disabled: stop here</option>
+                                                <option value="PASS_THROUGH">is disabled: pass through, as if it succeeded</option>
+                                            </select></label>
                                     </div>
                                     <fieldset class="wf-prereqs">
                                     <legend>Prerequisites</legend>
@@ -222,6 +257,26 @@
                                             <option value="ANY">When any prerequisite is satisfied</option>
                                             <option value="CUSTOM" disabled title="A rule of your own, written as a condition; not built yet">Custom rule</option>
                                         </select></label>
+                                    </fieldset>
+                                    <fieldset class="wf-item-reactions">
+                                        <legend>Reactions</legend>
+                                        <template x-if="!item.reactions_overridden">
+                                            <div>
+                                                <p class="muted small" x-text="item.job_reactions.length ? 'From the job:' : (item.id ? 'The job has none.' : 'The job\'s own, if it has any, once saved.')"></p>
+                                                <ol class="reaction-list muted small">
+                                                    <template x-for="r in item.job_reactions" :key="r.uid"><li x-text="reactionWords(r)"></li></template>
+                                                </ol>
+                                                <button type="button" class="link small override-reactions" @click="overrideReactions(item)"
+                                                        title="Give this use Reactions of its own, in place of the job's">Override here</button>
+                                            </div>
+                                        </template>
+                                        <template x-if="item.reactions_overridden">
+                                            <div>
+                                                <p class="muted small">Its own, in place of the job's.
+                                                    <button type="button" class="link small use-job-reactions" @click="useJobReactions(item)">Use the job's again</button></p>
+                                                <div data-reactions-box data-list="item.reactions" data-in-workflow="true" data-targets="reactionTargets(item)"></div>
+                                            </div>
+                                        </template>
                                     </fieldset>
                                     <button type="button" class="link small remove-item" @click="removeItem(index)"
                                             title="Take this job out of the workflow">Remove this job</button>
@@ -262,5 +317,6 @@
         </div>
     </template>
 </main>
+<script>AutoApp.fillReactionBoxes()</script>
 </body>
 </html>

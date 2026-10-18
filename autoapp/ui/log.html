@@ -23,6 +23,10 @@
             <div class="steps-head">
                 <h2 class="section" style="margin-top: 0"><a :href="jobLink(run)" x-text="run.job_key"></a></h2>
                 <span class="status" id="run-outcome" :class="run.status" x-text="run.status"></span>
+                <span class="muted small" x-show="run.status_before_override"
+                      x-text="'counted so by a Reaction; it ended ' + run.status_before_override"></span>
+                <button type="button" class="secondary danger" id="kill-button" x-show="run.status === 'RUNNING'"
+                        @click="kill()" x-text="killWords(run)"></button>
             </div>
             <p class="small">
                 instance <code x-text="run.instance_id"></code>

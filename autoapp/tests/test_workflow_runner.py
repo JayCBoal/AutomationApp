@@ -10,7 +10,7 @@ import time
 import pytest
 
 from app.log_agent import run_log
-from app.models import Job, JobRun, WorkflowItem, WorkflowPrerequisite, WorkflowRunItem, utcnow
+from app.models import Job, JobRun, Operation, Variable, WorkflowItem, WorkflowPrerequisite, WorkflowRunItem, utcnow
 from conftest import AUTOAPP_DIR, subprocess_env
 
 
@@ -166,6 +166,65 @@ def test_a_job_whose_return_code_is_a_success_code_succeeds(sim, run_runner, loa
     load_spool()
     run = db.query(JobRun).filter(JobRun.JobKey == "FINE").one()
     assert (run.Status, run.ReturnCode, run.Reason) == ("SUCCESS", 3, None)
+
+
+# ---------- The Set Return Code step ----------
+
+def test_set_return_code_carries_on_and_the_last_one_run_wins(seed, endpoints, run_runner, load_spool, db):
+    job = seed.job("CODES")
+    job.SuccessReturnCodes = "0, 4"
+    seed.step(job, 1, "SET_RETURN_CODE", title="First", ReturnCode="8")
+    seed.step(job, 2, "SET_RETURN_CODE", title="Second", ReturnCode="4", Message="No files arrived")
+    seed.step(job, 3, title="Still runs", SourceEndpoint="LEGAL_EXTRACTS", Dest="incoming")
+    result = run_runner("CODES")
+
+    assert result.returncode == 0
+    assert "Return code set to 4: No files arrived" in result.stdout
+    assert "Step 3: Still runs" in result.stdout                    # the job carried on after setting it
+    load_spool()
+    operations = db.query(Operation).filter(Operation.OpType == "SET_RETURN_CODE").all()
+    assert [o.OpStatus for o in operations] == ["SUCCESS", "SUCCESS"]       # one record for each, for the trace
+    run = db.query(JobRun).filter(JobRun.JobKey == "CODES").one()
+    assert (run.Status, run.ReturnCode) == ("SUCCESS", 4)
+
+
+def test_a_return_code_set_that_is_not_a_success_code_fails_the_job(seed, run_runner, load_spool, db):
+    job = seed.job("BAD_CODE")
+    seed.step(job, 1, "SET_RETURN_CODE", ReturnCode="8")
+    assert run_runner("BAD_CODE").returncode == 1
+    load_spool()
+    run = db.query(JobRun).filter(JobRun.JobKey == "BAD_CODE").one()
+    assert (run.Status, run.ReturnCode, run.Reason) == ("FAILED", 8, "RETURN_CODE")
+
+
+def test_set_return_code_inside_an_if_lets_a_job_choose_its_own_code(seed, run_runner, load_spool, db):
+    job = seed.job("CHOOSE", Mode="B")
+    choice = seed.step(job, 1, "IF", title="Which code", Condition="${Mode} = 'A'")
+    then = seed.step(job, 1, "THEN", parent=choice)
+    seed.step(job, 1, "SET_RETURN_CODE", parent=then, ReturnCode="2")
+    otherwise = seed.step(job, 2, "ELSE", parent=choice)
+    seed.step(job, 1, "SET_RETURN_CODE", parent=otherwise, ReturnCode="3")
+    job.SuccessReturnCodes = "0-3"
+    assert run_runner("CHOOSE").returncode == 0
+    load_spool()
+    assert db.query(JobRun).filter(JobRun.JobKey == "CHOOSE").one().ReturnCode == 3
+
+
+def test_set_return_code_masks_a_secret_in_its_message(seed, run_runner, db):
+    job = seed.job("SECRET_CODE")
+    db.add(Variable(MasterObject_id=job.MasterObject_id, VarName="Token", VarValue="s3cr3t-t0ken", IsSecret=True))
+    seed.step(job, 1, "SET_RETURN_CODE", ReturnCode="0", Message="Token was ${Token}")
+    result = run_runner("SECRET_CODE")
+    assert "Return code set to 0: Token was ********" in result.stdout
+    assert "s3cr3t-t0ken" not in result.stdout + result.stderr
+
+
+def test_set_return_code_refuses_a_code_below_0(seed, run_runner, load_spool, db):
+    job = seed.job("NEGATIVE")
+    seed.step(job, 1, "SET_RETURN_CODE", ReturnCode="-1")
+    result = run_runner("NEGATIVE")
+    assert result.returncode == 1
+    assert "ReturnCode cannot be below 0." in result.stderr
 
 
 # ---------- Cancelling, nesting, refusing ----------

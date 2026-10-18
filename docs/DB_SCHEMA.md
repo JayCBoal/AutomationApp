@@ -42,6 +42,8 @@ erDiagram
     Sites |o--o{ Endpoints : "Site_MasterObject_id"
     Applications |o--o{ Endpoints : "Application_MasterObject_id"
     JobSteps ||--o{ JobStepParameters : "JobStep_id"
+    Jobs |o--o{ Reactions : "Job_MasterObject_id"
+    WorkflowItems |o--o{ Reactions : "Item_id"
     WorkflowItems ||--o{ WorkflowPrerequisites : "Item_id"
     WorkflowItems |o--o{ WorkflowPrerequisites : "TargetItem_id"
     JobRuns ||--o{ WorkflowRunItems : "WorkflowRun_id"
@@ -51,6 +53,12 @@ erDiagram
     JobSteps |o--o{ Operations : "JobStep_id"
     Endpoints |o--o{ Operations : "SourceEndpoint_id"
     Endpoints |o--o{ Operations : "DestEndpoint_id"
+    Reactions ||--o{ ReactionActions : "Reaction_id"
+    WorkflowItems |o--o{ ReactionActions : "TargetItem_id"
+    Jobs |o--o{ ReactionActions : "TargetJob_MasterObject_id"
+    JobRuns ||--o{ ReactionEvents : "JobRun_id"
+    JobRuns |o--o{ ReactionEvents : "WorkflowRun_id"
+    ReactionActions |o--o{ ReactionEvents : "ReactionAction_id"
 ```
 
 ## Domain registry
@@ -214,6 +222,8 @@ erDiagram
         int Job_MasterObject_id FK "required"
         string(10) JoinRule "required"
         int ItemOrder "required"
+        string(20) DisabledHere
+        bool ReactionsOverridden "required"
     }
     WorkflowPrerequisites {
         int id PK
@@ -222,6 +232,26 @@ erDiagram
         string(20) Test "required"
         string(100) ReturnCodes
         text Condition
+    }
+    Reactions {
+        int id PK
+        int Job_MasterObject_id FK
+        int Item_id FK
+        string(10) Section "required"
+        int ReactionOrder "required"
+        string(20) WhenTest "required"
+        string(100) WhenReturnCodes
+        text WhenCondition
+    }
+    ReactionActions {
+        int id PK
+        int Reaction_id FK "required"
+        int ActionOrder "required"
+        string(30) Action "required"
+        int MaxTimes
+        int WaitSeconds
+        int TargetItem_id FK
+        int TargetJob_MasterObject_id FK
     }
     JobRuns {
         int id PK
@@ -244,6 +274,9 @@ erDiagram
         string(1000) WorkflowPath
         int Attempt "required"
         datetime CancelRequestedDateTime
+        datetime KillRequestedDateTime
+        int ProcessID
+        string(20) StatusBeforeOverride
         string(500) LogFile
         datetime LogRemovedDateTime
     }
@@ -258,10 +291,23 @@ erDiagram
         string(20) Status "required"
         string(40) Reason
         int ReturnCode
+        string(20) StatusBeforeOverride
+        int ProcessID
         int ChildRun_id FK
         int Attempt "required"
         datetime StartedDateTime
         datetime EndedDateTime
+    }
+    ReactionEvents {
+        int id PK
+        int JobRun_id FK "required"
+        int WorkflowRun_id FK
+        string(1000) WorkflowPath
+        int ReactionAction_id FK
+        string(30) Action "required"
+        string(20) Result "required"
+        text Message
+        datetime EventDateTime "required"
     }
     MasterObjects ||--o| Jobs : "MasterObject_id"
     Jobs |o--o{ Jobs : "Owner_MasterObject_id"
@@ -269,11 +315,19 @@ erDiagram
     JobRuns |o--o{ JobRuns : "ParentRun_id"
     Jobs ||--o{ WorkflowItems : "Workflow_MasterObject_id"
     Jobs ||--o{ WorkflowItems : "Job_MasterObject_id"
+    Jobs |o--o{ Reactions : "Job_MasterObject_id"
+    WorkflowItems |o--o{ Reactions : "Item_id"
     WorkflowItems ||--o{ WorkflowPrerequisites : "Item_id"
     WorkflowItems |o--o{ WorkflowPrerequisites : "TargetItem_id"
     JobRuns ||--o{ WorkflowRunItems : "WorkflowRun_id"
     WorkflowItems |o--o{ WorkflowRunItems : "Item_id"
     JobRuns |o--o{ WorkflowRunItems : "ChildRun_id"
+    Reactions ||--o{ ReactionActions : "Reaction_id"
+    WorkflowItems |o--o{ ReactionActions : "TargetItem_id"
+    Jobs |o--o{ ReactionActions : "TargetJob_MasterObject_id"
+    JobRuns ||--o{ ReactionEvents : "JobRun_id"
+    JobRuns |o--o{ ReactionEvents : "WorkflowRun_id"
+    ReactionActions |o--o{ ReactionEvents : "ReactionAction_id"
 ```
 
 ## Endpoints, runs, operations, audits and settings
@@ -310,6 +364,9 @@ erDiagram
         string(1000) WorkflowPath
         int Attempt "required"
         datetime CancelRequestedDateTime
+        datetime KillRequestedDateTime
+        int ProcessID
+        string(20) StatusBeforeOverride
         string(500) LogFile
         datetime LogRemovedDateTime
     }

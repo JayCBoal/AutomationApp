@@ -520,8 +520,9 @@ const AutoApp = (() => {
      *   order      how the results are ordered, for the summary line, e.g. "newest first"
      *   toApi      optional: converts the boxes' values into what the API expects
      *   inAddress  optional: extra things to keep in the page address (called with the page as "this")
+     *   found      optional: say "N found" rather than "N <noun>s", for a page listing more than one kind of thing
      */
-    function searchPage({ criteria, path, noun, order, toApi = values => values, inAddress = () => ({}) }) {
+    function searchPage({ criteria, path, noun, order, toApi = values => values, inAddress = () => ({}), found = false }) {
         const page = {
             criteria: Object.fromEntries(criteria.map(name => [name, ""])),
             rows: [],
@@ -572,8 +573,9 @@ const AutoApp = (() => {
                 get() {
                     if (this.loading) return "Searching...";
                     if (!this.searched) return "";
-                    if (this.rows.length === 0) return `No ${noun}s match these criteria.`;
-                    return `${this.rows.length} ${noun}${this.rows.length === 1 ? "" : "s"}, ${order}. ` +
+                    if (this.rows.length === 0) return found ? "Nothing matches these criteria." : `No ${noun}s match these criteria.`;
+                    const count = found ? `${this.rows.length} found` : `${this.rows.length} ${noun}${this.rows.length === 1 ? "" : "s"}`;
+                    return `${count}, ${order}. ` +
                            `Times are shown in your time zone (${timeZoneName()}).`;
                 },
             },

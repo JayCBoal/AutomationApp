@@ -44,6 +44,7 @@ function jobDetail() {
 
     return {
         ...AutoApp.tagEditing(ownVariables),
+        ...AutoApp.reactionEditing(),
         key: address.get("key") || "",
         isNew: address.has("new"),
         embedded: AutoApp.EMBEDDED,     // opened from inside a scheduler: one job, no way to wander off to others
@@ -75,6 +76,7 @@ function jobDetail() {
                 this.catalog = Object.fromEntries(catalog.map(type => [type.code, type]));
                 this.allKeys = jobs.map(job => job.job_key);
                 this.endpoints = endpoints;
+                AutoApp.loadReactionWorkflows();
             } catch (e) {
                 this.error = e.message;
                 return;
@@ -135,6 +137,7 @@ function jobDetail() {
                     savedSecret: variable.secret,
                 })),
                 tags: [...(job.tags || [])],
+                reactions: this.reactionsForm(job.reactions),
             };
             this.saved = JSON.stringify(this.payload());
             this.tagCandidate = "";
@@ -337,6 +340,7 @@ function jobDetail() {
                     description: variable.description.trim() || null,
                 })),
                 tags: [...this.form.tags],
+                reactions: this.reactionsPayload(this.form.reactions),
             };
         },
 

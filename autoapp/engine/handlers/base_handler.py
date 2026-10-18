@@ -74,7 +74,7 @@ class BaseHandler(ABC):
         self.telemetry = telemetry_client
         # This step type's own outputs, set as the step goes, so a step that fails still leaves them
         self.outputs: Dict[str, Any] = {}
-        # A step that sets the job's return code (the Simulate step does) puts it here; the last one set counts
+        # A step that sets the job's return code (Set Return Code and Simulate do) puts it here; the last one set counts
         self.job_return_code: Optional[int] = None
 
     @property

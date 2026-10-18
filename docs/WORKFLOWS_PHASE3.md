@@ -2,7 +2,7 @@
 
 The third phase of [WORKFLOWS.md](WORKFLOWS.md) ("Implementation in phases"): **a job's outcome decides what happens next, beyond "go on" or "stop".** It answers shortcoming 2 (reacting to return codes, rerunning upstream), and adds Kill and Disable here.
 
-Status: **agreed with the owner 2026-10-18.** Nothing here is built yet.
+Status: **agreed with the owner 2026-10-18; built 2026-10-18 (steps 0 to 6), waiting for the owner's review.**
 
 ## Starting point
 
@@ -49,3 +49,14 @@ Already built, in Phase 1:
 
 5. **Reactions apply wherever the job runs**, on its own or in a workflow. On its own, the job runner acts on them (Count as, Rerun this job, Start a workflow); in a workflow, the workflow runner does. Rerun from…, Skip… and Kill the workflow exist only on a use.
 6. **Kill is offered on any running job**: on its own, within a workflow run, or a workflow. On a workflow it kills the jobs running in it and cancels those not started; its button says **Kill and Cancel**. A single job's says **Kill**. Failed, `KILLED`.
+
+## Decided while building (2026-10-18), for the owner's review
+
+7. **The rest of the branch** is what waits for the job, directly or not, **except** the jobs that wait for the outcome it actually had (a failure path, a clean-up waiting for it to end) and what follows them: those still run. Found with the sample: skipping everything downstream also skipped its clean-up, and the failure then counted as unhandled.
+8. **A killed job's Reactions do not apply**: someone stopped it on purpose, so an automatic rerun would undo that. A job killed by Kill the workflow, or by Kill and Cancel, likewise.
+9. **Bypassed counts as succeeded with return code 0** for prerequisites, so a test for return codes `0` or `0-4` holds too.
+10. **Kill works on this machine only**: the server signals the runner's process. A job on another host says so; that waits for agents.
+11. **Start a workflow** is shown as the Reactions marker on the box, with the words on pointing at it, not yet as a right-edge stub.
+12. **A workflow's own Reactions**: a workflow is a job, so it has them too, on its page; Rerun this job reruns the whole workflow, as a new run (the next attempt).
+13. **Reactions that fired** are listed with the run, folded, and on each job's panel in the diagram.
+14. **The process ID reaches the database at once whenever there is an API**: the runner's first record carries it. Without one (a scheduler not passing `--api-url`, or the tests), a job on its own is not killable from the page until its records are delivered (TO-DO, decision 2); a job in a workflow always is, since the workflow runner records it.

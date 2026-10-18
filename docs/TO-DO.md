@@ -8,7 +8,7 @@ Updated 2026-10-13. The order under "Work queue" is a proposal; the items under 
    - Variables shared by several jobs: tags, built 2026-10-15 (decision 3).
    - A way to see several jobs as one piece of work. The file trace already follows a file from job to job, so this is only about grouping jobs for display. A tag, and Job Search's Tag box, now do this; still open is whether a page showing such a group together is wanted.
 
-2. **How the runner gets its payload.** The design says agents pull over HTTPS from `/api/v1/jobs/init` and never connect to the database. The runner currently connects to the database directly. Options: switch the runner to the API now; support both; or leave direct access until the API has authentication.
+2. **How the runner gets its payload.** (Also, 2026-10-18: a job runner with no API to report to keeps its records, its process ID included, in its spool file until they are delivered, so until then its run is not in the database and cannot be killed from the page. Jobs in a workflow do not have this gap: the workflow runner records each job's process as it starts it.) The design says agents pull over HTTPS from `/api/v1/jobs/init` and never connect to the database. The runner currently connects to the database directly. Options: switch the runner to the API now; support both; or leave direct access until the API has authentication.
 
 3. **Tag rules.** Decided 2026-10-14 and built 2026-10-15, unless marked open:
    - **What can be tagged:** any master object.
@@ -110,6 +110,8 @@ Designed with the owner and built in RunMyFiles on 2026-10-16, then brought over
 3. **Runner controls.** Depends on decision 6.
 
 ### Later
+
+- **AutoApp as a SaaS application** (the owner, 2026-10-18; long-term, not a workflow topic). It would fit RunMyJobs better, and may change the billing question (WORKFLOWS.md, "Jobs may still run on their own"). Builds on API authentication and the rest of item 6 (Security), and on runners using the API (decision 2).
 
 - **Exact differences in the audit log.** Each audit row records who changed what, as sentences ("Changed step 2 ('Archive'): parameters."), but not the values before and after. Store a before-and-after list with each row (each field; each step's parameters; steps added, removed or moved; variables, except that a secret variable says only that it changed), and add "Show details" on the Audit Log page. Applies to changes made from then on.
 

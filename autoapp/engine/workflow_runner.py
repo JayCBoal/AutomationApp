@@ -14,32 +14,41 @@ Every second or so it:
   - collects the jobs that have ended, and how;
   - starts every job whose prerequisites now hold;
   - marks Not run each job whose prerequisites can never hold, which can cascade;
-  - after a Cancel, starts nothing more, and marks what has not started Not run.
+  - after a Cancel, starts nothing more, and marks what has not started Not run; after a
+    Kill, also kills the jobs running (Failed, KILLED), down through workflows inside it;
+  - carries out each ended job's Reactions (engine/reactions.py) before anything that waits
+    for it is looked at: Count as, Rerun, Rerun from, Skip, Kill the workflow, Start a workflow.
+A job disabled here ends Disabled (Stop here) or Bypassed (Pass through, which counts as
+succeeded with return code 0) when its turn comes.
 The workflow ends when every job has a final status. By default (docs/WORKFLOWS.md, "When a
 workflow succeeds") it fails if a failure went unhandled: a job failed and nothing that waits
 for it ran, or a job was cancelled. Otherwise it succeeds, so a failure path that did its job
 leaves the workflow green.
 """
 import os
+import signal
 import subprocess
 import sys
 import tempfile
 import time
 import uuid
-from dataclasses import dataclass
+from collections import Counter
+from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from sqlalchemy.orm import Session
 
-from app.models import Job, JobRun, WorkflowRunItem, utcnow
+from app.models import Job, JobRun, ReactionEvent, WorkflowRunItem, utcnow
 from engine import job_log, log_files, return_codes
+from engine.reactions import Act, OwnReactions, Rule, judge, read_rules, start_workflow
 
 AUTOAPP_DIR = Path(__file__).resolve().parents[1]
 CHILD_SCHEDULER = "AutoApp workflow"
 POLL_SECONDS = float(os.getenv("AUTOAPP_WORKFLOW_POLL_SECONDS", "1"))
-FINAL = ("SUCCESS", "FAILED", "NOT_RUN", "DISABLED")
+FINAL = ("SUCCESS", "FAILED", "NOT_RUN", "DISABLED", "BYPASSED", "SKIPPED")
+NOT_STARTED = ("PENDING", "WAITING")
 HOLDS, NEVER, WAIT = "HOLDS", "NEVER", "WAIT"
 OUTPUT_KEPT = 20                # lines of a job runner's own output kept, for one that left no record
 
@@ -72,9 +81,14 @@ class Planned:
     prerequisites: List[Tuple[str, str, Optional[str]]]       # (target name, test, return codes)
     row: WorkflowRunItem
     active: bool = True             # a disabled job ends Disabled when its turn comes: a hard stop
+    disabled_here: Optional[str] = None     # STOP or PASS_THROUGH: Disable here, on this use only
+    job_type: str = "STEPS"
+    rules: List[Rule] = field(default_factory=list)
     process: Optional[subprocess.Popen] = None
     run_id: Optional[str] = None
     output_path: Optional[str] = None
+    start_after: float = 0.0        # a rerun waits until then (time.time())
+    kill_sent: bool = False
 
 
 # ---------- Whether a job may start ----------
@@ -83,6 +97,8 @@ def prerequisite_state(test: str, codes: Optional[str], status: str, code: Optio
     """HOLDS, NEVER (it can no longer hold) or WAIT, given how the job waited for stands."""
     if status not in FINAL:
         return WAIT
+    if status == "BYPASSED":            # treated as succeeded without running (docs/WORKFLOWS.md)
+        status, code = "SUCCESS", 0
     if test == "ENDED":
         return HOLDS                # ended in any way, Not run included, so clean-up jobs still run
     if test == "SUCCESS":
@@ -124,7 +140,7 @@ def why_never(planned: Planned, by_name: Dict[str, Planned]) -> str:
 def outcome_words(row: WorkflowRunItem) -> str:
     code = f" with return code {row.ReturnCode}" if row.ReturnCode is not None else ""
     return {"SUCCESS": f"succeeded{code}", "FAILED": f"failed{code}", "NOT_RUN": "did not run",
-            "DISABLED": "is disabled"}.get(row.Status, "has not ended")
+            "DISABLED": "is disabled", "SKIPPED": "was skipped"}.get(row.Status, "has not ended")
 
 
 # ---------- The run ----------
@@ -137,6 +153,9 @@ class WorkflowRunner:
         self.items: List[Planned] = []
         self.by_name: Dict[str, Planned] = {}
         self.cancelled = False
+        self.killing: Optional[str] = None          # why the workflow is being killed, once it is
+        self.times_used: Counter = Counter()        # (path, action id): how often a rerun has run in this run
+        self.own: Optional[OwnReactions] = None     # its own Reactions, when it runs on its own
 
     def run(self) -> int:
         """Runs the workflow to the end. Returns the exit code for whoever started it: 0 if it succeeded, else 1."""
@@ -173,23 +192,38 @@ class WorkflowRunner:
                      Host=log_files.this_host(), LogFile=log_files.start(self.run_id), Status="RUNNING",
                      JobType="WORKFLOW", StartedDateTime=utcnow(),
                      ParentRun_id=parent.id if parent else None, WorkflowPath=self.options.workflow_path,
-                     Attempt=self.options.attempt)
+                     Attempt=self.options.attempt, ProcessID=os.getpid())
         self.db.add(run)
         self.db.commit()
         return run
 
     def _finish(self, status: str, reason: Optional[str], error: Optional[str] = None) -> int:
-        self.record.Status, self.record.Reason, self.record.ErrorMessage = status, reason, error
-        self.record.ReturnCode = 0 if status == "SUCCESS" else 1
+        code = 0 if status == "SUCCESS" else 1
+        counted = status
+        if self.own is not None and reason != "KILLED":
+            counted = self.own.after(status, code, self._own_event)
+        self.record.Status, self.record.Reason, self.record.ErrorMessage = counted, reason, error
+        self.record.StatusBeforeOverride = status if counted != status else None
+        self.record.ReturnCode = code
         self.record.EndedDateTime = utcnow()
         self._save()
-        return self.record.ReturnCode
+        return 0 if counted == "SUCCESS" else 1
+
+    def _own_event(self, act: Act, result: str, message: str) -> None:
+        self.db.add(ReactionEvent(JobRun_id=self.record.id, ReactionAction_id=act.id, Action=act.action,
+                                  Result=result, Message=message))
 
     def _conclude(self) -> int:
         """Succeeded, unless a failure went unhandled or jobs were cancelled."""
         cancelled = [p.name for p in self.items if p.row.Reason == "CANCELLED"]
         unhandled, handled = self._failures()
         not_run = [p.name for p in self.items if p.row.Status == "NOT_RUN" and p.row.Reason != "CANCELLED"]
+        if self.killing:
+            killed = [p.name for p in self.items if p.row.Reason == "KILLED"]
+            message = (f"{self.killing}. Killed: {', '.join(killed) or 'none'}; "
+                       f"did not start: {', '.join(cancelled) or 'none'}.")
+            job_log.error(f"Workflow '{self.workflow.JobKey}' was killed. {message}")
+            return self._finish("FAILED", "KILLED", message)
         if cancelled:
             message = f"Cancelled: {_count(cancelled, 'job')} did not start: {', '.join(cancelled)}."
             job_log.error(f"Workflow '{self.workflow.JobKey}' was cancelled. {message}")
@@ -234,7 +268,8 @@ class WorkflowRunner:
             self.db.add(row)
             prerequisites = [(p.target.ItemName, p.Test, p.ReturnCodes) for p in item.prerequisites if p.target]
             self.items.append(Planned(item.ItemName, item.job.JobKey, item.JoinRule, prerequisites, row,
-                                      active=bool(item.job.IsActive)))
+                                      active=bool(item.job.IsActive), disabled_here=item.DisabledHere,
+                                      job_type=item.job.JobType, rules=read_rules(item.job, item)))
         self.by_name = {p.name: p for p in self.items}
         job_log.detail(f"{_count(self.items, 'job')}: " + ", ".join(p.name for p in self.items))
         self._save()
@@ -242,13 +277,37 @@ class WorkflowRunner:
     # --- Each pass ---
 
     def _check_cancel(self) -> None:
-        if self.cancelled:
+        if self.killing:
+            self._kill_running()            # again, for a job that had not recorded its start the last time
             return
         self.db.commit()                # a new transaction, so it sees what others have committed since
         self.db.refresh(self.record)
-        if self.record.CancelRequestedDateTime is not None:
+        if self.record.KillRequestedDateTime is not None:
+            self._kill("Kill and Cancel asked for")
+        elif self.record.CancelRequestedDateTime is not None and not self.cancelled:
             self.cancelled = True
             job_log.warning("Cancel asked for: nothing more will be started; the jobs running now will finish.")
+
+    def _kill(self, why: str) -> None:
+        """Kills the jobs running and cancels those not started. Reactions no longer apply."""
+        self.killing, self.cancelled = why, True
+        job_log.warning(f"{why}: the jobs running are killed, and nothing more will be started.")
+        self._kill_running()
+
+    def _kill_running(self) -> None:
+        """A job's runner is told to stop; a workflow inside is asked to kill its own, as this one was."""
+        for planned in self.items:
+            if planned.row.Status != "RUNNING" or planned.kill_sent or planned.process is None:
+                continue
+            if planned.job_type == "WORKFLOW":
+                child = self.db.query(JobRun).filter(JobRun.RunID == planned.run_id).first()
+                if child is None:
+                    continue                # not recorded yet: asked again next pass
+                child.KillRequestedDateTime = child.KillRequestedDateTime or utcnow()
+            elif planned.process.poll() is None:
+                planned.process.send_signal(signal.SIGTERM)
+            planned.kill_sent = True
+            job_log.summary(f"Killing '{planned.name}'.")
 
     def _advance(self) -> None:
         """Starts what may start and marks Not run what never can, until nothing more changes this pass."""
@@ -267,21 +326,34 @@ class WorkflowRunner:
                     self._not_run(planned, "PREREQUISITES_NOT_MET",
                                   f"'{planned.name}' will not run: {why_never(planned, self.by_name)}.")
                     changed = True
-                elif state == HOLDS and not planned.active:
-                    planned.row.Status, planned.row.EndedDateTime = "DISABLED", utcnow()
-                    job_log.summary(f"'{planned.name}' is disabled (job '{planned.job_key}'), so it does not run.")
+                elif state == HOLDS and (not planned.active or planned.disabled_here):
+                    self._disabled(planned)
                     changed = True
-                elif state == HOLDS:
+                elif state == HOLDS and time.time() >= planned.start_after:
                     self._start(planned)
                 elif planned.row.Status == "PENDING":
                     planned.row.Status = "WAITING"
+
+    def _disabled(self, planned: Planned) -> None:
+        row = planned.row
+        if not planned.active:
+            row.Status = "DISABLED"
+            job_log.summary(f"'{planned.name}' is disabled (job '{planned.job_key}'), so it does not run.")
+        elif planned.disabled_here == "PASS_THROUGH":
+            row.Status, row.Reason = "BYPASSED", "DISABLED_PASS_THROUGH"
+            job_log.summary(f"'{planned.name}' is disabled here to pass through: it counts as succeeded without running.")
+        else:
+            row.Status = "DISABLED"
+            job_log.summary(f"'{planned.name}' is disabled here, so it does not run.")
+        row.EndedDateTime = utcnow()
 
     def _not_run(self, planned: Planned, reason: str, message: str) -> None:
         planned.row.Status, planned.row.Reason, planned.row.EndedDateTime = "NOT_RUN", reason, utcnow()
         job_log.summary(message)
 
     def _start(self, planned: Planned) -> None:
-        planned.run_id = str(uuid.uuid4())
+        planned.run_id, planned.kill_sent = str(uuid.uuid4()), False
+        planned.row.Attempt += 1
         output = tempfile.NamedTemporaryFile(prefix="autoapp_workflow_job_", suffix=".log", delete=False)
         try:
             planned.process = subprocess.Popen(self._command(planned), cwd=AUTOAPP_DIR, stdout=output,
@@ -289,15 +361,19 @@ class WorkflowRunner:
         finally:
             output.close()
         planned.output_path = output.name
-        planned.row.Status, planned.row.Attempt, planned.row.StartedDateTime = "RUNNING", 1, utcnow()
-        job_log.summary(f"Started '{planned.name}' (job '{planned.job_key}').")
+        planned.row.Status, planned.row.StartedDateTime = "RUNNING", utcnow()
+        planned.row.ProcessID = planned.process.pid
+        attempt = f", attempt {planned.row.Attempt}" if planned.row.Attempt > 1 else ""
+        job_log.summary(f"Started '{planned.name}' (job '{planned.job_key}'{attempt}).")
 
     def _command(self, planned: Planned) -> List[str]:
         o = self.options
+        attempt = planned.row.Attempt
+        instance = f"{o.instance_id}-{planned.row.ItemOrder}" + (f".{attempt}" if attempt > 1 else "")
         command = [sys.executable, "-m", "engine.runner", "--job-key", planned.job_key,
-                   "--instance-id", f"{o.instance_id}-{planned.row.ItemOrder}"[:64], "--scheduler", CHILD_SCHEDULER,
+                   "--instance-id", instance[:64], "--scheduler", CHILD_SCHEDULER,
                    "--spool-dir", o.spool_dir, "--run-id", planned.run_id, "--log-level", o.log_level,
-                   "--parent-run-id", self.run_id, "--workflow-path", planned.row.Path, "--attempt", "1"]
+                   "--parent-run-id", self.run_id, "--workflow-path", planned.row.Path, "--attempt", str(attempt)]
         if o.api_url:
             command += ["--api-url", o.api_url]
         if o.working_root:
@@ -317,9 +393,117 @@ class WorkflowRunner:
             row = planned.row
             row.Status, row.ReturnCode, row.Reason, row.EndedDateTime = status, code, reason, utcnow()
             row.ChildRun_id = child.id if child else None
-            words = "succeeded" if status == "SUCCESS" else "failed"
+            words = "succeeded" if status == "SUCCESS" else "was killed" if reason == "KILLED" else "failed"
             job_log.summary(f"'{planned.name}' {words}" + (f", return code {code}." if code is not None else ".")
                             + (f" {child.ErrorMessage}" if status == "FAILED" and child and child.ErrorMessage else ""))
+            self._react(planned, child)
+
+    # --- Reactions (engine/reactions.py) ---
+
+    def _react(self, planned: Planned, child: Optional[JobRun]) -> None:
+        """Carries out the job's Reactions to how it ended. A killed job's are not: someone stopped it."""
+        row = planned.row
+        if not planned.rules or row.Reason == "KILLED" or self.killing:
+            return
+        verdict = judge(planned.rules, row.Status, row.ReturnCode,
+                        lambda act: self.times_used[(row.Path, act.id)], in_workflow=True)
+        for act in verdict.used_up:
+            self._event(planned, child, act, "LIMIT_REACHED",
+                        f"'{planned.name}': {act.words()} has already run {_count(range(act.max_times), 'time')}, "
+                        f"its limit, so the next Reaction that holds applies.")
+        if verdict.deciding:
+            job_log.summary(f"'{planned.name}': {verdict.deciding.when_words()}, so, as its Reactions say: "
+                            + ", ".join(a.words() for a in verdict.decisions) + ".")
+        for act in verdict.decisions:
+            self._decide(planned, child, act)
+        for act in verdict.side_effects:
+            self._side_effect(planned, child, act)
+
+    def _decide(self, planned: Planned, child: Optional[JobRun], act: Act) -> None:
+        if act.action in ("COUNT_AS_SUCCEEDED", "COUNT_AS_FAILED"):
+            message = self._count_as(planned, child, "SUCCESS" if act.action == "COUNT_AS_SUCCEEDED" else "FAILED")
+        elif act.action == "SKIP":
+            message = self._skip([self.by_name[act.target_item]], f"skipped by '{planned.name}'")
+        elif act.action == "SKIP_BRANCH":
+            message = self._skip(self._branch(planned), f"the rest of the branch after '{planned.name}'")
+        elif act.action == "RERUN":
+            message = self._rerun([planned], planned, act)
+        elif act.action == "RERUN_FROM":
+            message = self._rerun(self._between(self.by_name[act.target_item], planned), planned, act)
+        else:
+            self._kill(f"'{planned.name}' killed the workflow, as its Reactions say")
+            message = "Killed the workflow."
+        self._event(planned, child, act, "TOOK_EFFECT", message)
+
+    def _count_as(self, planned: Planned, child: Optional[JobRun], status: str) -> str:
+        row = planned.row
+        if row.Status == status:
+            return f"'{planned.name}' already {outcome_words(row)}."
+        row.StatusBeforeOverride, row.Status = row.Status, status
+        if child is not None:
+            child.StatusBeforeOverride, child.Status = child.StatusBeforeOverride or row.StatusBeforeOverride, status
+        return f"'{planned.name}' counted as {'succeeded' if status == 'SUCCESS' else 'failed'}."
+
+    def _skip(self, targets: List[Planned], why: str) -> str:
+        skipped = [p for p in targets if p.row.Status in NOT_STARTED]
+        for p in skipped:
+            p.row.Status, p.row.EndedDateTime = "SKIPPED", utcnow()
+        return f"Skipped ({why}): {', '.join(p.name for p in skipped) or 'nothing not yet started'}."
+
+    def _rerun(self, chain: List[Planned], planned: Planned, act: Act) -> str:
+        """Runs the chain again, each a new attempt, the first after the action's wait."""
+        self.times_used[(planned.row.Path, act.id)] += 1
+        for p in chain:
+            if p.row.Status == "RUNNING":
+                continue                    # still going: its own end stands
+            p.row.Status, p.row.ReturnCode, p.row.Reason, p.row.StatusBeforeOverride = "PENDING", None, None, None
+            p.row.EndedDateTime, p.process = None, None
+        chain[0].start_after = time.time() + act.wait_seconds
+        used = self.times_used[(planned.row.Path, act.id)]
+        wait = f" after {act.wait_seconds} s" if act.wait_seconds else ""
+        return (f"Rerunning {', '.join(p.name for p in chain)}{wait} "
+                f"(rerun {used} of at most {act.max_times}).")
+
+    def _downstream(self, planned: Planned) -> List[Planned]:
+        """Every job that waits for this one, directly or not."""
+        found, queue = [], [planned.name]
+        while queue:
+            name = queue.pop()
+            for p in self.items:
+                if p not in found and any(target == name for target, _t, _c in p.prerequisites):
+                    found.append(p)
+                    queue.append(p.name)
+        return [p for p in self.items if p in found]
+
+    def _branch(self, planned: Planned) -> List[Planned]:
+        """
+        What waits for this job, directly or not, except the jobs that wait for the outcome it had
+        (a failure path, a clean-up waiting for it to end) and what follows them: those still run.
+        """
+        row = planned.row
+        handlers = [p for p in self.items if any(
+            target == planned.name and prerequisite_state(test, codes, row.Status, row.ReturnCode) == HOLDS
+            for target, test, codes in p.prerequisites)]
+        kept = {p.name for h in handlers for p in [h] + self._downstream(h)}
+        return [p for p in self._downstream(planned) if p.name not in kept]
+
+    def _between(self, start: Planned, end: Planned) -> List[Planned]:
+        """start, and every job on a path from it to end, end included, in outline order."""
+        after_start = {p.name for p in self._downstream(start)}
+        before_end = {p.name for p in self.items if end in self._downstream(p)}
+        names = {start.name, end.name} | (after_start & before_end)
+        return [start] + [p for p in self.items if p.name in names and p is not start]
+
+    def _side_effect(self, planned: Planned, child: Optional[JobRun], act: Act) -> None:
+        o = self.options
+        instance = start_workflow(act.target_job, o.spool_dir, o.api_url, o.working_root, o.log_level)
+        self._event(planned, child, act, "TOOK_EFFECT", f"Started workflow '{act.target_job}', instance {instance}.")
+
+    def _event(self, planned: Planned, child: Optional[JobRun], act: Act, result: str, message: str) -> None:
+        self.db.add(ReactionEvent(JobRun_id=child.id if child else self.record.id, WorkflowRun_id=self.record.id,
+                                  WorkflowPath=planned.row.Path, ReactionAction_id=act.id, Action=act.action,
+                                  Result=result, Message=message))
+        (job_log.warning if result == "LIMIT_REACHED" else job_log.summary)(message)
 
     def _outcome(self, planned: Planned, exit_code: int) -> Tuple[str, Optional[int], Optional[str], Optional[JobRun]]:
         """How the job ended, from its run's record; failing that, from its runner's exit code."""
@@ -327,6 +511,10 @@ class WorkflowRunner:
         if child is not None and child.EndedDateTime is not None:
             _remove(planned.output_path)
             return child.Status, child.ReturnCode, child.Reason, child
+        if planned.kill_sent or exit_code < 0:      # a negative exit code: a signal stopped it
+            _remove(planned.output_path)
+            job_log.warning(f"'{planned.name}' was killed before it could record anything.")
+            return "FAILED", None, "KILLED", child
         tail = _tail(planned.output_path)
         job_log.warning(f"'{planned.name}' left no record of how it ended; its runner exited with {exit_code}."
                         + (f" It said: {tail}" if tail else ""))
@@ -381,5 +569,8 @@ def _remove(path: Optional[str]) -> None:
         os.remove(path)
 
 
-def run_workflow(db: Session, workflow: Job, options: RunOptions) -> int:
-    return WorkflowRunner(db, workflow, options).run()
+def run_workflow(db: Session, workflow: Job, options: RunOptions, own: Optional[OwnReactions] = None) -> int:
+    """Runs the workflow once. own: its own Reactions, when it runs on its own (not inside another)."""
+    runner = WorkflowRunner(db, workflow, options)
+    runner.own = own
+    return runner.run()

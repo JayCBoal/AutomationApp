@@ -61,6 +61,9 @@ WHERE NOT EXISTS (SELECT 1 FROM StepTypes WHERE Code = 'FOR_EACH_FILE');
 INSERT INTO StepTypes (Name, Code, Description)
 SELECT 'Simulate', 'SIMULATE', 'Stands in for real work while a workflow is built and tried: writes what it is told to the job log, waits, and ends with a chosen return code'
 WHERE NOT EXISTS (SELECT 1 FROM StepTypes WHERE Code = 'SIMULATE');
+INSERT INTO StepTypes (Name, Code, Description)
+SELECT 'Set Return Code', 'SET_RETURN_CODE', 'Sets the job''s return code and carries on; if several run, the last one wins'
+WHERE NOT EXISTS (SELECT 1 FROM StepTypes WHERE Code = 'SET_RETURN_CODE');
 
 -- The parameters each step type takes are not listed here. They are declared by the handlers
 -- in the code and copied into the StepDefinitions table by:  python3 -m app.catalog
@@ -343,3 +346,88 @@ INSERT INTO WorkflowPrerequisites (id, Item_id, TargetItem_id, Test, ReturnCodes
 (5, 6, 5, 'FAILED',  NULL),
 (6, 7, 5, 'RC',      '4'),
 (7, 8, 7, 'ENDED',   NULL);
+
+-- ----------------------------------------------------------------------------
+-- 6. A sample of Reactions and Disable here (docs/WORKFLOWS_PHASE3.md), on stand-ins:
+--    - Feed times out (return code 8); its own Reactions rerun it twice, then count it as
+--      succeeded: carry on without it.
+--    - Load_rows ends with return code 4 from a Set Return Code step ("rows rejected"); this
+--      use counts 4 as succeeded.
+--    - Validate fails; this use reruns from Stage once, then skips the rest of its branch
+--      (Publish).
+--    - Archive is disabled here to pass through; Tidy runs whatever happened.
+-- ----------------------------------------------------------------------------
+INSERT INTO MasterObjects (id, ObjectType) VALUES
+(26, 'JOB'), (27, 'JOB'), (28, 'JOB'), (29, 'JOB'), (30, 'JOB'), (31, 'JOB'), (32, 'JOB');
+
+INSERT INTO Jobs (MasterObject_id, JobKey, Description) VALUES
+(26, 'DEV-SIM-FEED',      'Stand-in: fetches a rates feed, which times out (return code 8). Its Reactions: rerun twice, then carry on without it'),
+(27, 'DEV-SIM-LOAD_ROWS', 'Stand-in: loads rows, and sets return code 4 when some are rejected'),
+(28, 'DEV-SIM-STAGE',     'Stand-in: stages the batch'),
+(29, 'DEV-SIM-VALIDATE',  'Stand-in: validates the staged batch, and fails: the totals do not balance'),
+(30, 'DEV-SIM-PUBLISH',   'Stand-in: publishes the validated batch'),
+(31, 'DEV-SIM-ARCHIVE',   'Stand-in: archives the batch');
+INSERT INTO Jobs (MasterObject_id, JobKey, JobType, Description) VALUES
+(32, 'DEV-REACTIONS_SAMPLE', 'WORKFLOW', 'Sample workflow: Reactions (rerun, count as, rerun from, skip the rest of the branch) and Disable here');
+
+INSERT INTO JobSteps (id, Job_MasterObject_id, StepType_id, StepOrder, StepTitle, StepName)
+SELECT 26, 26, id, 1, 'Fetch the feed', 'Fetch_the_feed' FROM StepTypes WHERE Code = 'SIMULATE';
+INSERT INTO JobSteps (id, Job_MasterObject_id, StepType_id, StepOrder, StepTitle, StepName)
+SELECT 27, 27, id, 1, 'Load the rows', 'Load_the_rows' FROM StepTypes WHERE Code = 'SIMULATE';
+INSERT INTO JobSteps (id, Job_MasterObject_id, StepType_id, StepOrder, StepTitle, StepName)
+SELECT 28, 27, id, 2, 'Some rows were rejected', 'Some_rows_were_rejected' FROM StepTypes WHERE Code = 'SET_RETURN_CODE';
+INSERT INTO JobSteps (id, Job_MasterObject_id, StepType_id, StepOrder, StepTitle, StepName)
+SELECT 29, 28, id, 1, 'Stage', 'Stage' FROM StepTypes WHERE Code = 'SIMULATE';
+INSERT INTO JobSteps (id, Job_MasterObject_id, StepType_id, StepOrder, StepTitle, StepName)
+SELECT 30, 29, id, 1, 'Validate', 'Validate' FROM StepTypes WHERE Code = 'SIMULATE';
+INSERT INTO JobSteps (id, Job_MasterObject_id, StepType_id, StepOrder, StepTitle, StepName)
+SELECT 31, 30, id, 1, 'Publish', 'Publish' FROM StepTypes WHERE Code = 'SIMULATE';
+INSERT INTO JobSteps (id, Job_MasterObject_id, StepType_id, StepOrder, StepTitle, StepName)
+SELECT 32, 31, id, 1, 'Archive', 'Archive' FROM StepTypes WHERE Code = 'SIMULATE';
+
+INSERT INTO JobStepParameters (JobStep_id, ParameterName, ParameterValue) VALUES
+(26, 'Messages',    'Fetching the rates feed
+The feed timed out'),
+(26, 'ReturnCode',  '8'),
+(27, 'Messages',    'Loading 120 rows'),
+(28, 'ReturnCode',  '4'),
+(28, 'Message',     '3 rows were rejected'),
+(29, 'Messages',    'Staging the batch'),
+(30, 'Messages',    'Validating the staged batch'),
+(30, 'Fail',        'True'),
+(30, 'FailMessage', 'The totals do not balance'),
+(31, 'Messages',    'Publishing the batch'),
+(32, 'Messages',    'Archiving the batch');
+
+INSERT INTO WorkflowItems (id, Workflow_MasterObject_id, ItemName, Job_MasterObject_id, JoinRule, ItemOrder, DisabledHere, ReactionsOverridden) VALUES
+(9,  32, 'Feed',      26, 'ALL', 1, NULL,           0),
+(10, 32, 'Load_rows', 27, 'ALL', 2, NULL,           1),
+(11, 32, 'Stage',     28, 'ALL', 3, NULL,           0),
+(12, 32, 'Validate',  29, 'ALL', 4, NULL,           1),
+(13, 32, 'Publish',   30, 'ALL', 5, NULL,           0),
+(14, 32, 'Archive',   31, 'ALL', 6, 'PASS_THROUGH', 0),
+(15, 32, 'Tidy',      24, 'ALL', 7, NULL,           0);
+
+INSERT INTO WorkflowPrerequisites (id, Item_id, TargetItem_id, Test, ReturnCodes) VALUES
+(8,  10, 9,  'SUCCESS', NULL),
+(9,  11, 10, 'SUCCESS', NULL),
+(10, 12, 11, 'SUCCESS', NULL),
+(11, 13, 12, 'SUCCESS', NULL),
+(12, 14, 10, 'SUCCESS', NULL),
+(13, 15, 12, 'ENDED',   NULL),
+(14, 15, 14, 'SUCCESS', NULL);
+
+-- Feed's own (on the job); Load_rows' and Validate's (on their use in this workflow)
+INSERT INTO Reactions (id, Job_MasterObject_id, Item_id, Section, ReactionOrder, WhenTest, WhenReturnCodes) VALUES
+(1, 26,   NULL, 'NEXT', 1, 'RC',     '8'),
+(2, 26,   NULL, 'NEXT', 2, 'FAILED', NULL),
+(3, NULL, 10,   'NEXT', 1, 'RC',     '4'),
+(4, NULL, 12,   'NEXT', 1, 'FAILED', NULL),
+(5, NULL, 12,   'NEXT', 2, 'FAILED', NULL);
+
+INSERT INTO ReactionActions (id, Reaction_id, ActionOrder, Action, MaxTimes, WaitSeconds, TargetItem_id) VALUES
+(1, 1, 1, 'RERUN',              2,    2,    NULL),
+(2, 2, 1, 'COUNT_AS_SUCCEEDED', NULL, NULL, NULL),
+(3, 3, 1, 'COUNT_AS_SUCCEEDED', NULL, NULL, NULL),
+(4, 4, 1, 'RERUN_FROM',         1,    0,    11),
+(5, 5, 1, 'SKIP_BRANCH',        NULL, NULL, NULL);

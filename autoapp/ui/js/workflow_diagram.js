@@ -7,8 +7,11 @@
  *
  * What it is given, to draw(canvas, diagram, handlers):
  *     diagram.items:  [{ id, name, sub, kind ("JOB" or "WORKFLOW"), disabled (words, or null),
- *                        join ("ALL" or "ANY"), status (a run's state, or null), statusText }]
+ *                        join ("ALL" or "ANY"), status (a run's state, or null), statusText,
+ *                        disabledHere ("STOP", "PASS_THROUGH" or null), reactions (words, or null) }]
  *     diagram.lines:  [{ id, from, to, test, codes }]       "to" waits for "from"
+ *     diagram.reruns: [{ from, to, words }]   Rerun from... Reactions: "from" reruns from "to", drawn back
+ *                     upstream as a dash-dot arc after the layout, so elkjs never sees a loop
  *     diagram.direction ("RIGHT" or "DOWN"), zoom (a number, or "fit"), find (text),
  *     selected ({ kind: "item" or "line", id }, or null), editing (true lets boxes be joined by dragging)
  *     handlers.select(kind, id), handlers.connect(fromId, toId), handlers.remove(lineId) (the x on a line, while editing)
@@ -97,6 +100,9 @@ const WorkflowDiagram = (() => {
         const list = [];
         if (item.kind === "WORKFLOW") list.push(["workflow", "A workflow, used here as one job"]);
         if (item.disabled) list.push(["disabled", item.disabled]);
+        if (item.disabledHere === "STOP") list.push(["disabled", "Disabled here: it stops here, and what needs it to succeed does not run"]);
+        if (item.disabledHere === "PASS_THROUGH") list.push(["pass", "Disabled here to pass through: it counts as succeeded without running"]);
+        if (item.reactions) list.push(["reactions", item.reactions]);
         return list;
     }
 
@@ -142,7 +148,7 @@ const WorkflowDiagram = (() => {
             "elk.layered.crossingMinimization.forceNodeModelOrder": "true",
             "elk.spacing.nodeNode": "16", "elk.layered.spacing.nodeNodeBetweenLayers": "44",
             "elk.spacing.edgeNode": "12", "elk.layered.spacing.edgeNodeBetweenLayers": "14",
-            "elk.edgeLabels.placement": "CENTER", "elk.padding": "[top=24,left=36,bottom=24,right=24]",
+            "elk.edgeLabels.placement": "CENTER", "elk.padding": "[top=48,left=48,bottom=24,right=24]",
         };
     }
 
@@ -159,6 +165,12 @@ const WorkflowDiagram = (() => {
         } else if (name === "disabled") {
             svg("circle", { cx: 7, cy: 7, r: 5.5, ...stroke }, g);
             svg("path", { d: "M3.2 10.8 10.8 3.2", ...stroke }, g);
+        } else if (name === "pass") {
+            svg("rect", { x: 3.5, y: 2.5, width: 7, height: 9, rx: 1, ...stroke, "stroke-dasharray": "2 1.5" }, g);
+            svg("path", { d: "M0.5 7h12.5M10.5 4.5 13 7l-2.5 2.5", ...stroke }, g);
+        } else if (name === "reactions") {          // a circling arrow: what happens after it ends
+            svg("path", { d: "M11.5 7a4.5 4.5 0 1 1-1.4-3.3", ...stroke }, g);
+            svg("path", { d: "M10.6 1.2v2.9H7.7", ...stroke }, g);
         }
         svg("rect", { width: ICON, height: ICON, fill: "transparent" }, g);       // easier to point at
         if (words) tooltip(g, words);
@@ -173,6 +185,11 @@ const WorkflowDiagram = (() => {
                                       markerWidth: 7, markerHeight: 7, orient: "auto-start-reverse" }, d);
             svg("path", { d: "M0 0 10 5 0 10z", fill: lineStyle(test).color }, m);
         }
+        const s = svg("pattern", { id: `${prefix}p-skipped`, width: 6, height: 6, patternUnits: "userSpaceOnUse", patternTransform: "rotate(45)" }, d);
+        svg("rect", { width: 2, height: 6, fill: css("--muted"), "fill-opacity": 0.35 }, s);
+        const r = svg("marker", { id: `${prefix}a-RERUN`, viewBox: "0 0 10 10", refX: 9, refY: 5,
+                                  markerWidth: 7, markerHeight: 7, orient: "auto-start-reverse" }, d);
+        svg("path", { d: "M0 0 10 5 0 10z", fill: css("--muted") }, r);
         const p = svg("pattern", { id: `${prefix}p-running`, width: 8, height: 8, patternUnits: "userSpaceOnUse", patternTransform: "rotate(45)" }, d);
         svg("rect", { width: 4, height: 8, fill: css("--accent"), "fill-opacity": 0.22 }, p);
         svg("animateTransform", { attributeName: "patternTransform", type: "translate", from: "0 0", to: "8 0",
@@ -191,6 +208,8 @@ const WorkflowDiagram = (() => {
             WAITING: { stroke: css("--warning"), width: 2 },
             NOT_RUN: { fill: css("--page"), stroke: css("--muted"), dash: "4 3", muted: true },
             DISABLED: { stroke: css("--muted"), muted: true, crossed: true },
+            BYPASSED: { stroke: css("--muted"), dash: "5 3", muted: true, through: true },
+            SKIPPED: { fill: `url(#${prefix}p-skipped)`, stroke: css("--muted"), muted: true },
         };
         return { ...base, ...(looks[status] || {}) };
     }
@@ -201,11 +220,20 @@ const WorkflowDiagram = (() => {
         svg("rect", { x, y, width, height, rx, fill: look.fill, "fill-opacity": look.fillOpacity ?? 1,
                       stroke: look.stroke, "stroke-width": look.width, "stroke-dasharray": look.dash }, g);
         if (look.crossed) svg("path", { d: `M${x + 6} ${y + height - 6}L${x + width - 6} ${y + 6}`, stroke: css("--muted"), "stroke-width": 1.5 }, g);
+        if (look.through) svg("path", { d: `M${x - 4} ${y + height / 2}H${x + width + 4}`, stroke: css("--muted"), "stroke-width": 1.2,
+                                        "marker-end": null, "stroke-dasharray": "2 2" }, g);
+    }
+
+    /** In the editor, a job disabled here looks as it will in a run. */
+    function lookOf(item) {
+        if (item.status) return item.status;
+        return { STOP: "DISABLED", PASS_THROUGH: "BYPASSED" }[item.disabledHere] || null;
     }
 
     function drawBox(layer, item, at, model, diagram, prefix) {
-        const g = svg("g", { class: "wf-box", "data-id": item.id, "data-name": item.name, "data-status": item.status || null, cursor: "pointer" }, layer);
-        const look = boxLook(item.status, prefix);
+        const g = svg("g", { class: "wf-box", "data-id": item.id, "data-name": item.name, "data-status": item.status || null,
+                             "data-disabled-here": item.disabledHere || null, cursor: "pointer" }, layer);
+        const look = boxLook(lookOf(item), prefix);
         drawShape(g, look, at.x, at.y, at.width, at.height, 6);
         if (matchesFind(item, diagram.find)) svg("rect", { class: "wf-found", x: at.x - 4, y: at.y - 4, width: at.width + 8, height: at.height + 8, rx: 9,
                                                             fill: "none", stroke: css("--accent"), "stroke-width": 2.5 }, g);
@@ -294,6 +322,29 @@ const WorkflowDiagram = (() => {
         if (diagram.editing && last) drawRemover(g, last, words, selected, selected ? 3 : 1.6);
     }
 
+    /**
+     * Rerun from...: an arc from the job whose Reaction it is back to the job it reruns from, above the boxes
+     * (left of them, top to bottom), dash-dot in the muted colour, its label marked ↺ (docs/WORKFLOWS.md).
+     */
+    function drawRerun(layer, rerun, from, to, direction, prefix) {
+        const across = direction === "RIGHT";
+        const start = across ? { x: from.x + from.width / 2, y: from.y } : { x: from.x, y: from.y + from.height / 2 };
+        const end = across ? { x: to.x + to.width / 2, y: to.y } : { x: to.x, y: to.y + to.height / 2 };
+        const lift = 26 + Math.abs(across ? start.x - end.x : start.y - end.y) * 0.12;
+        const control = across ? `${(start.x + end.x) / 2} ${Math.min(start.y, end.y) - lift}`
+                               : `${Math.min(start.x, end.x) - lift} ${(start.y + end.y) / 2}`;
+        const g = svg("g", { class: "wf-rerun", "data-from": rerun.from, "data-to": rerun.to }, layer);
+        svg("path", { d: `M${start.x} ${start.y}Q${control} ${end.x} ${end.y}`, fill: "none", stroke: css("--muted"),
+                      "stroke-width": 1.6, "stroke-dasharray": "8 3 2 3", "marker-end": `url(#${prefix}a-RERUN)` }, g);
+        const [cx, cy] = control.split(" ").map(Number);
+        const mid = { x: (start.x + 2 * cx + end.x) / 4, y: (start.y + 2 * cy + end.y) / 4 };
+        const label = "↺ rerun";
+        const width = textWidth(label, SMALL_FONT) + 10;
+        svg("rect", { x: mid.x - width / 2, y: mid.y - 8, width, height: 16, rx: 3, fill: css("--page"), stroke: css("--muted") }, g);
+        svg("text", { x: mid.x, y: mid.y + 4, "text-anchor": "middle", fill: css("--muted"), style: `font: ${SMALL_FONT}` }, g).textContent = label;
+        tooltip(g, rerun.words);
+    }
+
     /** "ANY" where lines enter a job that needs only one of them. */
     function drawAnyMarker(layer, at, direction) {
         const across = direction === "RIGHT";
@@ -324,6 +375,10 @@ const WorkflowDiagram = (() => {
             const item = byId.get(node.id);
             const entering = diagram.lines.filter(line => line.to === item.id).length;
             if (item.join === "ANY" && entering > 1) drawAnyMarker(over, node, diagram.direction);
+        }
+        const at = new Map((result.children || []).map(node => [node.id, node]));
+        for (const rerun of diagram.reruns || []) {
+            if (at.has(rerun.from) && at.has(rerun.to)) drawRerun(over, rerun, at.get(rerun.from), at.get(rerun.to), diagram.direction, prefix);
         }
         return root;
     }
@@ -435,10 +490,19 @@ const WorkflowDiagram = (() => {
         };
         TESTS.forEach((test, i) => row(keySample("line", test, `key-l${i}-`), `Line: waits until the job before it ${lineStyle(test).words}`));
         const states = { PENDING: "Not started yet", WAITING: "Waiting on a prerequisite", RUNNING: "Running", SUCCESS: "Succeeded",
-                         FAILED: "Failed", NOT_RUN: "Not run: its prerequisites can't be met, or the run was cancelled", DISABLED: "Disabled" };
+                         FAILED: "Failed", NOT_RUN: "Not run: its prerequisites can't be met, or the run was cancelled",
+                         DISABLED: "Disabled (also: disabled here, to stop)", BYPASSED: "Bypassed: disabled here to pass through",
+                         SKIPPED: "Skipped by a Reaction" };
         Object.entries(states).forEach(([status, words], i) => row(keySample("box", status, `key-b${i}-`), `In a run: ${words}`));
+        const rerun = svg("svg", { width: 70, height: 22, "aria-hidden": "true" });
+        defs(rerun, "key-r-");
+        svg("path", { d: "M62 18Q33 -6 6 18", fill: "none", stroke: css("--muted"), "stroke-width": 1.6, "stroke-dasharray": "8 3 2 3",
+                      "marker-end": "url(#key-r-a-RERUN)" }, rerun);
+        row(rerun, "↺ Rerun from...: a Reaction that runs an earlier job, and those between, again");
         row(keySample("icon", "workflow", "key-i1-"), "A workflow, used as one job");
-        row(keySample("icon", "disabled", "key-i2-"), "Its job is disabled");
+        row(keySample("icon", "disabled", "key-i2-"), "Its job is disabled, or it is disabled here");
+        row(keySample("icon", "pass", "key-i3-"), "Disabled here to pass through: counts as succeeded without running");
+        row(keySample("icon", "reactions", "key-i4-"), "Has Reactions: what happens after it ends");
         row(Object.assign(document.createElement("span"), { className: "wf-any-sample", textContent: "ANY" }),
             "Starts when any one of the lines into it is satisfied. Point at any line or marker to read what it means.");
     }

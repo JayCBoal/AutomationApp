@@ -265,7 +265,7 @@ To be judged again in practice once built, above all the outside dependencies.
   - screens: a Workflows list (like the other search pages); a workflow page editing in Outline view (add a job, set its prerequisites); Run; the outline showing the run live;
   - not in Phase 1: embedded jobs, Reactions, outside dependencies, restarts, the diagram, Find.
 - **Phase 2, the diagram** (shortcoming 5): first a clickable mockup (a static page with a sample workflow: embedded workflows, outside dependencies both ways, a run in progress) to judge the look by eye; then elkjs, Diagram | Outline, coloured and styled lines, markers, run states.
-- **Phase 3, return codes and Reactions** (shortcoming 2): Success return codes, and a step passing on a program's return code; Reactions on a job's end (What happens next and Also; Count as; Rerun this job and Rerun from… with limits; Cancel and Kill; Hold); Disable here (stop or pass through) and the shared-job warning.
+- **Phase 3, return codes and Reactions** (shortcoming 2): a Set Return Code step; Reactions on a job's end, a simple outcome choice (What happens next and Also; Count as; Rerun this job and Rerun from… with limits; Skip…; Kill the workflow; Start a workflow), on the job with overrides on a use; Kill on any running job (Kill and Cancel on a workflow); Disable here (stop or pass through). Plan: [WORKFLOWS_PHASE3.md](WORKFLOWS_PHASE3.md). Hold for an operator and a When written as an expression moved to TO-DO (2026-10-18).
 - **Phase 4, conditions** (shortcoming 3): prerequisites in flow control's SQL language with `%{...}` paths; the Operations object downstream, with For Each File over an upstream job's files; the builder; Explain; workflow variables.
 - **Phase 5, outside dependencies** (shortcoming 4): prerequisites on jobs in other workflows (current or latest run), on endpoints (minimum age, sharing code with the Check Files change), on time windows and dates; their markers; Needed by.
 - **Phase 6, embedded and shared workflows** (shortcoming 6): embedded jobs and workflows, workflows used in workflows, frames, deep Find.
@@ -293,6 +293,16 @@ To be judged again in practice once built, above all the outside dependencies.
 - How it avoids the clumsiness: a common core in Jobs, and type-specific content beside it, never forced into one shape: steps for a steps job (JobSteps, as now), items and prerequisites for a workflow (their own tables). Pages and runners choose by type: a workflow's page shows the outline or diagram, never an empty steps editor; its run goes to the workflow runner; it has no working folder.
 - **No other job types for now.** "What kind of work" is a step type (handlers, help, preview, outputs, operation records and masking already exist for those), and a job of one step costs nothing. Job types differ only in structure.
 - **The Simulate step type** (the owner's idea from testing RunMyJobs chains with a configurable dummy job): logs given lines, waits a given time, exits with a given return code, optionally fails with a given message. For building and testing workflows without real jobs.
+
+### Jobs may still run on their own (2026-10-18)
+
+- Putting jobs in workflows is the advice, not a rule. ActiveBatch called it best practice without enforcing it; RunMyJobs bills a chain's run like a job's, which pushes people to odd chain structures and workarounds for dependencies.
+- Why not a rule:
+  - building and testing a job means running it by itself (Run Job), and wrapping it in a workflow first is ceremony;
+  - schedulers start jobs by key ([INTEGRATION.md](INTEGRATION.md), the Stand-in Scheduler, the RunMyJobs draft), a contract not to break;
+  - RunMyJobs has jobs on their own, so the rule would not carry over to it.
+- What AutoApp shows instead: a workflow costs no more than a job, and a one-job workflow is cheap to make, so dependencies go where they belong because nothing pushes them elsewhere.
+- **Reactions apply wherever the job runs.** Only those with nothing to act on outside a workflow are left out on its own: Rerun from… (needs an upstream job), Skip… (other jobs or a branch), Kill the workflow. These live only on a use, and would even if every job ran in a workflow: a job is used in many workflows, so its own list cannot name a job in one of them; and what a job *is* goes on the job, how it *fits in* on its use.
 
 ### Where workflows run (2026-10-17)
 

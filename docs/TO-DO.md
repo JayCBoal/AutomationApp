@@ -130,6 +130,10 @@ Designed with the owner and built in RunMyFiles on 2026-10-16, then brought over
 - **Connections.** A table of registered databases and servers (type, host, port, database, a credential), named by a step instead of a connection URL in a secret variable. Needed for a production-ready application; for the demo, Run SQL's `Database` is a URL in a secret variable.
 - **Run SQL: more than one statement, and bound values.** One statement per step for now, with values put in by `${...}` placeholders. A script of several statements, or values passed safely as bound parameters, would come with the Connections work.
 - **Retention.** A purge rule for `Operations`, which grows by one row per file.
+- **From workflows Phase 3 (2026-10-18), not needed for workflows:**
+  - **A Script step:** a script in one of several languages (Bash, CMD, PowerShell, Python…), its exit code the job's return code, making the step library user-extensible. Needs: which languages, where it runs, limits on what it may do on the host.
+  - **A Reaction's When as an expression**, combining a return code with other outputs (`%{Load.ReturnCode} IN (4, 8) AND %{Load.FileCount} = 0`), in flow control's condition language.
+  - **Hold for an operator** as a Reaction: pauses the workflow at a job; a first version needs only **Release**.
 - **Killed runs.** Pick up spool files left as `.jsonl.tmp` by a run that did not end normally, and mark the run accordingly.
 
 5. **Runner uses the API.** Depends on decision 2.

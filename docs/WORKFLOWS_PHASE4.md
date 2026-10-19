@@ -2,7 +2,7 @@
 
 The fourth phase of [WORKFLOWS.md](WORKFLOWS.md) ("Implementation in phases"): **conditions people can read and write.** It answers shortcoming 3 ([PROJECT_GOALS.md](PROJECT_GOALS.md) goal 2): RunMyJobs' precondition expressions are hard to read, harder to write, poorly documented, have no helpers in the UI, and cannot be validated or debugged. Workflow conditions come with help, validation and a way to see why they evaluated as they did.
 
-Status: **agreed with the owner 2026-10-18; steps 1 to 6 built 2026-10-18 and decisions 7 to 17 approved by the owner the same day. Still to do in Phase 4: the Operations object, For Each File over an upstream job's files (both to rethink under the telemetry principle, TO-DO decision 10) and workflow variables.**
+Status: **agreed with the owner 2026-10-18; steps 1 to 6 built 2026-10-18 and decisions 7 to 17 approved by the owner the same day. Still to do in Phase 4: workflow variables, planned with the owner 2026-10-19 (below, "The rest of Phase 4"). The Operations object and For Each File over an upstream job's files are deferred to a later workflow enhancement (decision 18).**
 
 ## Starting point
 
@@ -66,3 +66,29 @@ Already built:
 15. **StartTime and EndTime** of a job in a workflow are in local time, as a step's are.
 16. **The builder's shape** (reworked after the owner's review, 2026-10-18): groups, each a block headed **Match all (AND) / any (OR) of the following**, holding conditions and groups inside it, to any depth; **+ Condition** and **+ Group** in every group; a group inside another starts as the other of all and any, and is written in brackets. A condition is subject, comparison and value; comparisons are `is`, `is not`, less, more, `is like`; true-or-false outputs (Succeeded and the like) offer *is true* and *is false*. Typed text opens in the builder when it is in that shape, mixed AND and OR at any depth included; anything else (IS NULL, IN, BETWEEN, functions) is edited as text. The first version (rows with a joiner each, groups one level deep, one joiner between all groups) was hard to read: what was shown was not how it was evaluated.
 17. **The panel beside the diagram** (the owner's review, 2026-10-18): wider (560 px), so a rule's rows each fit on one line; shown only while a job is selected, with **Hide Job pane ×**; a click anywhere on the empty canvas, beside the drawing too, also deselects; so the diagram otherwise has the full width. While editing, each job changed since the last save is outlined and carries a pencil marker; what waits for what is compared by the jobs' identity, so renaming a job marks only that job. **+ Add a job** moved below the diagram. The pane is resized by dragging its left edge (320 px at least, leaving the diagram 300 px), remembered in the browser; a double-click on the edge puts it back to 560 px. A condition's row wraps when it does not fit, so nested groups stay inside the pane.
+
+## The rest of Phase 4: workflow variables (planned with the owner 2026-10-19)
+
+The part of Phase 4 the owner called 4b. Status: **decisions 18 to 21 agreed with the owner 2026-10-19; plan agreed the same day; build started.**
+
+### Settled with the owner (2026-10-19)
+
+18. **The Operations object and For Each File over an upstream job's files: deferred**, a later workflow enhancement, not dropped. The owner's correction: the telemetry principle rules out reading the Operations *table*, which is filled in after the fact; the Operations *object* (the records a job run builds and sends to the telemetry API) is already in hand, and could travel downstream with the job's own end report without touching the table. Deferred because it does not make the workflow model sturdier, no later phase needs it, and return codes say what downstream needs in the common case. Handed to the roadmap (2026-10-19).
+19. **Workflow variables: a must.** A workflow's `${...}` reach every job it runs, fixed once when the run starts (what Resume will need in Phase 7). A use of a job can override a variable for that use only. Inheritance through workflows used in workflows comes with Phase 6, which brings them.
+20. **A workflow's tags feed its jobs too**, just below the workflow's own variables, as an application's tags count just below the application's own. No reason against was found: tags pass only variables down in this phase.
+21. **The order, highest first:** the use's override, the job's own, the workflow's own, the workflow's tags, the job's tags, then the endpoint, application, entity, system values and the scheduler as now. Where the workflow and the job's tags disagree, the workflow wins: it sets the context (a workflow tagged `Environment / TEST` runs its jobs as TEST). **Swapped through the existing system-wide Variable precedence setting**, which gains *Workflow* and *This use*, not by a switch on each workflow (D53's switch is replaced): one order everywhere keeps "where did this value come from" predictable.
+
+### What is in
+
+- **The workflow page** gets the job page's Variables and Tags sections (a workflow is a job, so it already holds both; they have had no screen there).
+- **The job pane** (beside the diagram, and in the outline) gets **Variables for this use**: name, value, secret, description, overriding the job's own for this use only.
+- **The engine:** the workflow runner works out the workflow's values (its own over its tags', each `${...}` in them filled in) once, as the run starts, and keeps them on the workflow run. Each job run in the workflow reads them as the *Workflow* level and its use's overrides as the *This use* level. A secret is kept as a reference to its variable, never as its value. A job run on its own is unchanged.
+- **Where each value came from:** the job page's view of what a job can see, and the pre-run check's messages, say "from workflow MONTH_END" or "from this use".
+- **The Variable precedence setting** gains *Workflow* and *This use*, in the order above; an order saved before gets them in that place, not at the bottom.
+
+### Steps
+
+1. **Model and migration:** a use's variables; the values fixed on a workflow run; the setting's two new levels.
+2. **Engine:** fixing the workflow's values at the start; the two levels in each job run; the pre-run check.
+3. **Pages:** Variables and Tags on the workflow page; Variables for this use in the job pane; where each value came from.
+4. **Sample, docs and tests:** a sample workflow whose variable and tag reach its jobs, with one use overriding; CHANGE_LOG, WORKFLOWS.md, the decision register; engine tests for the order (each level beating the one below it, the setting swapping them, secrets never stored), UI tests for the new sections.

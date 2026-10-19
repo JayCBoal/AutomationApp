@@ -190,7 +190,7 @@ Compiled 2026-10-18, from the design record and Phases 1 to 4.
 
 **D42. A job's operations as an object downstream** (`Extract.Operations` in conditions) and **For Each File over an upstream job's files.**
 - *Why (original):* the owner's idea: conditions could ask about particular files, and the trace could link the handoff, without copying anything between jobs.
-- *Status:* To rethink, as the rest of Phase 4 (the owner: Phase 4b is part of Phase 4): both would make workflow decisions depend on the audit trail, against D40. The owner's view: where a job's outcome matters downstream, the job should say so with return codes. *Source:* WORKFLOWS.md, "A job's operations as an object downstream"; WORKFLOWS_PHASE4.md.
+- *Status:* Deferred (2026-10-19), a later workflow enhancement, not dropped. D40 rules out reading the Operations *table*, filled in after the fact; the Operations *object* (the records a job run builds and sends to the telemetry API) is already in hand and could travel downstream with the job's own end report (the owner's correction: an earlier session had wrongly read the principle as ruling out the object too). Deferred because it does not make the workflow model sturdier, no later phase needs it, and return codes cover the common case. Handed to the roadmap (2026-10-19). *Source:* WORKFLOWS.md, "A job's operations as an object downstream"; WORKFLOWS_PHASE4.md, decision 18.
 
 **D43. Downstream sees a job's net result**: resumed attempts add up; restarted from the beginning, only the latest counts; every attempt stays in Job History.
 - *Why:* what follows needs the job's actual outcome, not one attempt's.
@@ -235,9 +235,18 @@ Compiled 2026-10-18, from the design record and Phases 1 to 4.
 **D52. ~~Start rule greyed out until a job waits for two jobs or more; Custom rule greyed out until built.~~**
 - *Status:* Replaced by D46 (Phase 4): All and Any stay greyed out with fewer than two jobs, as they mean the same there; Custom rule is always offered.
 
-**D53. Workflow variables**: a workflow's own `${...}`, inherited by what is embedded in it; precedence a use's overrides, the job's own, the workflow's, tags, the scheduler's; one setting swaps tags and workflow variables.
+**D53. ~~Workflow variables~~**: a workflow's own `${...}`, inherited by what is embedded in it; precedence a use's overrides, the job's own, the workflow's, tags, the scheduler's; ~~one setting swaps tags and workflow variables~~.
 - *Why:* the order between tags and workflow variables is debatable, so one switch covers it; a full reorder would make "where did this value come from" hard to answer.
-- *Status:* Designed, the rest of Phase 4. *Source:* WORKFLOWS.md, "Topic 3's other targets".
+- *Status:* Replaced by D91 and D92 (2026-10-19): the variables and their order stand; the per-workflow switch gave way to the system-wide Variable precedence setting, built since. *Source:* WORKFLOWS.md, "Topic 3's other targets".
+
+**D91. Workflow variables**: a workflow's `${...}` reach every job it runs, fixed once when the run starts; a use can override a variable for that use only; a secret is kept on the run as a reference, never as its value. Through workflows used in workflows with Phase 6.
+- *Why:* the owner: "a must". Fixed at the start so every job in the run sees the same values, which Resume (Phase 7) also needs; overrides on a use because a job is used in many workflows.
+- *Status:* Agreed, the rest of Phase 4. *Source:* WORKFLOWS_PHASE4.md, decision 19; replaces D53.
+
+**D92. A workflow's tags feed its jobs, and the order is the system-wide Variable precedence setting**: highest first, the use's override, the job's own, the workflow's own, the workflow's tags, the job's tags, then endpoint, application, entity, system values and the scheduler. The setting gains *Workflow* and *This use*.
+- *Why:* tags already work this way on every other object (just below the object's own); where the workflow and a job's tags disagree, the workflow sets the context (a workflow tagged `Environment / TEST` runs its jobs as TEST). One order everywhere, rather than a switch on each workflow, keeps "where did this value come from" predictable, the concern behind D53's switch.
+- *Considered:* the job's tags above the workflow's (the workflow only filling gaps); D53's per-workflow switch.
+- *Status:* Agreed, the rest of Phase 4. *Source:* WORKFLOWS_PHASE4.md, decisions 20 and 21; the owner, 2026-10-19.
 
 **D54. The condition box: one component wherever a condition is written** (Custom rule, Succeeds when, If, Else If, While): Builder or Text, Names and outputs, checking as you type, Explain.
 - *Why:* shortcoming 3 asks for help, validation and a way to see why a condition came out as it did; one box means one thing to learn in the job editor and the workflow editor alike ("One editor experience").

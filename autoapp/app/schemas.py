@@ -186,8 +186,11 @@ class WorkflowItemOut(BaseModel):
     name: str
     job_key: str = Field(..., description="The job it runs")
     job_type: str = Field(..., description="STEPS or WORKFLOW: the type of the job it runs")
-    join: str = Field("ALL", description="ALL: it starts when all its prerequisites hold; ANY: when any one does")
-    prerequisites: List[PrerequisiteOut] = Field(default_factory=list)
+    join: str = Field("ALL", description=(
+        "ALL: it starts when all its prerequisites hold; ANY: when any one does; CUSTOM: when its rule does"))
+    rule: Optional[str] = Field(None, description="With CUSTOM: its Custom rule, a condition over the jobs it names")
+    prerequisites: List[PrerequisiteOut] = Field(default_factory=list, description=(
+        "With CUSTOM, the jobs its rule names, each with the test RULE"))
     disabled_here: Optional[str] = Field(None, description="STOP or PASS_THROUGH: disabled in this workflow only")
     job_active: bool = Field(True, description="Whether the job it runs is enabled")
     reactions_overridden: bool = Field(False, description="True: reactions below replace the job's own")
@@ -212,6 +215,10 @@ class JobDetail(BaseModel):
     inherited_variables: List[InheritedVariableOut] = Field(
         default_factory=list, description="What the job's tags give it, in name order")
     items: List[WorkflowItemOut] = Field(default_factory=list, description="A workflow's jobs, in outline order")
+    succeeds_when: Optional[str] = Field(None, description=(
+        "A workflow's completion rule: it succeeds when this condition holds. Empty: unless a failure went unhandled"))
+    return_code_from: Optional[str] = Field(None, description=(
+        "A workflow's completion rule: it ends with this job's return code. Empty: 0 if it succeeded, 1 if not"))
     used_in: List[str] = Field(default_factory=list, description="The workflows that use it, in name order")
     reactions: List[ReactionIO] = Field(default_factory=list, description="What happens after it ends, in order")
 
@@ -227,8 +234,10 @@ class WorkflowItemSave(BaseModel):
     name: Optional[str] = Field(None, max_length=100, description=(
         "Its name in the workflow: letters, digits, '_' and '-'. Left out, it is made from the job key"))
     job_key: str = Field(..., max_length=320, description="The job it runs")
-    join: str = Field("ALL", description="ALL or ANY")
-    prerequisites: List[PrerequisiteSave] = Field(default_factory=list)
+    join: str = Field("ALL", description="ALL, ANY or CUSTOM")
+    rule: Optional[str] = Field(None, description=(
+        "With CUSTOM: a condition over %{Name.Output} and ${...}; the jobs it names become its prerequisites"))
+    prerequisites: List[PrerequisiteSave] = Field(default_factory=list, description="Ignored with CUSTOM")
     disabled_here: Optional[str] = Field(None, description="Empty, STOP (it ends Disabled) or PASS_THROUGH (Bypassed)")
     reactions_overridden: bool = Field(False, description="True: reactions replace the job's own, even when empty")
     reactions: List[ReactionIO] = Field(default_factory=list, description="Kept only when reactions_overridden")
@@ -258,6 +267,9 @@ class JobSave(BaseModel):
     success_return_codes: Optional[str] = Field(None, max_length=100, description="Empty means 0")
     steps: List[JobStepSave] = Field(default_factory=list)
     items: List[WorkflowItemSave] = Field(default_factory=list, description="A workflow's jobs, in outline order")
+    succeeds_when: Optional[str] = Field(None, description="A workflow: when it succeeds, as a condition; empty for the default")
+    return_code_from: Optional[str] = Field(None, max_length=100, description=(
+        "A workflow: the job, by its name in it, whose return code it ends with; empty for 0 or 1"))
     variables: Optional[List[VariableSave]] = Field(
         None, description="The job's own variables. Leave out to keep them as they are; send a list to replace them")
     tags: Optional[List[str]] = Field(
@@ -360,6 +372,8 @@ class RunEndRecord(BaseModel):
     Reason: Optional[str] = Field(None, max_length=40, description="Why it failed: ERROR, RETURN_CODE or KILLED")
     StatusBeforeOverride: Optional[str] = Field(None, max_length=20, description=(
         "What it ended as before a Reaction counted it as succeeded or failed"))
+    FileCount: Optional[int] = Field(None, description="How many files the run delivered (wrote to a destination)")
+    Bytes: Optional[int] = Field(None, description="The size of the files it delivered, added up")
     EndedAtUtc: datetime
 
 

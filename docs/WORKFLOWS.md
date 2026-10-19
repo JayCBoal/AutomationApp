@@ -2,7 +2,9 @@
 
 The design record for AutoApp's workflows, built up in design sessions with the owner. What a workflow is for, and the RunMyJobs shortcomings it answers, are in [PROJECT_GOALS.md](PROJECT_GOALS.md) goal 2. This page holds everything else: the starting point, what is decided, what is proposed, and the open questions.
 
-Status: **Phases 1 and 2 are built and merged; Phase 3 (return codes and Reactions) is built, waiting for the owner's review (2026-10-18).** The design topics below are all settled.
+Status: **Phases 1 to 3 are built and merged; Phase 4 (conditions) is partly built (2026-10-18): Custom rules, completion rules and the condition box, with the Operations object, For Each File over an upstream job's files and workflow variables still to do.** The design topics below are all settled.
+
+**Every decision, with its reason, is in [WORKFLOW_DECISIONS.md](WORKFLOW_DECISIONS.md)**: look there first for "why does it work like this?".
 
 ## Agenda
 
@@ -267,7 +269,8 @@ To be judged again in practice once built, above all the outside dependencies.
 - **Phase 2, the diagram** (shortcoming 5): first a clickable mockup (a static page with a sample workflow: embedded workflows, outside dependencies both ways, a run in progress) to judge the look by eye; then elkjs, Diagram | Outline, coloured and styled lines, markers, run states.
 - **Phase 3, return codes and Reactions** (shortcoming 2): a Set Return Code step; Reactions on a job's end, a simple outcome choice (What happens next and Also; Count as; Rerun this job and Rerun from… with limits; Skip…; Kill the workflow; Start a workflow), on the job with overrides on a use; Kill on any running job (Kill and Cancel on a workflow); Disable here (stop or pass through). Plan: [WORKFLOWS_PHASE3.md](WORKFLOWS_PHASE3.md). Hold for an operator and a When written as an expression moved to TO-DO (2026-10-18).
 - **Phase 4, conditions** (shortcoming 3): prerequisites in flow control's SQL language with `%{...}` paths; the Operations object downstream, with For Each File over an upstream job's files; the builder; Explain; workflow variables.
-  - **Set Return Code becomes Set Return Values**, the owner's idea (2026-10-18), was noted here, then moved to [ROADMAP.md](ROADMAP.md) the same day: nothing in the workflow phases depends on it.
+  - Split (2026-10-18): Phase 4 built job outputs (`%{Load.Succeeded}`, `FileCount` and the rest), Custom rules, Succeeds when and Return code from, and the condition box (help, validation, the builder, Explain). Plan: [WORKFLOWS_PHASE4.md](WORKFLOWS_PHASE4.md). The Operations object, For Each File over an upstream job's files and workflow variables are Phase 4b, the first two to reconsider (TO-DO decision 10).
+  - **Set Return Code becomes Set Return Values**, the owner's idea (2026-10-18), was noted here, then handed the same day to the roadmap planning session, for [ROADMAP.md](ROADMAP.md): nothing in the workflow phases depends on it. It still sets the job's return code, and can also set named values of the job's own (`RowsRejected`, `BatchId`) that join its outputs, so jobs downstream read them as `%{Load.RowsRejected}` in conditions and steps.
 - **Phase 5, outside dependencies** (shortcoming 4): prerequisites on jobs in other workflows (current or latest run), on endpoints (minimum age, sharing code with the Check Files change), on time windows and dates; their markers; Needed by.
 - **Phase 6, embedded and shared workflows** (shortcoming 6): embedded jobs and workflows, workflows used in workflows, frames, deep Find.
 - **Phase 7, restarts:** the Rerun ▸ menu; Resume from the record (not done, partly done, unknown); flow control state; Advanced….
@@ -322,6 +325,7 @@ To be judged again in practice once built, above all the outside dependencies.
   - *Succeeds when:* the default above, or chosen jobs succeeded, or a condition (flow control's language).
   - *Return code:* 0 or 1 (the default), a chosen job's, or mapped from conditions.
   - With Reactions (Phase 3); conditions need Phase 4.
+  - Built in Phase 4 (2026-10-18): *Succeeds when* the default or a condition, and *Return code* the default or a chosen job's. *Ends when* waits.
 
 ### Kill, Cancel and Hold on a workflow (2026-10-17)
 

@@ -99,6 +99,7 @@ def describe_job(job: Job) -> JobDetail:
         tags=tag_store.paths_on(job),
         inherited_variables=inherited_variables(db, job) if db is not None else [],
         items=workflow_store.describe_items(job) if job.JobType == "WORKFLOW" else [],
+        succeeds_when=job.SucceedsWhen, return_code_from=job.ReturnCodeFrom,
         used_in=workflow_store.workflows_using(db, job) if db is not None else [],
         reactions=reaction_store.describe(job.reactions),
     )
@@ -404,7 +405,10 @@ def apply_job(db: Session, payload: JobSave, existing_key: Optional[str], who: s
 
     if job_type == "WORKFLOW":
         try:
-            changes += workflow_store.apply_items(db, job, payload.items, creating)
+            renamed = {} if creating else workflow_store.renames(job, payload.items)
+            changes += workflow_store.apply_items(db, job, payload.items, creating, renamed)
+            changes += workflow_store.apply_completion(job, payload.succeeds_when, payload.return_code_from,
+                                                       creating, renamed)
         except workflow_store.WorkflowError as e:
             raise JobStoreError(str(e))
     else:

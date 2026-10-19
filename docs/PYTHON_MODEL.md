@@ -61,6 +61,8 @@ classDiagram
         +string(20) JobType
         +int Owner_MasterObject_id
         +string(100) SuccessReturnCodes
+        +text SucceedsWhen
+        +string(100) ReturnCodeFrom
     }
     MasterObject <|-- Job
     class Scheduler {
@@ -107,6 +109,16 @@ classDiagram
         +text Details
         +datetime CreatedDateTime
     }
+    class ConditionCheck {
+        +int id
+        +int WorkflowRun_id
+        +string(1000) Path
+        +string(20) Kind
+        +text ConditionText
+        +text ValuesJson
+        +string(10) Result
+        +datetime CheckedDateTime
+    }
     class JobRun {
         +int id
         +string(36) RunID
@@ -131,6 +143,8 @@ classDiagram
         +datetime KillRequestedDateTime
         +int ProcessID
         +string(20) StatusBeforeOverride
+        +int FileCount
+        +bigint Bytes
         +string(500) LogFile
         +datetime LogRemovedDateTime
     }
@@ -250,6 +264,7 @@ classDiagram
         +string(100) ItemName
         +int Job_MasterObject_id
         +string(10) JoinRule
+        +text StartRule
         +int ItemOrder
         +string(20) DisabledHere
         +bool ReactionsOverridden

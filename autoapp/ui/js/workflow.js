@@ -26,7 +26,30 @@
  * Reactions (docs/WORKFLOWS_PHASE3.md, js/reactions.js): the workflow's own, and on each job its
  * job's, or this use's own once Override here is chosen. Disable here stops a job or lets it
  * pass through, in this workflow only.
+ *
+ * Conditions (docs/WORKFLOWS_PHASE4.md, js/conditions.js): a job's Start rule can be a Custom
+ * rule, written in the condition box; the jobs it names are what it waits for, drawn as lines.
+ * Renaming a job renames it in the rules. The workflow's completion rules: Succeeds when and
+ * its return code. A run explains each rule's decision, part by part, and what each job waited for.
+ *     GET /api/v1/conditions/outputs, POST /api/v1/conditions/check, POST /api/v1/conditions/explain
  */
+/** Whether a prerequisite held, given the run's item it names: "true", "false" or "unknown" (as engine/workflow_runner.py). */
+function prerequisiteAnswer(p, target) {
+    const FINAL = ["SUCCESS", "FAILED", "NOT_RUN", "DISABLED", "BYPASSED", "SKIPPED"];
+    if (!FINAL.includes(target.status)) return "unknown";
+    const status = target.status === "BYPASSED" ? "SUCCESS" : target.status;
+    const code = target.status === "BYPASSED" ? 0 : target.return_code;
+    if (p.test === "ENDED") return "true";
+    if (p.test === "SUCCESS") return String(status === "SUCCESS");
+    if (p.test === "FAILED") return String(status === "FAILED");
+    if (code === null || code === undefined) return "false";
+    const held = (p.return_codes || "").split(",").map(s => s.trim()).filter(Boolean).some(piece => {
+        const range = piece.match(/^(\d+)\s*-\s*(\d+)$/);
+        return range ? code >= Number(range[1]) && code <= Number(range[2]) : code === Number(piece);
+    });
+    return String(held);
+}
+
 function workflowDetail() {
     const address = new URLSearchParams(location.search);
     const TESTS = { SUCCESS: "succeeded", FAILED: "failed", ENDED: "ended, whatever happened", RC: "gave return codes" };
@@ -35,9 +58,10 @@ function workflowDetail() {
     const REASONS = { PREREQUISITES_NOT_MET: "its prerequisites can't be met", CANCELLED: "the workflow was cancelled",
                       RETURN_CODE: "its return code is not a success code", ERROR: "a step failed",
                       JOB_FAILED: "a failure went unhandled", KILLED: "killed",
-                      DISABLED_PASS_THROUGH: "disabled here, to pass through" };
+                      DISABLED_PASS_THROUGH: "disabled here, to pass through", SUCCEEDS_WHEN: "Succeeds when did not hold" };
     const POLL_MS = 1500;
-    const VIEW_KEY = "autoapp.workflow.view", DIRECTION_KEY = "autoapp.workflow.direction";
+    const VIEW_KEY = "autoapp.workflow.view", DIRECTION_KEY = "autoapp.workflow.direction", SIDE_KEY = "autoapp.workflow.sideWidth";
+    const SIDE_MIN = 320, DIAGRAM_MIN = 300;
     const ZOOM_STEP = 1.2, ZOOM_MIN = 0.3, ZOOM_MAX = 2.5;
     let nextUid = 1;
     let pollTimer = null;
@@ -84,6 +108,10 @@ function workflowDetail() {
         selectedLine: null,     // the prerequisite selected on the diagram (its uid), if a line was
         runSelected: "",        // the name of the item selected on a run's diagram
         themeTick: 0,           // changes with the theme, so the diagrams are drawn again in its colours
+        sideWidth: (() => { try { return Number(localStorage.getItem(SIDE_KEY)) || 0; } catch (e) { return 0; } })(),   // 0: the usual width
+        savedKeys: {},          // each saved job as it was saved (itemKey), by its id, to mark the ones changed since
+        nameBefore: "",         // a job's name as it was when its name (or job) box was entered, to carry renames
+        conditionOutputs: [],   // what every job offers to conditions
 
         async init() {
             this.chosen = this.key;
@@ -92,12 +120,13 @@ function workflowDetail() {
             try {
                 this.allJobs = await AutoApp.get("/jobs");
                 AutoApp.loadReactionWorkflows();
+                this.conditionOutputs = await AutoApp.loadConditionOutputs();
             } catch (e) {
                 this.error = e.message;
                 return;
             }
             if (this.isNew) {
-                this.show({ job_key: "", description: "", active: true, items: [], reactions: [] });
+                this.show({ job_key: "", description: "", active: true, items: [], reactions: [], succeeds_when: null, return_code_from: null });
                 this.editing = true;
             } else if (this.key) {
                 await this.load();
@@ -142,16 +171,20 @@ function workflowDetail() {
             const items = (job.items || []).map(item => {
                 uids[item.name] = nextUid++;
                 return { uid: uids[item.name], id: item.id, name: item.name, job_key: item.job_key, join: item.join, prerequisites: [],
+                         rule: item.rule || "", joinBefore: item.join,
                          disabled_here: item.disabled_here || "", reactions_overridden: Boolean(item.reactions_overridden),
                          reactions: this.reactionsForm(item.reactions), job_reactions: this.reactionsForm(item.job_reactions) };
             });
             (job.items || []).forEach((item, index) => {
+                if (item.join === "CUSTOM") return;             // its rule says what it waits for
                 items[index].prerequisites = item.prerequisites.map(p => ({
                     uid: nextUid++, target: uids[p.target], test: p.test, return_codes: p.return_codes || "" }));
             });
             this.form = { job_key: job.job_key, description: job.description || "", active: job.active, items,
-                          reactions: this.reactionsForm(job.reactions) };
+                          reactions: this.reactionsForm(job.reactions), succeeds_when: job.succeeds_when || "",
+                          succeeds_choice: job.succeeds_when ? "RULE" : "DEFAULT", return_code_from: job.return_code_from || "" };
             this.saved = JSON.stringify(this.payload());
+            this.savedKeys = Object.fromEntries(items.filter(i => i.id).map(i => [i.id, this.itemKey(i)]));
             document.title = `${job.job_key || "New workflow"} - AutoApp`;
         },
 
@@ -171,7 +204,8 @@ function workflowDetail() {
                     name: item.name.trim() || null,
                     job_key: item.job_key.trim(),
                     join: item.join,
-                    prerequisites: item.prerequisites.map(p => ({
+                    rule: item.join === "CUSTOM" ? item.rule.trim() : null,
+                    prerequisites: item.join === "CUSTOM" ? [] : item.prerequisites.map(p => ({
                         target: this.nameOf(p.target), test: p.test,
                         return_codes: p.test === "RC" ? (p.return_codes.trim() || null) : null })),
                     disabled_here: item.disabled_here || null,
@@ -179,10 +213,56 @@ function workflowDetail() {
                     reactions: item.reactions_overridden ? this.reactionsPayload(item.reactions) : [],
                 })),
                 reactions: this.reactionsPayload(this.form.reactions),
+                succeeds_when: this.form.succeeds_choice === "RULE" ? (this.form.succeeds_when.trim() || null) : null,
+                return_code_from: this.form.return_code_from || null,
             };
         },
 
         get changed() { return Boolean(this.form) && this.editing && JSON.stringify(this.payload()) !== this.saved; },
+
+        /** Dragging the pane's left edge: its width follows the pointer, kept between its least and what leaves the diagram room. */
+        startResize(event) {
+            const body = this.$refs.body, handle = event.currentTarget;
+            handle.setPointerCapture(event.pointerId);
+            handle.classList.add("dragging");
+            const move = e => {
+                const box = body.getBoundingClientRect();
+                this.sideWidth = Math.round(Math.max(SIDE_MIN, Math.min(box.right - e.clientX, box.width - DIAGRAM_MIN)));
+            };
+            const end = () => {
+                handle.removeEventListener("pointermove", move);
+                handle.classList.remove("dragging");
+                remember(SIDE_KEY, String(this.sideWidth));
+            };
+            handle.addEventListener("pointermove", move);
+            handle.addEventListener("pointerup", end, { once: true });
+        },
+
+        resetSideWidth() {
+            this.sideWidth = 0;
+            remember(SIDE_KEY, "");
+        },
+
+        /** Whether the panel beside the diagram is open: only while a job is selected. */
+        get sideShown() { return Boolean(this.form) && this.form.items.some(i => i.uid === this.selectedUid); },
+
+        /**
+         * A job as it is now, to compare with how it was saved: what waits for what by the jobs' identity, not
+         * their names, so renaming a job marks it alone, not the jobs that wait for it.
+         */
+        itemKey(item) {
+            const idOf = uid => { const other = this.form.items.find(i => i.uid === uid); return other && other.id ? other.id : "new" + uid; };
+            return JSON.stringify({ name: this.nameOf(item.uid), job: item.job_key.trim(), join: item.join,
+                rule: item.join === "CUSTOM" ? item.rule.trim() : null, here: item.disabled_here || null,
+                own: item.reactions_overridden, reactions: item.reactions_overridden ? this.reactionsPayload(item.reactions) : [],
+                after: item.join === "CUSTOM" ? [] : item.prerequisites.map(p => [idOf(p.target), p.test, p.test === "RC" ? p.return_codes.trim() : null]) });
+        },
+
+        /** While editing: whether the job differs from how it was last saved (a new job always does). */
+        itemChanged(item) {
+            if (!this.editing) return false;
+            return !item.id || this.savedKeys[item.id] !== this.itemKey(item);
+        },
         get problems() { return this.check ? this.check.problems : []; },
         get warnings() { return this.check ? this.check.warnings || [] : []; },
 
@@ -203,14 +283,16 @@ function workflowDetail() {
 
         addItem() {
             const uid = nextUid++;
-            this.form.items.push({ uid, id: null, name: "", job_key: "", join: "ALL", prerequisites: [], disabled_here: "",
+            this.form.items.push({ uid, id: null, name: "", job_key: "", join: "ALL", prerequisites: [], rule: "", joinBefore: "ALL", disabled_here: "",
                                    reactions_overridden: false, reactions: [], job_reactions: [] });
             if (this.view === "diagram") this.select("item", uid);
         },
 
         removeItem(index) {
+            const goneName = this.nameOf(this.form.items[index].uid);
             const [gone] = this.form.items.splice(index, 1);
             if (this.selectedUid === gone.uid) this.select(null, null);
+            if (this.form.return_code_from === goneName) this.form.return_code_from = "";
             for (const item of this.form.items) item.prerequisites = item.prerequisites.filter(p => p.target !== gone.uid);
         },
 
@@ -249,6 +331,45 @@ function workflowDetail() {
 
         others(item) { return this.form.items.filter(i => i.uid !== item.uid); },
 
+        // ---------- Custom rules and completion rules ----------
+
+        itemNames() { return this.form.items.map(i => this.nameOf(i.uid)).filter(Boolean); },
+
+        /** A job switched to Custom rule starts from what it waited for; switched back, it waits for what its rule named. */
+        joinChanged(item) {
+            if (item.join === "CUSTOM" && !item.rule.trim()) {
+                item.rule = AutoApp.ruleFrom(item.prerequisites.map(p => ({ ...p, target: this.nameOf(p.target) })), item.joinBefore);
+            } else if (item.join !== "CUSTOM" && item.joinBefore === "CUSTOM") {
+                item.prerequisites = AutoApp.namedJobs(item.rule).map(name => this.form.items.find(i => this.nameOf(i.uid) === name))
+                    .filter(other => other && other.uid !== item.uid)
+                    .map(other => ({ uid: nextUid++, target: other.uid, test: "SUCCESS", return_codes: "" }));
+            }
+            item.joinBefore = item.join;
+        },
+
+        /** A job's name changed: the rules that named it follow. */
+        renamed(before, after) {
+            if (!before || before === after) return;
+            for (const item of this.form.items) item.rule = AutoApp.renameIn(item.rule, before, after);
+            this.form.succeeds_when = AutoApp.renameIn(this.form.succeeds_when, before, after);
+            if (this.form.return_code_from === before) this.form.return_code_from = after;
+        },
+
+        /** The workflow's runs Explain can use, newest first. */
+        explainRuns() {
+            return this.runs.slice(0, 15).map(r => ({ run_id: r.run_id, label: `${this.time(r.started)} · ${r.status}` }));
+        },
+
+        ruleContext(item) {
+            return { kind: "workflow", names: this.others(item).map(i => this.nameOf(i.uid)), outputs: this.conditionOutputs,
+                     workflowKey: this.job ? this.job.job_key : null, runs: this.explainRuns() };
+        },
+
+        completionContext() {
+            return { kind: "workflow", names: this.itemNames(), outputs: this.conditionOutputs,
+                     workflowKey: this.job ? this.job.job_key : null, runs: this.explainRuns() };
+        },
+
         // ---------- Disable here, and a use's Reactions ----------
 
         disabledHereWords(item) {
@@ -284,6 +405,7 @@ function workflowDetail() {
 
         /** What an item waits for, in words, for the locked outline. */
         needs(item) {
+            if (item.join === "CUSTOM") return "Starts when its Custom rule holds: " + item.rule;
             if (!item.prerequisites.length) return "Starts when the workflow starts";
             const parts = item.prerequisites.map(p =>
                 `${this.nameOf(p.target)} ${TESTS[p.test]}${p.test === "RC" ? " " + p.return_codes : ""}`);
@@ -358,7 +480,9 @@ function workflowDetail() {
         /** What the diagram is told when a box or line is clicked: kind "item", "line", or null for neither. */
         select(kind, id) {
             this.selectedLine = null;
-            if (kind === "item") {
+            if (kind === "line" && String(id).startsWith("rule:")) {      // a line a Custom rule draws: its job is selected
+                this.selectedUid = Number(String(id).split(":")[1]);
+            } else if (kind === "item") {
                 this.selectedUid = Number(id);
             } else if (kind === "line") {
                 const owner = this.form.items.find(i => i.prerequisites.some(p => p.uid === Number(id)));
@@ -374,6 +498,14 @@ function workflowDetail() {
             if (!this.editing) return;
             const from = Number(fromId), to = this.form.items.find(i => i.uid === Number(toId));
             if (!to) return;
+            if (to.join === "CUSTOM") {             // its rule says what it waits for: the new job joins it
+                const name = this.nameOf(from);
+                if (name && !AutoApp.namedJobs(to.rule).includes(name)) {
+                    to.rule = to.rule.trim() ? `(${to.rule.trim()}) AND %{${name}.Succeeded}` : `%{${name}.Succeeded}`;
+                }
+                this.select("item", to.uid);
+                return;
+            }
             let prerequisite = to.prerequisites.find(p => p.target === from);
             if (!prerequisite) {
                 prerequisite = { uid: nextUid++, target: from, test: "SUCCESS", return_codes: "" };
@@ -413,9 +545,14 @@ function workflowDetail() {
                 id: String(item.uid), name: this.nameOf(item.uid), join: item.join, status: null,
                 sub: item.job_key ? "job " + item.job_key : "no job chosen yet",
                 kind: this.jobKind(item.job_key), disabled: this.jobDisabledWords(item.job_key),
-                disabledHere: item.disabled_here || null, reactions: this.reactionsTip(item) }));
-            const lines = this.form.items.flatMap(item => item.prerequisites.filter(p => p.target).map(p => ({
-                id: String(p.uid), from: String(p.target), to: String(item.uid), test: p.test, codes: p.return_codes.trim() })));
+                disabledHere: item.disabled_here || null, reactions: this.reactionsTip(item),
+                rule: item.join === "CUSTOM" ? item.rule : null, changed: this.itemChanged(item) }));
+            const uidOf = name => (this.form.items.find(i => this.nameOf(i.uid) === name) || {}).uid;
+            const lines = this.form.items.flatMap(item => item.join === "CUSTOM"
+                ? AutoApp.namedJobs(item.rule).filter(name => uidOf(name) && uidOf(name) !== item.uid).map(name => ({
+                    id: `rule:${item.uid}:${name}`, from: String(uidOf(name)), to: String(item.uid), test: "RULE", codes: "" }))
+                : item.prerequisites.filter(p => p.target).map(p => ({
+                    id: String(p.uid), from: String(p.target), to: String(item.uid), test: p.test, codes: p.return_codes.trim() })));
             const selected = this.selectedLine ? { kind: "line", id: String(this.selectedLine) }
                 : this.selectedUid ? { kind: "item", id: String(this.selectedUid) } : null;
             return { items, lines, selected, reruns: this.reruns(this.form.items, item => item && String(item.uid)) };
@@ -446,7 +583,7 @@ function workflowDetail() {
                 const used = definition.get(item.name);
                 return { id: item.name, name: item.name, join: used ? used.join : "ALL", status: item.status,
                          statusText: this.stateWords(item), kind: this.jobKind(item.job_key), disabled: null,
-                         disabledHere: used ? used.disabled_here : null,
+                         disabledHere: used ? used.disabled_here : null, rule: used && used.join === "CUSTOM" ? used.rule : null,
                          reactions: used && this.form ? this.reactionsTip(this.form.items.find(i => i.id === used.id) || { reactions_overridden: false, job_reactions: [] }) : null };
             });
             const shown = new Set(items.map(i => i.id));
@@ -543,6 +680,24 @@ function workflowDetail() {
             } catch (e) {
                 this.error = e.message;
             }
+        },
+
+        /** The decisions conditions made in the run: a job's Custom rule (by its path), or Succeeds when (null). */
+        checksFor(path) { return this.run && this.run.conditions ? this.run.conditions.filter(c => c.path === path) : []; },
+        explainRows(check) { return AutoApp.explainRows(check.explain); },
+        valuesWords(values) { return AutoApp.valuesWords(values); },
+
+        /** What a job of the run waited for, each held or not, for a job without a Custom rule: Explain for prerequisites. */
+        waitedFor(runItem) {
+            const used = (this.job ? this.job.items : []).find(i => i.name === runItem.name);
+            if (!used || used.join === "CUSTOM") return [];
+            return used.prerequisites.map(p => {
+                const target = this.run.items.find(i => i.name === p.target);
+                const answer = target ? prerequisiteAnswer(p, target) : "unknown";
+                return { answer, words: { true: "held:", false: "did not hold:", unknown: "not yet known:" }[answer],
+                         text: `${p.target} ${TESTS[p.test]}${p.test === "RC" ? " " + p.return_codes : ""}` +
+                               (target ? ` (it ${this.stateWords(target).toLowerCase()})` : "") };
+            });
         },
 
         eventsFor(path) { return this.run && this.run.reactions ? this.run.reactions.filter(e => e.path === path) : []; },

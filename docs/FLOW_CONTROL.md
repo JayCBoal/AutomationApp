@@ -125,6 +125,7 @@ Checks:
 
 - **Before the run**, every condition is checked like any other parameter: that it is a valid condition, that each `%{Name...}` names a step in the job or a loop's file around it, and that the output or property exists. A step's name used inside its own loop's condition (a While waiting for a check inside it) is fine.
 - **In the editor**, a comparison of text with a number is pointed out, where both sides are known: `%{File.Size} > '100'`, or two variables, one holding a number and the other not.
+- **The condition box** (2026-10-18, with workflows Phase 4, [WORKFLOWS_PHASE4.md](WORKFLOWS_PHASE4.md)): a condition can be written with the **builder** (groups, each *Match all (AND) / any (OR) of the following*, holding conditions of step, output, comparison and value, and groups inside it, to any depth) or as text, and **Names and outputs** lists every step's outputs and the loop's file, each inserted by a click. Workflows use the same box for Custom rules and Succeeds when.
 - **When it runs**, a condition that is true, false or empty (`NULL`, which counts as false) is logged with the values it used.
 
 Conditions are worked out by SQLite, which comes with Python, in a database of its own that holds nothing and may only compute values.

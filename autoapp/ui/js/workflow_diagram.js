@@ -8,8 +8,9 @@
  * What it is given, to draw(canvas, diagram, handlers):
  *     diagram.items:  [{ id, name, sub, kind ("JOB" or "WORKFLOW"), disabled (words, or null),
  *                        join ("ALL" or "ANY"), status (a run's state, or null), statusText,
- *                        disabledHere ("STOP", "PASS_THROUGH" or null), reactions (words, or null) }]
- *     diagram.lines:  [{ id, from, to, test, codes }]       "to" waits for "from"
+ *                        disabledHere ("STOP", "PASS_THROUGH" or null), reactions (words, or null),
+ *                        rule (its Custom rule, or null), changed (true: changed since it was last saved) }]
+ *     diagram.lines:  [{ id, from, to, test, codes }]       "to" waits for "from"; test RULE: named in its Custom rule
  *     diagram.reruns: [{ from, to, words }]   Rerun from... Reactions: "from" reruns from "to", drawn back
  *                     upstream as a dash-dot arc after the layout, so elkjs never sees a loop
  *     diagram.direction ("RIGHT" or "DOWN"), zoom (a number, or "fit"), find (text),
@@ -27,7 +28,7 @@ const WorkflowDiagram = (() => {
     const NAME_MAX = 190, SUB_MAX = 230, PAD = 8, LINE = 16, ICON = 14, SUB_LINE = 14, MIN_WIDTH = 120;
     const ARROW_LENGTH = 7 * 0.9;   // an arrowhead's length, in line widths (its marker is 7 wide; the tip is at 9 of 10)
     const DRAG_START = 5;           // pixels the pointer moves before a press on a box becomes a drag
-    const TESTS = ["SUCCESS", "FAILED", "ENDED", "RC"];
+    const TESTS = ["SUCCESS", "FAILED", "ENDED", "RC", "RULE"];
     const elk = new ELK();
     const measurer = document.createElement("canvas").getContext("2d");
 
@@ -60,6 +61,7 @@ const WorkflowDiagram = (() => {
             FAILED: { color: css("--failure"), dash: "6 4", words: "failed" },
             ENDED: { color: css("--text"), dash: null, words: "ended, whatever happened" },
             RC: { color: css("--wf-rc"), dash: null, words: "gave return codes" },
+            RULE: { color: css("--muted"), dash: "2 3", words: "ended, or enough is known for its Custom rule" },
         };
         return styles[test] || { color: css("--muted"), dash: null, words: test.toLowerCase() };
     }
@@ -70,6 +72,7 @@ const WorkflowDiagram = (() => {
 
     /** What pointing at a line says: "Transform waits until Extract_US succeeded". */
     function lineWords(line, names) {
+        if (line.test === "RULE") return `${names.get(line.to)}'s Custom rule names ${names.get(line.from)}. Point at the {x} on ${names.get(line.to)} to read the rule`;
         const what = line.test === "RC" ? `gave return codes ${line.codes || "(none given yet)"}` : lineStyle(line.test).words;
         return `${names.get(line.to)} waits until ${names.get(line.from)} ${what}`;
     }
@@ -102,7 +105,9 @@ const WorkflowDiagram = (() => {
         if (item.disabled) list.push(["disabled", item.disabled]);
         if (item.disabledHere === "STOP") list.push(["disabled", "Disabled here: it stops here, and what needs it to succeed does not run"]);
         if (item.disabledHere === "PASS_THROUGH") list.push(["pass", "Disabled here to pass through: it counts as succeeded without running"]);
+        if (item.changed) list.push(["changed", "Changed since it was last saved: Save keeps the change, Cancel drops it"]);
         if (item.reactions) list.push(["reactions", item.reactions]);
+        if (item.rule !== null && item.rule !== undefined) list.push(["rule", `Starts when its Custom rule holds: ${item.rule || "(not written yet)"}`]);
         return list;
     }
 
@@ -168,6 +173,10 @@ const WorkflowDiagram = (() => {
         } else if (name === "pass") {
             svg("rect", { x: 3.5, y: 2.5, width: 7, height: 9, rx: 1, ...stroke, "stroke-dasharray": "2 1.5" }, g);
             svg("path", { d: "M0.5 7h12.5M10.5 4.5 13 7l-2.5 2.5", ...stroke }, g);
+        } else if (name === "changed") {            // a pencil: edited, not saved yet
+            svg("path", { d: "M2.5 11.5l1-3.5 6.5-6.5 2.5 2.5-6.5 6.5z M8.5 3l2.5 2.5", ...stroke }, g);
+        } else if (name === "rule") {               // {x}: a test on values (docs/WORKFLOWS.md)
+            svg("text", { x: 7, y: 11, "text-anchor": "middle", fill: "currentColor", style: `font: ${SMALL_FONT}; font-weight: 700` }, g).textContent = "{x}";
         } else if (name === "reactions") {          // a circling arrow: what happens after it ends
             svg("path", { d: "M11.5 7a4.5 4.5 0 1 1-1.4-3.3", ...stroke }, g);
             svg("path", { d: "M10.6 1.2v2.9H7.7", ...stroke }, g);
@@ -237,6 +246,8 @@ const WorkflowDiagram = (() => {
         drawShape(g, look, at.x, at.y, at.width, at.height, 6);
         if (matchesFind(item, diagram.find)) svg("rect", { class: "wf-found", x: at.x - 4, y: at.y - 4, width: at.width + 8, height: at.height + 8, rx: 9,
                                                             fill: "none", stroke: css("--accent"), "stroke-width": 2.5 }, g);
+        if (item.changed) svg("rect", { class: "wf-changed", x: at.x - 3, y: at.y - 3, width: at.width + 6, height: at.height + 6, rx: 8,
+                                        fill: "none", stroke: css("--warning"), "stroke-width": 2 }, g);
         if (isSelected(diagram, "item", item.id)) svg("rect", { class: "wf-selected", x: at.x - 2, y: at.y - 2, width: at.width + 4, height: at.height + 4, rx: 8,
                                                                 fill: "none", stroke: css("--text"), "stroke-width": 1, "stroke-dasharray": "3 2" }, g);
         drawBoxText(g, at, model, look);
@@ -311,7 +322,7 @@ const WorkflowDiagram = (() => {
                           "marker-end": `url(#${prefix}a-${TESTS.includes(line.test) ? line.test : "OTHER"})` }, g);
             // A wide, invisible copy of the line, so it is easy to point at and to click
             const area = svg("path", { class: "wf-hit", d, fill: "none", stroke: "transparent", "stroke-width": 10, "pointer-events": "stroke" }, g);
-            tooltip(area, diagram.editing ? `${words}. The x on the line removes it.` : words);
+            tooltip(area, diagram.editing && line.test !== "RULE" ? `${words}. The x on the line removes it.` : words);
             last = points;
         }
         for (const label of edge.labels || []) {
@@ -319,7 +330,7 @@ const WorkflowDiagram = (() => {
             svg("text", { x: label.x + 5, y: label.y + 12, fill: style.color, style: `font: ${SMALL_FONT}` }, g).textContent = label.text;
             tooltip(g.lastChild, words);
         }
-        if (diagram.editing && last) drawRemover(g, last, words, selected, selected ? 3 : 1.6);
+        if (diagram.editing && last && line.test !== "RULE") drawRemover(g, last, words, selected, selected ? 3 : 1.6);
     }
 
     /**
@@ -433,6 +444,15 @@ const WorkflowDiagram = (() => {
             if (target && target !== from) handlers.connect(from, target);
         });
         root.addEventListener("click", event => onClick(canvas, event, handlers));
+        // The canvas around the drawing (right of it, below it) is empty space too: a click there deselects.
+        // Wired once per canvas; each drawing hands it its own handlers.
+        canvas.wfHandlers = handlers;
+        if (!canvas.wfBackgroundWired) {
+            canvas.wfBackgroundWired = true;
+            canvas.addEventListener("click", event => {
+                if (event.target === canvas && Date.now() - (canvas.wfDragEnded || 0) >= 400) canvas.wfHandlers.select(null, null);
+            });
+        }
     }
 
     function onClick(canvas, event, handlers) {
@@ -503,6 +523,8 @@ const WorkflowDiagram = (() => {
         row(keySample("icon", "disabled", "key-i2-"), "Its job is disabled, or it is disabled here");
         row(keySample("icon", "pass", "key-i3-"), "Disabled here to pass through: counts as succeeded without running");
         row(keySample("icon", "reactions", "key-i4-"), "Has Reactions: what happens after it ends");
+        row(keySample("icon", "changed", "key-i6-"), "Outlined and marked so while editing: changed since the workflow was last saved");
+        row(keySample("icon", "rule", "key-i5-"), "Starts by a Custom rule; point at it to read the rule. Dotted lines come from the jobs the rule names");
         row(Object.assign(document.createElement("span"), { className: "wf-any-sample", textContent: "ANY" }),
             "Starts when any one of the lines into it is satisfied. Point at any line or marker to read what it means.");
     }

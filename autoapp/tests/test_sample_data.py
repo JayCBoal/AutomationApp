@@ -154,6 +154,31 @@ def test_the_reactions_sample_reruns_counts_skips_and_passes_through(db, db_url,
     assert run.Status == "SUCCESS"
 
 
+def test_the_conditions_sample_starts_post_by_its_rule_and_succeeds_by_succeeds_when(db, db_url, tmp_path):
+    """DEV-CONDITIONS_SAMPLE (docs/WORKFLOWS_PHASE4.md): Custom rules on outcomes, a file count and a variable."""
+    load_seed(db)
+    for root in db.query(Variable).filter(Variable.VarName == "Root"):
+        root.VarValue = root.VarValue.replace("/tmp/autoapp_sample", str(tmp_path))
+    outbox = tmp_path / "legal_app" / "outbox"
+    outbox.mkdir(parents=True)
+    (outbox / "Legal_Batch_001.csv").write_text("client,amount\nACME,100\n")
+    db.commit()
+    result = subprocess.run([sys.executable, "-m", "engine.runner", "--job-key", "DEV-CONDITIONS_SAMPLE",
+                             "--instance-id", "4001", "--spool-dir", str(tmp_path / "spool"),
+                             "--working-root", str(tmp_path / "work")],
+                            cwd=AUTOAPP_DIR, env={**subprocess_env(db_url), "AUTOAPP_WORKFLOW_POLL_SECONDS": "0.2"},
+                            capture_output=True, text=True, timeout=180)
+
+    assert result.returncode == 0, result.stdout[-3000:]
+    db.expire_all()
+    run = db.query(JobRun).filter(JobRun.JobKey == "DEV-CONDITIONS_SAMPLE").one()
+    items = {i.ItemName: i for i in db.query(WorkflowRunItem).filter_by(WorkflowRun_id=run.id)}
+    assert {name: i.Status for name, i in items.items()} == {
+        "Collect": "SUCCESS", "Rates": "SUCCESS", "Fallback_rates": "NOT_RUN", "Post": "SUCCESS", "EU_report": "SUCCESS"}
+    assert items["Collect"].child_run.FileCount >= 1
+    assert (run.Status, run.ReturnCode) == ("SUCCESS", 0)
+
+
 def test_rows_inserted_by_plain_sql_get_the_schema_defaults(db):
     """The seed leaves out IsActive and the like; a job that came out disabled would never run."""
     load_seed(db)

@@ -12,6 +12,12 @@ Rules:
     through another workflow.
   - Disable here is empty, STOP or PASS_THROUGH. A use's own Reactions are kept only when it
     overrides its job's; they follow app/reaction_store.py's rules.
+  - A Custom rule (join CUSTOM; docs/WORKFLOWS_PHASE4.md) is a condition over the jobs it names,
+    which become its prerequisites (test RULE), so nothing else has to read the rule to see
+    what waits for what. A rule may name no job at all, and test only variables.
+  - Renaming a job renames it in the rules that name it, and in the completion rules.
+  - Completion rules: Succeeds when (a condition over any of its jobs) and Return code from (one
+    of its jobs, by name). Empty means the default.
 """
 import re
 from typing import Dict, List, Optional, Set
@@ -20,10 +26,11 @@ from sqlalchemy.orm import Session
 
 from app import reaction_store
 from app.models import Job, WorkflowItem, WorkflowPrerequisite
-from app.schemas import PrerequisiteOut, WorkflowItemOut, WorkflowItemSave
-from engine import return_codes
+from app.schemas import PrerequisiteOut, PrerequisiteSave, WorkflowItemOut, WorkflowItemSave
+from engine import return_codes, workflow_conditions
 
-TEST_WORDS = {"SUCCESS": "succeeded", "FAILED": "failed", "ENDED": "ended", "RC": "gave return codes"}
+TEST_WORDS = {"SUCCESS": "succeeded", "FAILED": "failed", "ENDED": "ended", "RC": "gave return codes",
+              "RULE": "is named in its rule"}
 
 
 class WorkflowError(Exception):
@@ -40,6 +47,7 @@ def describe_items(job: Job) -> List[WorkflowItemOut]:
     return [
         WorkflowItemOut(
             id=item.id, name=item.ItemName, job_key=item.job.JobKey, job_type=item.job.JobType, join=item.JoinRule,
+            rule=item.StartRule if item.JoinRule == "CUSTOM" else None,
             prerequisites=[PrerequisiteOut(target=p.target.ItemName, test=p.Test, return_codes=p.ReturnCodes)
                            for p in item.prerequisites if p.target is not None],
             disabled_here=item.DisabledHere, job_active=bool(item.job.IsActive),
@@ -73,11 +81,56 @@ def _check_names(names: List[str]) -> None:
         seen.add(name)
 
 
+def renames(workflow: Job, submitted: List[WorkflowItemSave]) -> Dict[str, str]:
+    """
+    The jobs renamed by this save, old name to new, to carry into the conditions that name them.
+    A name still used in the workflow after the save is left out: a page that renamed the job in
+    its rules already (or swapped two names) has rules naming what it means.
+    """
+    current = {item.id: item.ItemName for item in workflow.items}
+    names = _names(submitted)
+    found = {current[s.id]: name for name, s in zip(names, submitted) if s.id in current and current[s.id] != name}
+    return {old: new for old, new in found.items() if old not in names}
+
+
+def with_rules_applied(submitted: List[WorkflowItemSave], renamed: Dict[str, str]) -> List[WorkflowItemSave]:
+    """Each item with a Custom rule, its rule renamed and its prerequisites the jobs the rule names."""
+    result = []
+    for name, item in zip(_names(submitted), submitted):
+        if item.join != "CUSTOM":
+            result.append(item.model_copy(update={"rule": None}))
+            continue
+        rule = (workflow_conditions.rename(item.rule, renamed) or "").strip()
+        if not rule:
+            raise WorkflowError(f"'{name}' starts by a Custom rule, but the rule is empty. Write the rule, "
+                                f"or choose another Start rule.")
+        try:
+            named = workflow_conditions.named_jobs(rule)
+        except ValueError as e:
+            raise WorkflowError(f"'{name}': its Custom rule: {e}")
+        result.append(item.model_copy(update={"rule": rule, "prerequisites": [
+            PrerequisiteSave(target=target, test=WorkflowPrerequisite.RULE) for target in named]}))
+    return result
+
+
+def _check_rules(names: List[str], submitted: List[WorkflowItemSave]) -> None:
+    for name, item in zip(names, submitted):
+        if item.join != "CUSTOM":
+            continue
+        problems, _ = workflow_conditions.check(item.rule, names)
+        if problems:
+            raise WorkflowError(f"'{name}': its Custom rule: {problems[0]}")
+
+
 def _check_prerequisites(names: List[str], submitted: List[WorkflowItemSave]) -> None:
     for name, item in zip(names, submitted):
         if item.join not in WorkflowItem.JOIN_RULES:
-            raise WorkflowError(f"'{name}': its join must be ALL or ANY, not '{item.join}'.")
+            raise WorkflowError(f"'{name}': its join must be ALL, ANY or CUSTOM, not '{item.join}'.")
         for p in item.prerequisites:
+            if item.join == "CUSTOM":
+                if p.target == name:
+                    raise WorkflowError(f"'{name}': its Custom rule names '{name}' itself. A job cannot wait for itself.")
+                continue                    # a job the rule names: the rule's check says what is wrong with it
             if p.target not in names:
                 raise WorkflowError(f"'{name}' waits for '{p.target}', which is not a job in this workflow.")
             if p.target == name:
@@ -186,11 +239,17 @@ def _check_not_itself(db: Session, workflow: Job, jobs: Dict[str, Job]) -> None:
 
 # ---------- Saving ----------
 
-def apply_items(db: Session, workflow: Job, submitted: List[WorkflowItemSave], creating: bool) -> List[str]:
-    """Makes the workflow's items and prerequisites match those submitted. Returns what changed, in words."""
+def apply_items(db: Session, workflow: Job, submitted: List[WorkflowItemSave], creating: bool,
+                renamed: Optional[Dict[str, str]] = None) -> List[str]:
+    """
+    Makes the workflow's items and prerequisites match those submitted. renamed: the jobs this save
+    renames (renames()), carried into the Custom rules. Returns what changed, in words.
+    """
     names = _names(submitted)
     _check_names(names)
+    submitted = with_rules_applied(submitted, renamed or {})
     _check_prerequisites(names, submitted)
+    _check_rules(names, submitted)
     _check_no_loops(names, submitted)
     jobs = _jobs_used(db, submitted, names)
     _check_not_itself(db, workflow, jobs)
@@ -223,7 +282,7 @@ def _apply_item_rows(workflow, submitted, names, jobs, current, creating, change
     for position, (name, s) in enumerate(zip(names, submitted), start=1):
         job = jobs[name]
         if s.id is None:
-            workflow.items.append(WorkflowItem(ItemName=name, job=job, JoinRule=s.join, ItemOrder=position))
+            workflow.items.append(WorkflowItem(ItemName=name, job=job, JoinRule=s.join, StartRule=s.rule, ItemOrder=position))
             if not creating:
                 changes.append(f"Added '{name}' (job '{job.JobKey}').")
             continue
@@ -235,8 +294,12 @@ def _apply_item_rows(workflow, submitted, names, jobs, current, creating, change
         if item.Job_MasterObject_id != job.MasterObject_id:
             what.append(f"now runs '{job.JobKey}'")
         if item.JoinRule != s.join:
-            what.append(f"starts when {'any' if s.join == 'ANY' else 'all'} of its prerequisites hold")
+            what.append(f"starts when {'any' if s.join == 'ANY' else 'all'} of its prerequisites hold" if s.join != "CUSTOM"
+                        else "starts by a Custom rule")
+        elif s.join == "CUSTOM" and (item.StartRule or "") != s.rule:
+            what.append(f"its Custom rule is now: {s.rule}")
         item.ItemName, item.job, item.JoinRule, item.ItemOrder = name, job, s.join, position
+        item.StartRule = s.rule
         if what:
             changes.append(f"Changed '{name}': {', '.join(what)}.")
     return kept
@@ -283,6 +346,29 @@ def _apply_use(db: Session, item: WorkflowItem, submitted: WorkflowItemSave, by_
     return changed
 
 
+def apply_completion(workflow: Job, succeeds_when: Optional[str], return_code_from: Optional[str], creating: bool,
+                     renamed: Optional[Dict[str, str]] = None) -> List[str]:
+    """The workflow's completion rules, checked against its jobs as saved. Returns what changed, in words."""
+    renamed = renamed or {}
+    names = [item.ItemName for item in workflow.items]
+    rule = (workflow_conditions.rename(succeeds_when, renamed) or "").strip() or None
+    source = (return_code_from or "").strip() or None
+    source = renamed.get(source, source)
+    if rule:
+        problems, _ = workflow_conditions.check(rule, names)
+        if problems:
+            raise WorkflowError(f"Succeeds when: {problems[0]}")
+    if source and source not in names:
+        raise WorkflowError(f"The workflow's return code comes from '{source}', which is not a job in this workflow.")
+    changes = []
+    if rule != workflow.SucceedsWhen:
+        changes.append(f"Succeeds when is now: {rule}." if rule else "Succeeds when is back to the default.")
+    if source != workflow.ReturnCodeFrom:
+        changes.append(f"The return code now comes from '{source}'." if source else "The return code is back to the default.")
+    workflow.SucceedsWhen, workflow.ReturnCodeFrom = rule, source
+    return [] if creating else changes
+
+
 # ---------- Checking before a run, and who uses what ----------
 
 def workflow_problems(db: Session, workflow: Job, warnings: Optional[List[str]] = None,
@@ -300,6 +386,7 @@ def workflow_problems(db: Session, workflow: Job, warnings: Optional[List[str]] 
         problems.append(f"Workflow '{workflow.JobKey}' is disabled.")
     if not workflow.items:
         problems.append(f"Workflow '{workflow.JobKey}' has no jobs in it yet. Add the jobs it should run.")
+    problems += _variable_problems(db, workflow)
     if warnings is None:
         return problems
     checked: Dict[int, List[str]] = {}
@@ -316,6 +403,34 @@ def workflow_problems(db: Session, workflow: Job, warnings: Optional[List[str]] 
         for problem in checked[job.MasterObject_id][:1]:     # the first is enough to say it would fail
             warnings.append(f"'{item.ItemName}' would fail: {problem}")
     return problems
+
+
+def _variable_problems(db: Session, workflow: Job) -> List[str]:
+    """Each ${...} in the workflow's conditions that has no value, said once. They are filled in as a run starts."""
+    texts = [(f"'{item.ItemName}': its Custom rule", item.StartRule) for item in workflow.items
+             if item.JoinRule == "CUSTOM" and item.StartRule]
+    if workflow.SucceedsWhen:
+        texts.append(("Succeeds when", workflow.SucceedsWhen))
+    refs = [(where, ref) for where, text in texts for ref in _safe_references(text) if ref.startswith("${")]
+    if not refs:
+        return []
+    from engine.scope_engine import ScopeResolutionEngine
+    engine = ScopeResolutionEngine(db=db, job_id=workflow.MasterObject_id, instance_id="CHECK")
+    engine.build_context()
+    problems = []
+    for where, ref in refs:
+        try:
+            engine.interpolate(ref)
+        except ValueError as e:
+            problems.append(f"{where}: {e}")
+    return problems
+
+
+def _safe_references(text: str) -> List[str]:
+    try:
+        return workflow_conditions.conditions.references(text)
+    except ValueError:
+        return []                   # an unclosed quote is refused when saved
 
 
 def workflows_using(db: Session, job: Job) -> List[str]:

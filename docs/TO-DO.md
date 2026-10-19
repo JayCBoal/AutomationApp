@@ -61,7 +61,7 @@ Decided and removed from this list: telemetry direction (spool first, delivered 
     - **How it works now (found 2026-10-18):** one pipeline carries both. The runner writes every record to its spool file, then posts the new ones through the API after each step and at the end, waiting up to 5 seconds each time for the server to commit them, so a slow or unreachable server holds a job up. A run's end reaches Job History only in the same batch as its operations. Without an API, `engine.spool_delivery` and the workflow runner (`_load_spool`, when a job's end has not arrived) load spool files into the database themselves. Nothing runs the sweep periodically.
     - **Direction:** Job History reported promptly on a small path of its own; operations sent in the background or by a periodic sweep, never holding up a step; the runner never writes the database itself, since in production it runs on the scheduler's agent hosts; the workflow runner learns a job's outcome from Job History alone.
     - **For workflows:** not needed to finish the phases (the demonstrator runs everything on one machine), but no workflow feature may depend on the operations records. Phase 4's `FileCount` and `Bytes` come with the job's own end report; Phase 4b's Operations object and For Each File over an upstream job's files are to be reconsidered ([WORKFLOWS_PHASE4.md](WORKFLOWS_PHASE4.md)).
-    - **Related:** decision 2 (the runner using the API), "Killed runs" below, and agents. Also in [ROADMAP.md](ROADMAP.md).
+    - **Related:** decision 2 (the runner using the API), "Killed runs" below, and agents. Handed to the roadmap planning session for [ROADMAP.md](ROADMAP.md) (2026-10-18).
 
 ## Work queue
 
@@ -143,6 +143,10 @@ Designed with the owner and built in RunMyFiles on 2026-10-16, then brought over
   - **A Script step:** a script in one of several languages (Bash, CMD, PowerShell, Python…), its exit code the job's return code, making the step library user-extensible. Needs: which languages, where it runs, limits on what it may do on the host.
   - **A Reaction's When as an expression**, combining a return code with other outputs (`%{Load.ReturnCode} IN (4, 8) AND %{Load.FileCount} = 0`), in flow control's condition language.
   - **Hold for an operator** as a Reaction: pauses the workflow at a job; a first version needs only **Release**.
+- **From workflows Phase 4 (2026-10-18):**
+  - **Resizable panes elsewhere** (the owner: basic, and turns out to be needed). The workflow page's job pane can be resized by dragging its edge; others could follow where content is cramped: the diagram's height, the job editor's step list, the Operations Log's columns.
+  - **Kill recorded as an error under load.** Once, in a full SQLite run, a job killed through the API was recorded Failed, `ERROR` instead of `KILLED` (test_reactions_api, Kill and Cancel); it passed when run again. Probably the kill arriving before the job runner had set up its handler for it. Worth a look before Kill is shown off.
+  - **Explain for a step's condition in the job editor**, against a past run's values, if wanted: the job log already says what each condition used.
 - **Killed runs.** Pick up spool files left as `.jsonl.tmp` by a run that did not end normally, and mark the run accordingly.
 
 5. **Runner uses the API.** Depends on decision 2.

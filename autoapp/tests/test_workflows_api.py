@@ -113,7 +113,7 @@ def test_an_empty_workflow_is_saved_but_will_not_run(client, jobs):
     ([item("LOAD", after=["LOAD"])], "'LOAD' cannot wait for itself."),
     ([item("LOAD", after=[("X", "MAYBE")]), item("EXTRACT_EU", "X")], "The test must be SUCCESS, FAILED, ENDED or RC."),
     ([item("LOAD", after=[("X", "RC", "4-0")]), item("EXTRACT_EU", "X")], "The range '4-0' in '4-0' runs backwards."),
-    ([item("LOAD", join="SOME")], "'LOAD': its join must be ALL or ANY, not 'SOME'."),
+    ([item("LOAD", join="SOME")], "'LOAD': its join must be ALL, ANY or CUSTOM, not 'SOME'."),
     ([item("NOPE")], "'NOPE' runs the job 'NOPE', which does not exist."),
     ([item("LOAD", "A", after=["C"]), item("EXTRACT_EU", "B", after=["A"]), item("EXTRACT.US", "C", after=["B"])],
      "The prerequisites go round in a loop: 'A', which waits for 'C', which waits for 'B', which waits for 'A'. None of them could ever start."),

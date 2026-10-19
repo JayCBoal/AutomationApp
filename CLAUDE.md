@@ -32,6 +32,7 @@ Notes for Claude Code on this project. The why behind the project is in docs/PRO
 - **Databases:** `autoapp_dev`, `autoapp_test` and `autoapp_sales`. The Linux user can't create databases, so creating one needs `sudo -n mariadb`. Back up `autoapp_dev` (to `demo/output/autoapp_dev_before_*.sql`) before migrating it in place.
 - **Git:** work on a feature branch. Commit, merge (fast-forward only), push and delete the branch only when asked.
 - **Docs:** add an entry to docs/CHANGE_LOG.md for user-visible changes. Keep the docs in step with the code.
+- **Workflow decisions:** every decision about how workflows work goes into docs/WORKFLOW_DECISIONS.md when it is made, with its reason (and what else was considered), next to the phase plan's own list. A decision replaced stays there, marked Replaced, pointing to what replaced it. Before changing how workflows behave, read the entry's reason and tell the owner if the change brings back the problem it names.
 
 ## How to write and report changes
 

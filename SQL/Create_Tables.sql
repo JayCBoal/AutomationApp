@@ -23,6 +23,7 @@ DROP TABLE IF EXISTS WorkflowPrerequisites;
 DROP TABLE IF EXISTS Reactions;
 DROP TABLE IF EXISTS JobStepParameters;
 DROP TABLE IF EXISTS Endpoints;
+DROP TABLE IF EXISTS ConditionChecks;
 DROP TABLE IF EXISTS WorkflowItems;
 DROP TABLE IF EXISTS TagAssignments;
 DROP TABLE IF EXISTS Sites;
@@ -124,6 +125,8 @@ CREATE TABLE `Jobs` (
 	`JobType` VARCHAR(20) NOT NULL DEFAULT 'STEPS', 
 	`Owner_MasterObject_id` INTEGER, 
 	`SuccessReturnCodes` VARCHAR(100), 
+	`SucceedsWhen` TEXT, 
+	`ReturnCodeFrom` VARCHAR(100), 
 	PRIMARY KEY (`MasterObject_id`), 
 	FOREIGN KEY(`MasterObject_id`) REFERENCES `MasterObjects` (id) ON DELETE CASCADE, 
 	UNIQUE (`JobKey`), 
@@ -204,6 +207,8 @@ CREATE TABLE `JobRuns` (
 	`KillRequestedDateTime` DATETIME(6), 
 	`ProcessID` INTEGER, 
 	`StatusBeforeOverride` VARCHAR(20), 
+	`FileCount` INTEGER, 
+	`Bytes` BIGINT, 
 	`LogFile` VARCHAR(500), 
 	`LogRemovedDateTime` DATETIME(6), 
 	PRIMARY KEY (id), 
@@ -265,6 +270,7 @@ CREATE TABLE `WorkflowItems` (
 	`ItemName` VARCHAR(100) NOT NULL, 
 	`Job_MasterObject_id` INTEGER NOT NULL, 
 	`JoinRule` VARCHAR(10) NOT NULL DEFAULT 'ALL', 
+	`StartRule` TEXT, 
 	`ItemOrder` INTEGER NOT NULL DEFAULT 1, 
 	`DisabledHere` VARCHAR(20), 
 	`ReactionsOverridden` BOOL NOT NULL DEFAULT false, 
@@ -275,6 +281,21 @@ CREATE TABLE `WorkflowItems` (
 )ENGINE=InnoDB CHARSET=utf8mb4 COLLATE utf8mb4_bin;
 
 CREATE INDEX `ix_WorkflowItems_Workflow_MasterObject_id` ON `WorkflowItems` (`Workflow_MasterObject_id`);
+
+CREATE TABLE `ConditionChecks` (
+	id INTEGER NOT NULL AUTO_INCREMENT, 
+	`WorkflowRun_id` INTEGER NOT NULL, 
+	`Path` VARCHAR(1000), 
+	`Kind` VARCHAR(20) NOT NULL, 
+	`ConditionText` TEXT NOT NULL, 
+	`ValuesJson` TEXT NOT NULL, 
+	`Result` VARCHAR(10) NOT NULL, 
+	`CheckedDateTime` DATETIME(6) NOT NULL, 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(`WorkflowRun_id`) REFERENCES `JobRuns` (id) ON DELETE CASCADE
+)ENGINE=InnoDB CHARSET=utf8mb4 COLLATE utf8mb4_bin;
+
+CREATE INDEX `ix_ConditionChecks_WorkflowRun_id` ON `ConditionChecks` (`WorkflowRun_id`);
 
 CREATE TABLE `Endpoints` (
 	`MasterObject_id` INTEGER NOT NULL, 

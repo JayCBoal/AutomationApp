@@ -8,6 +8,7 @@
     <link rel="stylesheet" href="css/autoapp.css">
     <script src="js/common.js"></script>
     <script src="js/reactions.js"></script>
+    <script src="js/conditions.js"></script>
     <script src="js/job.js"></script>
     <script defer src="vendor/alpine-3.17.4.min.js"></script>
 </head>
@@ -330,7 +331,13 @@
                                                     </div>
                                                 </template>
 
-                                                <template x-if="field.data_type === 'TEXT'">
+                                                <template x-if="field.name === 'Condition'">
+                                                    <div class="text-field">
+                                                        <div data-condition-box data-model="field.text" data-context="stepContext()"></div>
+                                                    </div>
+                                                </template>
+
+                                                <template x-if="field.data_type === 'TEXT' && field.name !== 'Condition'">
                                                     <div class="text-field">
                                                         <textarea class="code" :rows="textRows(field.text)" x-model="field.text" :disabled="!editing" :placeholder="field.default || ''"></textarea>
                                                     </div>
@@ -456,7 +463,13 @@
                                                     </div>
                                                 </template>
 
-                                                <template x-if="field.data_type === 'TEXT'">
+                                                <template x-if="field.name === 'Condition'">
+                                                    <div class="text-field">
+                                                        <div data-condition-box data-model="field.text" data-context="stepContext()"></div>
+                                                    </div>
+                                                </template>
+
+                                                <template x-if="field.data_type === 'TEXT' && field.name !== 'Condition'">
                                                     <div class="text-field">
                                                         <textarea class="code" :rows="textRows(field.text)" x-model="field.text" :disabled="!editing" :placeholder="field.default || ''"></textarea>
                                                     </div>
@@ -541,6 +554,6 @@
     </template>
 
 </main>
-<script>AutoApp.fillTagPanels(); AutoApp.fillReactionBoxes()</script>
+<script>AutoApp.fillTagPanels(); AutoApp.fillReactionBoxes(); AutoApp.fillConditionBoxes()</script>
 </body>
 </html>

@@ -38,6 +38,7 @@ erDiagram
     MasterObjects ||--o{ TagAssignments : "Target_MasterObject_id"
     Jobs ||--o{ WorkflowItems : "Workflow_MasterObject_id"
     Jobs ||--o{ WorkflowItems : "Job_MasterObject_id"
+    JobRuns ||--o{ ConditionChecks : "WorkflowRun_id"
     MasterObjects ||--o| Endpoints : "MasterObject_id"
     Sites |o--o{ Endpoints : "Site_MasterObject_id"
     Applications |o--o{ Endpoints : "Application_MasterObject_id"
@@ -156,6 +157,8 @@ erDiagram
         string(20) JobType "required"
         int Owner_MasterObject_id FK
         string(100) SuccessReturnCodes
+        text SucceedsWhen
+        string(100) ReturnCodeFrom
     }
     JobSteps {
         int id PK
@@ -214,6 +217,8 @@ erDiagram
         string(20) JobType "required"
         int Owner_MasterObject_id FK
         string(100) SuccessReturnCodes
+        text SucceedsWhen
+        string(100) ReturnCodeFrom
     }
     WorkflowItems {
         int id PK
@@ -221,6 +226,7 @@ erDiagram
         string(100) ItemName "required"
         int Job_MasterObject_id FK "required"
         string(10) JoinRule "required"
+        text StartRule
         int ItemOrder "required"
         string(20) DisabledHere
         bool ReactionsOverridden "required"
@@ -277,6 +283,8 @@ erDiagram
         datetime KillRequestedDateTime
         int ProcessID
         string(20) StatusBeforeOverride
+        int FileCount
+        bigint Bytes
         string(500) LogFile
         datetime LogRemovedDateTime
     }
@@ -309,12 +317,23 @@ erDiagram
         text Message
         datetime EventDateTime "required"
     }
+    ConditionChecks {
+        int id PK
+        int WorkflowRun_id FK "required"
+        string(1000) Path
+        string(20) Kind "required"
+        text ConditionText "required"
+        text ValuesJson "required"
+        string(10) Result "required"
+        datetime CheckedDateTime "required"
+    }
     MasterObjects ||--o| Jobs : "MasterObject_id"
     Jobs |o--o{ Jobs : "Owner_MasterObject_id"
     Jobs |o--o{ JobRuns : "Job_MasterObject_id"
     JobRuns |o--o{ JobRuns : "ParentRun_id"
     Jobs ||--o{ WorkflowItems : "Workflow_MasterObject_id"
     Jobs ||--o{ WorkflowItems : "Job_MasterObject_id"
+    JobRuns ||--o{ ConditionChecks : "WorkflowRun_id"
     Jobs |o--o{ Reactions : "Job_MasterObject_id"
     WorkflowItems |o--o{ Reactions : "Item_id"
     WorkflowItems ||--o{ WorkflowPrerequisites : "Item_id"
@@ -367,6 +386,8 @@ erDiagram
         datetime KillRequestedDateTime
         int ProcessID
         string(20) StatusBeforeOverride
+        int FileCount
+        bigint Bytes
         string(500) LogFile
         datetime LogRemovedDateTime
     }

@@ -13,10 +13,15 @@ holds nothing and is only allowed to compute values. How values go in:
     number stays a number; a variable's text that reads as a number counts as one.
 
 Double quotes are accepted for text too, and mean the same as single quotes.
+
+Workflows (docs/WORKFLOWS_PHASE4.md) also need three answers, not two: decide() says true,
+false or unknown (SQL's NULL), so a Custom rule over jobs still running holds as soon as it is
+true, fails as soon as it is false, and otherwise waits. explain() breaks a condition into
+its parts joined by AND and OR, each with its own answer.
 """
 import re
 import sqlite3
-from typing import Any, Callable, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 NUMBER, STRING = "NUMBER", "STRING"
 
@@ -27,12 +32,17 @@ _LOOKS_NUMERIC = re.compile(r"^\s*-?\d+(\.\d+)?\s*$")
 # Words that start or end the operands of a comparison, for the text-against-number check
 _JOINERS = {"AND", "OR", "NOT", "("}
 _ENDERS = {"AND", "OR", ")"}
+# What can turn an unknown value into a known answer (NULL IS NULL is true; coalesce(NULL, 1) is 1),
+# so a condition using any of them is only decided once nothing in it is unknown
+NULL_AWARE = {"IS", "ISNULL", "NOTNULL", "CASE", "COALESCE", "IFNULL", "IIF", "TYPEOF", "QUOTE", "PRINTF",
+              "FORMAT", "CONCAT", "CONCAT_WS"}
 
 
 class Token:
     """One piece of a condition: kind is STRING, REF, NUMBER, WORD, OP or OTHER."""
     def __init__(self, kind: str, text: str, parts: Optional[list] = None):
         self.kind, self.text, self.parts = kind, text, parts or []
+        self.start = self.end = 0           # where it is in the condition's text
 
     @property
     def upper(self) -> str:
@@ -69,6 +79,7 @@ def tokens(text: str) -> List[Token]:
     """Cuts a condition into its pieces. Raises ValueError for unclosed quotes or placeholders."""
     found, i = [], 0
     while i < len(text):
+        start = i
         if text[i] in "'\"":
             token, i = _quoted(text, i)
         elif text.startswith(("%{", "${"), i):
@@ -81,6 +92,7 @@ def tokens(text: str) -> List[Token]:
             if kind == "space":
                 continue
             token = Token({"number": NUMBER, "word": "WORD", "op": "OP"}.get(kind, "OTHER"), match.group(0))
+        token.start, token.end = start, i
         found.append(token)
     return found
 
@@ -232,3 +244,86 @@ def evaluate(text: str, value_of: Callable[[str], Any]) -> Tuple[bool, List[str]
         value = _bound(Token("REF", ref), values[ref])
         return None if value is None else (NUMBER if isinstance(value, (int, float)) else STRING)
     return _run(*_compile(found, values.get)), used, mismatches(found, kind)
+
+
+# ---------- Three answers, and the parts of a condition (workflows) ----------
+
+def _run3(sql: str, values: list) -> Optional[bool]:
+    """True, False, or None for unknown: SQL's own logic, where TRUE OR NULL is true and FALSE AND NULL false."""
+    connection = sqlite3.connect(":memory:")
+    connection.set_authorizer(_only_compute)
+    try:
+        row = connection.execute(f"SELECT CASE WHEN ({sql}) THEN 1 WHEN NOT ({sql}) THEN 0 END", values + values).fetchone()
+    except (sqlite3.Error, sqlite3.Warning, OverflowError) as e:
+        raise ValueError(_plain(str(e))) from None
+    finally:
+        connection.close()
+    return None if row[0] is None else bool(row[0])
+
+
+def references(text: str) -> List[str]:
+    """Every placeholder in the condition, once each, in order. Raises ValueError as tokens() does."""
+    return _refs(tokens(text))
+
+
+def uses_null_tests(text: str) -> bool:
+    """Whether the condition uses anything that turns an unknown value into an answer (IS NULL, coalesce...)."""
+    return any(token.kind == "WORD" and token.upper in NULL_AWARE for token in tokens(text))
+
+
+def decide(text: str, values: Dict[str, Any]) -> Optional[bool]:
+    """The condition's answer given every placeholder's value (None for unknown): True, False or None."""
+    return _run3(*_compile(tokens(text), values.get))
+
+
+def _split(found: List[Token], word: str) -> List[List[Token]]:
+    """The pieces between each AND (or OR) outside brackets; BETWEEN's own AND is not one."""
+    pieces, piece, depth, between = [], [], 0, False
+    for token in found:
+        if token.text == "(":
+            depth += 1
+        elif token.text == ")":
+            depth -= 1
+        elif depth == 0 and token.upper == "BETWEEN":
+            between = True
+        elif depth == 0 and token.upper == word:
+            if word == "AND" and between:
+                between = False
+            else:
+                pieces.append(piece)
+                piece = []
+                continue
+        piece.append(token)
+    return pieces + [piece]
+
+
+def _wrapped(found: List[Token]) -> bool:
+    """Whether the whole piece is inside one pair of brackets."""
+    if len(found) < 2 or found[0].text != "(" or found[-1].text != ")":
+        return False
+    depth = 0
+    for i, token in enumerate(found):
+        depth += {"(": 1, ")": -1}.get(token.text, 0)
+        if depth == 0 and i < len(found) - 1:
+            return False
+    return True
+
+
+def _part(text: str, found: List[Token], values: Dict[str, Any]) -> Dict[str, Any]:
+    while _wrapped(found):
+        found = found[1:-1]
+    shown = text[found[0].start:found[-1].end] if found else ""
+    for word in ("OR", "AND"):
+        pieces = _split(found, word)
+        if len(pieces) > 1 and all(pieces):
+            parts = [_part(text, piece, values) for piece in pieces]
+            return {"text": shown, "join": word, "result": _run3(*_compile(found, values.get)), "parts": parts}
+    return {"text": shown, "join": None, "result": _run3(*_compile(found, values.get)), "parts": []}
+
+
+def explain(text: str, values: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    The condition as a tree of its parts, each {text, join (AND, OR or None), result (True, False or
+    None), parts}, worked out with the values given: what Explain shows, part by part.
+    """
+    return _part(text, tokens(text), values)

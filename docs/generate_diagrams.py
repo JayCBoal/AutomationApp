@@ -24,7 +24,7 @@ TABLE_GROUPS = {
                         "Variables", "TagAssignments"],
     "Jobs and steps": ["Jobs", "JobSteps", "JobStepParameters", "StepTypes", "StepDefinitions"],
     "Workflows": ["Jobs", "WorkflowItems", "WorkflowPrerequisites", "Reactions", "ReactionActions", "JobRuns",
-                  "WorkflowRunItems", "ReactionEvents"],
+                  "WorkflowRunItems", "ReactionEvents", "ConditionChecks"],
     "Endpoints, runs, operations, audits and settings": ["Endpoints", "JobRuns", "Operations", "Audits", "Settings"],
 }
 

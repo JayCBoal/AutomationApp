@@ -431,3 +431,57 @@ INSERT INTO ReactionActions (id, Reaction_id, ActionOrder, Action, MaxTimes, Wai
 (3, 3, 1, 'COUNT_AS_SUCCEEDED', NULL, NULL, NULL),
 (4, 4, 1, 'RERUN_FROM',         1,    0,    11),
 (5, 5, 1, 'SKIP_BRANCH',        NULL, NULL, NULL);
+
+-- ----------------------------------------------------------------------------
+-- 7. A sample of conditions (docs/WORKFLOWS_PHASE4.md):
+--    - Post starts by a Custom rule: the legal files were delivered (a file count) and either
+--      the FX rates or the fallback rates are in. It starts as soon as Rates succeeds, while
+--      Fallback_rates has not been decided yet.
+--    - Fallback_rates only runs if Rates failed, so here it does not run.
+--    - EU_report's rule names no job: it tests the workflow's variable Region.
+--    - Succeeds when Post succeeded, and the workflow ends with Post's return code.
+-- ----------------------------------------------------------------------------
+INSERT INTO MasterObjects (id, ObjectType) VALUES
+(33, 'JOB'), (34, 'JOB'), (35, 'JOB'), (36, 'JOB'), (37, 'JOB');
+
+INSERT INTO Jobs (MasterObject_id, JobKey, Description) VALUES
+(33, 'DEV-SIM-RATES',          'Stand-in: fetches today''s FX rates'),
+(34, 'DEV-SIM-FALLBACK_RATES', 'Stand-in: uses yesterday''s FX rates, when today''s did not arrive'),
+(35, 'DEV-SIM-POST',           'Stand-in: posts the batch with the FX rates'),
+(36, 'DEV-SIM-EU_REPORT',      'Stand-in: the report EU regulators ask for');
+INSERT INTO Jobs (MasterObject_id, JobKey, JobType, Description, SucceedsWhen, ReturnCodeFrom) VALUES
+(37, 'DEV-CONDITIONS_SAMPLE', 'WORKFLOW', 'Sample workflow: Custom rules (outcomes, a file count, a variable) and Succeeds when',
+ '%{Post.Succeeded}', 'Post');
+
+INSERT INTO Variables (MasterObject_id, VarName, VarValue, Description) VALUES
+(37, 'Region', 'EU', 'Which region this run is for: EU_report runs only for the EU');
+
+INSERT INTO JobSteps (id, Job_MasterObject_id, StepType_id, StepOrder, StepTitle, StepName)
+SELECT 33, 33, id, 1, 'Fetch the rates', 'Fetch_the_rates' FROM StepTypes WHERE Code = 'SIMULATE';
+INSERT INTO JobSteps (id, Job_MasterObject_id, StepType_id, StepOrder, StepTitle, StepName)
+SELECT 34, 34, id, 1, 'Use yesterday''s rates', 'Use_yesterdays_rates' FROM StepTypes WHERE Code = 'SIMULATE';
+INSERT INTO JobSteps (id, Job_MasterObject_id, StepType_id, StepOrder, StepTitle, StepName)
+SELECT 35, 35, id, 1, 'Post the batch', 'Post_the_batch' FROM StepTypes WHERE Code = 'SIMULATE';
+INSERT INTO JobSteps (id, Job_MasterObject_id, StepType_id, StepOrder, StepTitle, StepName)
+SELECT 36, 36, id, 1, 'Write the EU report', 'Write_the_EU_report' FROM StepTypes WHERE Code = 'SIMULATE';
+
+INSERT INTO JobStepParameters (JobStep_id, ParameterName, ParameterValue) VALUES
+(33, 'Messages',    'Fetching today''s FX rates'),
+(33, 'WaitSeconds', '2'),
+(34, 'Messages',    'Using yesterday''s FX rates'),
+(35, 'Messages',    'Posting the batch'),
+(36, 'Messages',    'Writing the EU report');
+
+INSERT INTO WorkflowItems (id, Workflow_MasterObject_id, ItemName, Job_MasterObject_id, JoinRule, StartRule, ItemOrder) VALUES
+(16, 37, 'Collect',        5,  'ALL',    NULL, 1),
+(17, 37, 'Rates',          33, 'ALL',    NULL, 2),
+(18, 37, 'Fallback_rates', 34, 'CUSTOM', '%{Rates.Failed}', 3),
+(19, 37, 'Post',           35, 'CUSTOM', '%{Collect.FileCount} > 0 AND (%{Rates.Succeeded} OR %{Fallback_rates.Succeeded})', 4),
+(20, 37, 'EU_report',      36, 'CUSTOM', '${Region} = ''EU''', 5);
+
+-- With a Custom rule, the jobs the rule names are its prerequisites (test RULE)
+INSERT INTO WorkflowPrerequisites (id, Item_id, TargetItem_id, Test, ReturnCodes) VALUES
+(15, 18, 17, 'RULE', NULL),
+(16, 19, 16, 'RULE', NULL),
+(17, 19, 17, 'RULE', NULL),
+(18, 19, 18, 'RULE', NULL);

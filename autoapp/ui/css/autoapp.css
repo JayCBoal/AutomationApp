@@ -428,6 +428,15 @@ body.embedded main { padding-top: 12px; }
 .wf-results { margin: 0 0 10px; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 13px; }
 .wf-results button { background: none; border: 0; color: var(--accent); cursor: pointer; font: inherit; padding: 0; }
 .wf-body { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 16px; align-items: start; }
+.wf-body.wide { grid-template-columns: minmax(0, 1fr) var(--side-width, 560px); }
+.wf-body.wide .wf-side { position: relative; }
+.wf-resize { position: absolute; left: -12px; top: 0; bottom: 0; width: 10px; cursor: col-resize; touch-action: none; }
+.wf-resize::after { content: ""; position: absolute; left: 4px; top: 50%; height: 40px; margin-top: -20px; width: 2px; border-radius: 1px; background: var(--border); }
+.wf-resize:hover::after, .wf-resize.dragging::after { background: var(--accent); }
+.wf-body.no-side { grid-template-columns: minmax(0, 1fr); }
+.wf-side-head { display: flex; justify-content: flex-end; }
+.wf-hint { margin: 0 0 6px; }
+#add-job { margin-top: 8px; }
 @media (max-width: 900px) { .wf-body { grid-template-columns: 1fr; } }
 .wf-canvas { overflow: auto; max-height: 72vh; min-height: 120px; background: var(--page); border: 1px solid var(--border); border-radius: 5px; }
 .wf-canvas svg { display: block; touch-action: none; }
@@ -469,3 +478,33 @@ body.embedded main { padding-top: 12px; }
 .reaction-events ul { margin: 4px 0; padding-left: 20px; }
 .wf-side .wf-disabled-here { width: 100%; }
 .wf-side .wf-disabled-here select { width: 100%; min-width: 0; }
+
+/* The condition box (js/conditions.js): Custom rules, Succeeds when, and step conditions */
+.cond-box { margin: 6px 0; min-width: 0; }
+.cond-tools { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 6px; }
+.cond-input { width: 100%; }
+.cond-text { display: inline-block; white-space: pre-wrap; overflow-wrap: anywhere; }
+.cond-builder { border: 1px solid var(--border); border-radius: 5px; padding: 6px 10px; }
+.cond-row select, .cond-row input, .cond-head select { width: auto; max-width: 100%; }
+.cond-entry { padding-top: 2px; padding-bottom: 2px; }
+.cond-head { font-size: 13px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.cond-foot { display: flex; gap: 12px; }
+.cond-written-line { margin-top: 6px; }
+.cond-written { overflow-wrap: anywhere; }
+.cond-help { border: 1px solid var(--border); border-radius: 5px; padding: 6px 10px; margin-top: 6px; }
+.cond-help-name { margin: 2px 0; }
+.cond-help-name button { margin-right: 6px; }
+.cond-tree { list-style: none; margin: 4px 0; padding: 0; }
+.cond-tree li { margin: 2px 0; overflow-wrap: anywhere; }
+.cond-answer { font-weight: 600; }
+.answer-true .cond-answer { color: var(--success); }
+.answer-false .cond-answer { color: var(--failure); }
+.answer-unknown .cond-answer { color: var(--muted); }
+.cond-explained { margin-top: 6px; }
+.wf-rule { margin-top: 6px; }
+.run-why, .run-rule { margin-top: 8px; }
+.wf-side .cond-row { flex-wrap: wrap; }
+.wf-side .cond-row input[type=text] { width: auto; min-width: 60px; }
+.wf-side .cond-row select { min-width: 0; }
+.wf-side .cond-row .cond-op, .wf-side .cond-row .cond-join { flex: none; }
+.wf-side .cond-row .cond-subject { min-width: 13em; }

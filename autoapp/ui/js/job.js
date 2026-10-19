@@ -578,6 +578,27 @@ function jobDetail() {
         },
 
         /** Every step in the job, blocks and the steps inside them. */
+        /**
+         * What a step's condition can read, for the condition box (js/conditions.js): each named step's
+         * outputs, each For Each File loop's file, and the variables the job can see.
+         */
+        stepContext() {
+            const FILE = ["Name", "BaseName", "Extension", "FullName", "Directory", "Size", "Modified", "Index", "Count"];
+            const steps = [];
+            for (const step of this.allSteps()) {
+                const type = this.catalog[step.step_type];
+                if (step.name && type && (type.outputs || []).length) steps.push({ name: step.name, outputs: type.outputs });
+                if (step.step_type === "FOR_EACH_FILE") {
+                    const item = (step.fields.find(f => f.name === "ItemName") || {}).text || "File";
+                    steps.push({ name: item, outputs: FILE.map(name => ({ name, data_type: ["Size", "Index", "Count"].includes(name) ? "NUMBER" : "STRING",
+                                                                       description: `The loop's file: its ${name}` })) });
+                }
+            }
+            const variables = this.form.variables.map(v => v.name.trim()).filter(Boolean)
+                .concat(this.tagsView ? this.tagsView.variables.map(v => v.name) : []);
+            return { kind: "job", steps, variables };
+        },
+
         allSteps(list = this.form.steps) {
             return list.flatMap(step => [step, ...this.allSteps(step.children)]);
         },

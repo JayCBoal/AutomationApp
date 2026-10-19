@@ -31,6 +31,7 @@ def test_a_step_turned_into_an_if_gets_its_then_and_can_be_given_an_else(page, j
     archive = steps.nth(1)
     retype(archive, "IF")
     expand(archive)
+    field(archive, "Condition").locator(".cond-text-tab").click()      # a new condition opens in the builder
     field(archive, "Condition").locator("textarea").fill("%{Collect.FileCount} > 0")
     assert page.locator('.step-branch[data-branch="THEN"]').count() == 1
 
@@ -98,6 +99,7 @@ def test_a_condition_comparing_a_number_with_text_is_pointed_out_under_it(page, 
     archive = steps.nth(1)
     retype(archive, "IF")
     expand(archive)
+    field(archive, "Condition").locator(".cond-text-tab").click()      # a new condition opens in the builder
     field(archive, "Condition").locator("textarea").fill("%{Collect.FileCount} > '1'")
     warning = field(archive, "Condition").locator(".field-warning")
     warning.wait_for(state="visible")

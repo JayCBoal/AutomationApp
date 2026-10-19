@@ -6,6 +6,22 @@ Notable structural, schema and design changes to AutoApp, newest first. Line-by-
 
 ## 2026-10-18
 
+### Workflows, Phase 4: conditions
+
+Plan: [WORKFLOWS_PHASE4.md](WORKFLOWS_PHASE4.md).
+
+- **Schema:** a workflow's job's Custom rule (`WorkflowItems.StartRule`, with `JoinRule` `CUSTOM`; the jobs it names are its prerequisites, test `RULE`); a workflow's completion rules (`Jobs.SucceedsWhen`, `Jobs.ReturnCodeFrom`); the files a run delivered (`JobRuns.FileCount`, `JobRuns.Bytes`); the decisions conditions made in a run (`ConditionChecks`). `SQL/migrate_conditions.py` brings a Phase 3 database up to date, keeping its data; `autoapp_dev` was migrated (backup: `demo/output/autoapp_dev_before_conditions.sql`).
+- **Added (engine):** every job in a workflow has outputs a condition reads as `%{Load.Succeeded}`: `Succeeded`, `Failed`, `Ended`, `NotRun`, `Skipped`, `Disabled`, `Bypassed`, `Status`, `ReturnCode`, `Reason`, `FileCount`, `Bytes`, `StartTime`, `EndTime`, `DurationMs`. Until a job ends they are unknown.
+- **Added (engine):** **Custom rule** on a job's Start rule: a condition over the jobs it names and variables, offered whether the job waits for several jobs, one or none. It holds as soon as it is true, with the jobs still running counting as unknown, and the job ends Not run as soon as it is false. A rule using IS NULL, coalesce or the like waits until its jobs have ended.
+- **Added (engine):** a workflow's **completion rules**: *It succeeds* unless a failure went unhandled (as before) or when a condition holds; *Its return code* 0 or 1 (as before) or the one a chosen job ended with.
+- **Added (engine):** a job reports the files it delivered and their size with its end (`FileCount`, `Bytes`), counted as it goes, not from the operations audit trail; Job History has them, and a workflow's are its jobs' added up.
+- **Added (pages):** the **condition box**, on the workflow page (Custom rule, Succeeds when) and for an If, Else If or While in the job editor: **Builder | Text**, the builder made of groups (*Match all / any of the following*) nested to any depth, each written in brackets; **Names and outputs**, each inserted by a click; in a workflow, problems and warnings as you type, and **Explain** with a chosen past run, part by part (holds, does not hold, unknown).
+- **Added (pages):** switching a job to Custom rule starts the rule from what it waited for; switching back makes it wait for the jobs its rule named. Renaming a job renames it in the rules. A run says whether each Custom rule held and Succeeds when held, part by part with the values used, and what each other job waited for, each held or not.
+- **Changed (pages):** the panel beside the diagram is wider and opens only while a job is selected (**Hide Job pane ×**, or a click on the empty canvas, hides it), and is resized by dragging its left edge; while editing, jobs changed since the last save are outlined and marked with a pencil.
+- **Added (diagram):** a job with a Custom rule carries a `{x}` marker that shows its rule; lines from the jobs it names are dotted. Dragging a line to such a job adds the job to its rule.
+- **Added (sample):** `DEV-CONDITIONS_SAMPLE` in the seed data and `autoapp_dev`: Post starts by a rule over a file count and two outcomes, a fallback runs only if the rates failed, a rule on the workflow's variable `Region`, and Succeeds when Post succeeded.
+- **Handed to the roadmap planning session:** Set Return Code becoming Set Return Values, and Job History apart from the operations audit trail (also TO-DO decision 10).
+
 ### Workflows, Phase 3: return codes and Reactions
 
 Plan: [WORKFLOWS_PHASE3.md](WORKFLOWS_PHASE3.md).

@@ -126,6 +126,7 @@ def ingest_batch(db: Session, batch: TelemetryBatch) -> TelemetryIngestResult:
                 run.ReturnCode = record.ReturnCode
                 run.Reason = record.Reason
                 run.StatusBeforeOverride = record.StatusBeforeOverride
+                run.FileCount, run.Bytes = record.FileCount, record.Bytes
                 run.EndedDateTime = _naive_utc(record.EndedAtUtc)
                 result.runs_ended += 1
 

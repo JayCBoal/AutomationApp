@@ -12,8 +12,8 @@ from app.catalog import sync_catalog
 from app.database import get_db
 from app.log_agent import remove_old_logs
 from app.routers import (
-    definitions, endpoints, history, jobs, launches, lookups, operations, registry, schedulers, settings, step_types,
-    telemetry, variables
+    conditions, definitions, endpoints, history, jobs, launches, lookups, operations, registry, schedulers, settings,
+    step_types, telemetry, variables
 )
 from app.schema_check import out_of_date_message, schema_problems
 
@@ -118,6 +118,7 @@ for router in definitions.routers:
 app.include_router(variables.router)
 app.include_router(settings.router)
 app.include_router(launches.router)
+app.include_router(conditions.router)
 
 
 @app.get("/health", tags=["Health"])

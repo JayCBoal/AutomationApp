@@ -201,6 +201,11 @@ class Job(MasterObject):
     Owner_MasterObject_id = Column(Integer, ForeignKey('Jobs.MasterObject_id', ondelete='CASCADE'), nullable=True)
     # The return codes that mean the job succeeded, e.g. "0", "0, 4" or "0-4"; empty means 0
     SuccessReturnCodes = Column(String(100), nullable=True)
+    # A workflow's completion rules (docs/WORKFLOWS_PHASE4.md): when it succeeds, as a condition over
+    # its jobs (empty: the default, unless a failure went unhandled); and whose return code it ends
+    # with, by the job's name in it (empty: 0 if it succeeded, 1 if not)
+    SucceedsWhen = Column(Text, nullable=True)
+    ReturnCodeFrom = Column(String(100), nullable=True)
 
     @validates("JobKey")
     def _validate_job_key(self, _attribute, value):
@@ -378,13 +383,14 @@ class WorkflowItem(Base):
     """
     One job a workflow uses, under a name of its own in that workflow, so the same job can
     be used more than once. Conditions refer to it by that name (%{Name.Status}), so the
-    name holds no dots or spaces.
+    name holds no dots or spaces. With the join CUSTOM, StartRule is a condition over the jobs it
+    names (docs/WORKFLOWS_PHASE4.md); they are its prerequisites, with the test RULE.
     """
     __tablename__ = 'WorkflowItems'
     __table_args__ = (UniqueConstraint('Workflow_MasterObject_id', 'ItemName', name='uq_workflow_item_name'),)
 
     NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
-    JOIN_RULES = ("ALL", "ANY")
+    JOIN_RULES = ("ALL", "ANY", "CUSTOM")
     DISABLED_HERE = ("STOP", "PASS_THROUGH")
 
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -392,8 +398,9 @@ class WorkflowItem(Base):
     ItemName = Column(String(100), nullable=False)
     # The job it runs; a job used by a workflow cannot be deleted
     Job_MasterObject_id = Column(Integer, ForeignKey('Jobs.MasterObject_id', ondelete='RESTRICT'), nullable=False)
-    # ALL: it starts when all its prerequisites hold; ANY: when any one does
+    # ALL: it starts when all its prerequisites hold; ANY: when any one does; CUSTOM: when StartRule does
     JoinRule = Column(String(10), nullable=False, default="ALL", server_default="ALL")
+    StartRule = Column(Text, nullable=True)
     ItemOrder = Column(Integer, nullable=False, default=1, server_default=text('1'))
     # Disable here (docs/WORKFLOWS.md): empty, STOP (it ends Disabled) or PASS_THROUGH (it ends Bypassed)
     DisabledHere = Column(String(20), nullable=True)
@@ -410,12 +417,14 @@ class WorkflowItem(Base):
 class WorkflowPrerequisite(Base):
     """
     What a workflow's item waits for before it starts: another of the workflow's items, and
-    how that one must have ended. Test is SUCCESS, FAILED, ENDED (any final status) or RC
-    (one of ReturnCodes, e.g. "0-4"). Condition is for conditions written in SQL (a later phase).
+    how that one must have ended. Test is SUCCESS, FAILED, ENDED (any final status), RC
+    (one of ReturnCodes, e.g. "0-4") or RULE (named in the item's Custom rule, which decides).
+    Condition is unused: a Custom rule is on the item, as StartRule.
     """
     __tablename__ = 'WorkflowPrerequisites'
 
     TESTS = ("SUCCESS", "FAILED", "ENDED", "RC")
+    RULE = "RULE"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     Item_id = Column(Integer, ForeignKey('WorkflowItems.id', ondelete='CASCADE'), nullable=False, index=True)
@@ -526,6 +535,10 @@ class JobRun(Base):
     ProcessID = Column(Integer, nullable=True)
     # Where a Reaction counted the run as succeeded or failed: what it ended as on its own
     StatusBeforeOverride = Column(String(20), nullable=True)
+    # The files the job delivered (written to a destination) and their size, which it reports itself
+    # with its end, never counted from its operations; a workflow's are its jobs' added up
+    FileCount = Column(Integer, nullable=True)
+    Bytes = Column(BigInteger, nullable=True)
     # The job log is a file on the host that ran the job (engine/log_files.py): where it is within that
     # host's log folder, and when it was removed for being older than the Settings page's limit
     LogFile = Column(String(500), nullable=True)
@@ -588,6 +601,27 @@ class ReactionEvent(Base):
     EventDateTime = Column(PreciseDateTime, nullable=False, default=lambda: utcnow())
 
 
+
+class ConditionCheck(Base):
+    """
+    A workflow condition worked out in a run, when it decided something (docs/WORKFLOWS_PHASE4.md):
+    a job's Custom rule (Kind START_RULE, Path the job's) or the workflow's Succeeds when
+    (SUCCEEDS_WHEN, no Path). The text and the values it used are kept as they were, so Explain
+    can show each part of a past run's condition, held or not. Result: TRUE, FALSE or UNKNOWN.
+    """
+    __tablename__ = 'ConditionChecks'
+
+    KINDS = ("START_RULE", "SUCCEEDS_WHEN")
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    WorkflowRun_id = Column(Integer, ForeignKey('JobRuns.id', ondelete='CASCADE'), nullable=False, index=True)
+    Path = Column(String(1000), nullable=True)
+    Kind = Column(String(20), nullable=False)
+    ConditionText = Column(Text, nullable=False)
+    # {"%{Extract.Status}": "SUCCESS", ...}, as JSON
+    ValuesJson = Column(Text, nullable=False)
+    Result = Column(String(10), nullable=False)
+    CheckedDateTime = Column(PreciseDateTime, nullable=False, default=lambda: utcnow())
 class Operation(Base):
     """
     One thing a step did. For a file step that is one file: where it came from, where it
@@ -657,3 +691,4 @@ for _table in Base.metadata.tables.values():
         _table.dialect_options[_dialect]["engine"] = "InnoDB"
         _table.dialect_options[_dialect]["charset"] = "utf8mb4"
         _table.dialect_options[_dialect]["collate"] = "utf8mb4_bin"
+

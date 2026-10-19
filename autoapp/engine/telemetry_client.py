@@ -50,6 +50,9 @@ class LocalSpoolTelemetryClient:
         self._seq = 0
         self._undelivered: List[Dict[str, Any]] = []
         self._delivery_abandoned = False
+        # The files the run delivered, by where they went, and their size: reported with its end, so
+        # Job History has them without anyone counting its operations (docs/WORKFLOWS_PHASE4.md)
+        self._delivered: Dict[str, Optional[int]] = {}
 
     def _write(self, record_type: str, fields: Dict[str, Any]) -> None:
         self._seq += 1
@@ -102,6 +105,9 @@ class LocalSpoolTelemetryClient:
         Records one thing a step did. For a file, give the source and destination;
         for anything else, describe it in details.
         """
+        if status == "SUCCESS" and dest_filename:
+            # A file written to a destination; written twice (zipped from several files), counted once
+            self._delivered[os.path.join(dest_path or "", dest_filename)] = dest_size
         self._write("OPERATION", {
             "StepID": step_id,
             "StepOrder": step_order,
@@ -128,7 +134,11 @@ class LocalSpoolTelemetryClient:
                 reason: Optional[str] = None, status_before_override: Optional[str] = None) -> None:
         override = {"StatusBeforeOverride": status_before_override} if status_before_override else {}
         self._write("RUN_END", {**override, "Status": status, "Error": error, "ReturnCode": return_code,
-                                "Reason": reason, "EndedAtUtc": utc_now_iso()})
+                                "Reason": reason, **self.delivered(), "EndedAtUtc": utc_now_iso()})
+
+    def delivered(self) -> Dict[str, int]:
+        """FileCount and Bytes: the files this run has delivered so far, and their size added up."""
+        return {"FileCount": len(self._delivered), "Bytes": sum(size or 0 for size in self._delivered.values())}
 
     def record_reaction(self, action: str, result: str, message: str, action_id: Optional[int] = None) -> None:
         """A Reaction's action that fired after the job ended, or was passed over at its limit."""

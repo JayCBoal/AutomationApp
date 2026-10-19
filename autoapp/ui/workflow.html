@@ -8,6 +8,7 @@
     <link rel="stylesheet" href="css/autoapp.css">
     <script src="js/common.js"></script>
     <script src="js/reactions.js"></script>
+    <script src="js/conditions.js"></script>
     <script src="vendor/elk-0.12.0.bundled.js"></script>
     <script src="js/workflow_diagram.js"></script>
     <script src="js/workflow.js"></script>
@@ -66,6 +67,18 @@
                 <button type="button" class="link" @click="closeRun()">Close</button>
             </div>
             <p class="error-text" x-show="run.error" x-text="run.error"></p>
+            <template x-for="(check, i) in checksFor(null)" :key="i">
+                <div class="cond-explained run-succeeds-when">
+                    <span class="small" x-text="'Succeeds when ' + (check.result === 'TRUE' ? 'held' : 'did not hold') + ':'"></span>
+                    <ul class="cond-tree small">
+                        <template x-for="(row, j) in explainRows(check)" :key="j">
+                            <li :style="{ paddingLeft: (row.depth * 18) + 'px' }" :class="'answer-' + row.answer">
+                                <span class="cond-answer" x-text="row.words"></span> <code x-text="row.text"></code></li>
+                        </template>
+                    </ul>
+                    <div class="muted small" x-text="valuesWords(check.values)"></div>
+                </div>
+            </template>
             <div class="wf-body" x-show="view === 'diagram'">
                 <div class="wf-canvas" id="run-diagram" x-effect="drawRun($el)"></div>
                 <aside class="wf-side" id="run-side" aria-label="Selected job">
@@ -83,6 +96,26 @@
                             <ul class="reaction-events small" x-show="eventsFor(runItem.path).length">
                                 <template x-for="e in eventsFor(runItem.path)"><li x-text="e.message"></li></template>
                             </ul>
+                            <div class="run-why small" x-show="waitedFor(runItem).length">
+                                <div class="muted">It waited for:</div>
+                                <ul class="cond-tree">
+                                    <template x-for="(w, i) in waitedFor(runItem)" :key="i">
+                                        <li :class="'answer-' + w.answer"><span class="cond-answer" x-text="w.words"></span> <span x-text="w.text"></span></li>
+                                    </template>
+                                </ul>
+                            </div>
+                            <template x-for="(check, i) in checksFor(runItem.path)" :key="i">
+                                <div class="cond-explained run-rule small">
+                                    <div class="muted" x-text="'Its Custom rule ' + (check.result === 'TRUE' ? 'held, so it started' : 'did not hold, so it did not run') + ':'"></div>
+                                    <ul class="cond-tree">
+                                        <template x-for="(row, j) in explainRows(check)" :key="j">
+                                            <li :style="{ paddingLeft: (row.depth * 18) + 'px' }" :class="'answer-' + row.answer">
+                                                <span class="cond-answer" x-text="row.words"></span> <code x-text="row.text"></code></li>
+                                        </template>
+                                    </ul>
+                                    <div class="muted" x-text="valuesWords(check.values)"></div>
+                                </div>
+                            </template>
                         </div>
                     </template>
                 </aside>
@@ -95,6 +128,10 @@
                         <span class="muted small" x-text="'job ' + item.job_key"></span>
                         <a x-show="item.run_id" :href="logLink(item.run_id)">Log</a>
                         <button type="button" class="link small kill-item" x-show="item.status === 'RUNNING'" @click="killItem(item)">Kill</button>
+                        <template x-for="(check, i) in checksFor(item.path)" :key="i">
+                            <span class="muted small run-rule-words" :title="check.condition"
+                                  x-text="'Custom rule ' + (check.result === 'TRUE' ? 'held' : 'did not hold')"></span>
+                        </template>
                     </li>
                 </template>
             </ul>
@@ -175,13 +212,20 @@
                         <li><button type="button" @click="view === 'diagram' ? showFound(item) : null" x-text="nameOf(item.uid)"></button></li>
                     </template>
                 </ul>
-                <div :class="{ 'wf-body': view === 'diagram' }">
+                <p class="muted small wf-hint" x-show="view === 'diagram' && !sideShown"
+                   x-text="editing ? 'Select a box to edit that job beside the diagram. Drag from one box to another to make the second wait for the first. Point at a line and click its x, or select it and press Delete, to remove it. Jobs changed since the last save are outlined.' : 'Select a box or a line to see it beside the diagram.'"></p>
+                <p class="muted" x-show="!form.items.length && !editing">No jobs yet. Edit the workflow to add the jobs it should run.</p>
+                <div :class="{ 'wf-body': view === 'diagram', wide: view === 'diagram', 'no-side': view === 'diagram' && !sideShown }"
+                     x-ref="body" :style="{ '--side-width': (sideWidth || 560) + 'px' }">
                 <div class="wf-canvas" id="diagram" x-show="view === 'diagram'" x-effect="drawDefinition($el)"
                      @keydown.window="removeSelectedLine($event)"></div>
-                <div :class="{ 'wf-side': view === 'diagram' }" id="side">
-                <p class="muted" x-show="view === 'diagram' && !form.items.some(i => i.uid === selectedUid)"
-                   x-text="editing ? 'Select a box to edit that job here. Drag from one box to another to make the second wait for the first. Point at a line and click its x, or select it and press Delete, to remove it.' : 'Select a box or a line to see it here.'"></p>
-                <p class="muted" x-show="!form.items.length && !editing">No jobs yet. Edit the workflow to add the jobs it should run.</p>
+                <div :class="{ 'wf-side': view === 'diagram' }" id="side" x-show="view === 'outline' || sideShown">
+                <div class="wf-resize" x-show="view === 'diagram'" title="Drag to make this pane wider or narrower; double-click for its usual width"
+                     @pointerdown="startResize($event)" @dblclick="resetSideWidth()"></div>
+                <div class="wf-side-head" x-show="view === 'diagram'">
+                    <button type="button" class="link small wf-side-close" @click="select(null, null)"
+                            title="Hide this pane; select a box to show it again">Hide Job pane ×</button>
+                </div>
                 <ul class="wf-outline" id="outline">
                     <template x-for="(item, index) in form.items" :key="item.uid">
                         <li class="wf-item" :data-name="nameOf(item.uid)" x-show="isShown(item)"
@@ -193,6 +237,7 @@
                                         <span class="wf-name" x-text="nameOf(item.uid)"></span>
                                         <a class="small" :href="jobLink(item)" x-text="'job ' + item.job_key"></a>
                                         <span class="tag" x-show="item.join === 'ANY'" title="Starts when any one of its prerequisites holds">Any</span>
+                                        <span class="tag" x-show="item.join === 'CUSTOM'" title="Starts when its Custom rule holds">Custom rule</span>
                                         <span class="tag disabled-here" x-show="item.disabled_here" x-text="disabledHereWords(item)"></span>
                                     </div>
                                     <div class="wf-needs muted small" x-text="needs(item)"></div>
@@ -211,8 +256,10 @@
                                         <button type="button" class="tool" title="Down" @click="moveItem(index, 1)"
                                                 :disabled="index === form.items.length - 1">▼</button>
                                         <label>Job <input type="text" class="item-job" list="job-keys" x-model="item.job_key"
+                                                          @focus="nameBefore = nameOf(item.uid)" @change="renamed(nameBefore, nameOf(item.uid))"
                                                           placeholder="Type to find a job" autocomplete="off"></label>
                                         <label>Named <input type="text" class="item-name" x-model="item.name" maxlength="100"
+                                                            @focus="nameBefore = nameOf(item.uid)" @change="renamed(nameBefore, nameOf(item.uid))"
                                                             :placeholder="placeholder(item)"></label>
                                         <label class="wf-disabled-here" title="Only in this workflow: the job itself stays as it is">Here it
                                             <select class="item-disabled-here" x-model="item.disabled_here">
@@ -223,7 +270,7 @@
                                     </div>
                                     <fieldset class="wf-prereqs">
                                     <legend>Prerequisites</legend>
-                                    <ul class="wf-prerequisites">
+                                    <ul class="wf-prerequisites" x-show="item.join !== 'CUSTOM'">
                                         <template x-for="(p, pIndex) in item.prerequisites" :key="p.uid">
                                             <li class="wf-row" :class="{ chosen: p.uid === selectedLine }">
                                                 <label title="The job in this workflow, by its name here, that this one waits for">Job in this workflow
@@ -250,13 +297,18 @@
                                         <li><button type="button" class="link small add-prerequisite" @click="addPrerequisite(item)"
                                                     :disabled="form.items.length < 2">+ Wait for another job</button></li>
                                     </ul>
-                                    <label class="wf-join" :class="{ off: item.prerequisites.length < 2 }"
-                                           :title="item.prerequisites.length < 2 ? 'Matters once it waits for two jobs or more' : 'When this job starts'">Start rule
-                                        <select class="item-join" x-model="item.join" :disabled="item.prerequisites.length < 2">
-                                            <option value="ALL">When all prerequisites are satisfied</option>
-                                            <option value="ANY">When any prerequisite is satisfied</option>
-                                            <option value="CUSTOM" disabled title="A rule of your own, written as a condition; not built yet">Custom rule</option>
+                                    <label class="wf-join" title="When this job starts">Start rule
+                                        <select class="item-join" x-model="item.join" @change="joinChanged(item)">
+                                            <option value="ALL" :disabled="item.join !== 'CUSTOM' && item.prerequisites.length < 2"
+                                                    title="All and Any matter once it waits for two jobs or more">When all prerequisites are satisfied</option>
+                                            <option value="ANY" :disabled="item.join !== 'CUSTOM' && item.prerequisites.length < 2"
+                                                    title="All and Any matter once it waits for two jobs or more">When any prerequisite is satisfied</option>
+                                            <option value="CUSTOM" title="A rule of your own, written as a condition over other jobs' outputs and variables">Custom rule</option>
                                         </select></label>
+                                    <div class="wf-rule" x-show="item.join === 'CUSTOM'">
+                                        <p class="muted small">It waits for the jobs the rule names, and starts as soon as the rule is true.</p>
+                                        <div data-condition-box data-model="item.rule" data-context="ruleContext(item)"></div>
+                                    </div>
                                     </fieldset>
                                     <fieldset class="wf-item-reactions">
                                         <legend>Reactions</legend>
@@ -285,13 +337,37 @@
                         </li>
                     </template>
                 </ul>
+                </div>
+                </div>
                 <button type="button" class="secondary" id="add-job" x-show="editing" @click="addItem()">+ Add a job</button>
-                </div>
-                </div>
                 <details class="wf-key" x-show="view === 'diagram'">
                     <summary>Key</summary>
                     <div class="wf-legend" id="key" x-effect="drawKey($el)"></div>
                 </details>
+            </section>
+
+            <!-- Completion rules: when the workflow succeeds, and the return code it ends with -->
+            <section class="panel" aria-label="When it succeeds" id="completion-panel">
+                <h2 class="section" style="margin-top: 0">When the workflow succeeds</h2>
+                <div class="detail-grid">
+                    <label for="succeeds-choice">It succeeds</label>
+                    <div>
+                        <select id="succeeds-choice" x-model="form.succeeds_choice" :disabled="!editing">
+                            <option value="DEFAULT">unless a failure went unhandled (the default)</option>
+                            <option value="RULE">when a condition holds</option>
+                        </select>
+                        <div class="succeeds-when" x-show="form.succeeds_choice === 'RULE'">
+                            <div data-condition-box data-model="form.succeeds_when" data-context="completionContext()"></div>
+                        </div>
+                    </div>
+                    <label for="return-code-from">Its return code</label>
+                    <select id="return-code-from" x-model="form.return_code_from" :disabled="!editing">
+                        <option value="">0 if it succeeded, 1 if not (the default)</option>
+                        <template x-for="name in itemNames()" :key="name">
+                            <option :value="name" x-text="'the one ' + name + ' ended with'" :selected="name === form.return_code_from"></option>
+                        </template>
+                    </select>
+                </div>
             </section>
 
             <!-- Its recent runs -->
@@ -317,6 +393,6 @@
         </div>
     </template>
 </main>
-<script>AutoApp.fillReactionBoxes()</script>
+<script>AutoApp.fillReactionBoxes(); AutoApp.fillConditionBoxes()</script>
 </body>
 </html>

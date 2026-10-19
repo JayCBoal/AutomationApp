@@ -2,7 +2,7 @@
 The records of what happened: job runs, and changes to definitions.
 
     GET /api/v1/runs             Job History: one row per run of a job or a workflow
-    GET /api/v1/runs/{run_id}    one run, with its job log, and a workflow run's jobs
+    GET /api/v1/runs/{run_id}    one run, with its job log, and a workflow run's jobs and condition decisions
     POST /api/v1/runs/{run_id}/cancel   asks a workflow run to start nothing more
     POST /api/v1/runs/{run_id}/kill     kills a running job; a workflow kills what runs and cancels the rest
     POST /api/v1/runs/{run_id}/items/{path}/kill   kills a job running in a workflow run, before its own record arrives
@@ -21,8 +21,8 @@ from sqlalchemy.orm import Session, aliased
 
 from app.database import get_db
 from app.log_agent import log_note, run_log
-from app.models import Audit, JobRun, Operation, ReactionEvent, WorkflowRunItem, utcnow
-from engine import log_files
+from app.models import Audit, ConditionCheck, JobRun, Operation, ReactionEvent, WorkflowRunItem, utcnow
+from engine import conditions, log_files
 
 MAX_RESULTS = 500
 router = APIRouter(tags=["History"])
@@ -52,6 +52,8 @@ class RunOut(BaseModel):
     attempt: int = 1
     child_count: int = 0
     status_before_override: Optional[str] = None
+    file_count: Optional[int] = None
+    bytes: Optional[int] = None
 
 
 @router.get("/api/v1/runs", response_model=List[RunOut])
@@ -167,6 +169,7 @@ def _describe(run: JobRun, counts, has_log: bool, parent_run_id: Optional[str] =
         error=run.ErrorMessage, operations=counts[0], failed_operations=counts[1], has_log=has_log,
         job_type=run.JobType or "STEPS", return_code=run.ReturnCode, reason=run.Reason, parent_run_id=parent_run_id,
         workflow_path=run.WorkflowPath, attempt=run.Attempt or 1, status_before_override=run.StatusBeforeOverride,
+        file_count=run.FileCount, bytes=run.Bytes,
     )
 
 
@@ -183,6 +186,8 @@ class RunItemOut(BaseModel):
     started: Optional[datetime] = None
     ended: Optional[datetime] = None
     status_before_override: Optional[str] = None
+    file_count: Optional[int] = None
+    bytes: Optional[int] = None
 
 
 class ReactionEventOut(BaseModel):
@@ -194,6 +199,17 @@ class ReactionEventOut(BaseModel):
     message: Optional[str] = None
 
 
+class ConditionCheckOut(BaseModel):
+    """A condition that decided something in a workflow run, part by part, as Explain shows it."""
+    time: datetime
+    path: Optional[str] = None
+    kind: str
+    condition: str
+    result: str
+    values: dict = {}
+    explain: Optional[dict] = None
+
+
 class RunDetail(RunOut):
     log: List[str] = []
     log_note: Optional[str] = None
@@ -201,6 +217,7 @@ class RunDetail(RunOut):
     cancel_requested: bool = False
     kill_requested: bool = False
     reactions: List[ReactionEventOut] = []
+    conditions: List[ConditionCheckOut] = []
 
 
 @router.get("/api/v1/runs/{run_id}", response_model=RunDetail)
@@ -219,7 +236,8 @@ def get_run(run_id: str, db: Session = Depends(get_db)):
     return RunDetail(**_describe(run, (total or 0, int(failed or 0)), _has_log(run), parent).model_dump(),
                      log=run_log(run), log_note=log_note(run),
                      items=_run_items(db, run), cancel_requested=run.CancelRequestedDateTime is not None,
-                     kill_requested=run.KillRequestedDateTime is not None, reactions=_reaction_events(db, run))
+                     kill_requested=run.KillRequestedDateTime is not None, reactions=_reaction_events(db, run),
+                     conditions=_condition_checks(db, run))
 
 
 def _reaction_events(db: Session, run: JobRun) -> List[ReactionEventOut]:
@@ -234,12 +252,29 @@ def _reaction_events(db: Session, run: JobRun) -> List[ReactionEventOut]:
                              message=e.Message) for e in rows]
 
 
+def _condition_checks(db: Session, run: JobRun) -> List[ConditionCheckOut]:
+    """Each decision a Custom rule or Succeeds when made in the run, with each part's answer from the values it used."""
+    rows = db.query(ConditionCheck).filter(ConditionCheck.WorkflowRun_id == run.id).order_by(ConditionCheck.id)
+    found = []
+    for c in rows:
+        values = json.loads(c.ValuesJson or "{}")
+        try:
+            explained = conditions.explain(c.ConditionText, values)
+        except ValueError:
+            explained = None
+        found.append(ConditionCheckOut(time=c.CheckedDateTime, path=c.Path, kind=c.Kind, condition=c.ConditionText,
+                                       result=c.Result, values=values, explain=explained))
+    return found
+
+
 def _run_items(db: Session, run: JobRun) -> List[RunItemOut]:
     rows = db.query(WorkflowRunItem).filter(WorkflowRunItem.WorkflowRun_id == run.id).order_by(WorkflowRunItem.ItemOrder)
     return [RunItemOut(name=r.ItemName, path=r.Path, job_key=r.JobKey, status=r.Status, reason=r.Reason,
                        return_code=r.ReturnCode, attempt=r.Attempt, run_id=r.child_run.RunID if r.child_run else None,
                        started=r.StartedDateTime, ended=r.EndedDateTime,
-                       status_before_override=r.StatusBeforeOverride) for r in rows]
+                       status_before_override=r.StatusBeforeOverride,
+                       file_count=r.child_run.FileCount if r.child_run else None,
+                       bytes=r.child_run.Bytes if r.child_run else None) for r in rows]
 
 
 @router.post("/api/v1/runs/{run_id}/cancel", response_model=RunDetail)

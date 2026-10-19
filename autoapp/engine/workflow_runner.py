@@ -20,11 +20,17 @@ Every second or so it:
     for it is looked at: Count as, Rerun, Rerun from, Skip, Kill the workflow, Start a workflow.
 A job disabled here ends Disabled (Stop here) or Bypassed (Pass through, which counts as
 succeeded with return code 0) when its turn comes.
+A job with a Custom rule (docs/WORKFLOWS_PHASE4.md) starts as soon as its rule is true, with the
+jobs still running counting as unknown, and never runs once it is false; each decision is kept
+as a ConditionCheck, with the values it used, for Explain. ${...} in conditions are fixed when
+the run starts.
 The workflow ends when every job has a final status. By default (docs/WORKFLOWS.md, "When a
 workflow succeeds") it fails if a failure went unhandled: a job failed and nothing that waits
 for it ran, or a job was cancelled. Otherwise it succeeds, so a failure path that did its job
-leaves the workflow green.
+leaves the workflow green. Its completion rules, where set, say otherwise: Succeeds when (a
+condition over its jobs) and Return code from (one of its jobs).
 """
+import json
 import os
 import signal
 import subprocess
@@ -36,12 +42,12 @@ from collections import Counter
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from sqlalchemy.orm import Session
 
-from app.models import Job, JobRun, ReactionEvent, WorkflowRunItem, utcnow
-from engine import job_log, log_files, return_codes
+from app.models import ConditionCheck, Job, JobRun, ReactionEvent, WorkflowRunItem, utcnow
+from engine import conditions, job_log, log_files, return_codes, workflow_conditions
 from engine.reactions import Act, OwnReactions, Rule, judge, read_rules, start_workflow
 
 AUTOAPP_DIR = Path(__file__).resolve().parents[1]
@@ -52,7 +58,7 @@ NOT_STARTED = ("PENDING", "WAITING")
 HOLDS, NEVER, WAIT = "HOLDS", "NEVER", "WAIT"
 OUTPUT_KEPT = 20                # lines of a job runner's own output kept, for one that left no record
 
-NEEDS = {"SUCCESS": "succeed", "FAILED": "fail", "ENDED": "end", "RC": "give return code"}
+NEEDS = {"SUCCESS": "succeed", "FAILED": "fail", "ENDED": "end", "RC": "give return code", "RULE": "end"}
 
 
 @dataclass
@@ -89,6 +95,10 @@ class Planned:
     output_path: Optional[str] = None
     start_after: float = 0.0        # a rerun waits until then (time.time())
     kill_sent: bool = False
+    rule: Optional[str] = None      # with the join CUSTOM: its Custom rule
+    file_count: Optional[int] = None    # what its latest attempt reported delivering
+    size: Optional[int] = None
+    checked_attempt: int = -1       # the attempt its Custom rule's decision was last kept for
 
 
 # ---------- Whether a job may start ----------
@@ -99,7 +109,7 @@ def prerequisite_state(test: str, codes: Optional[str], status: str, code: Optio
         return WAIT
     if status == "BYPASSED":            # treated as succeeded without running (docs/WORKFLOWS.md)
         status, code = "SUCCESS", 0
-    if test == "ENDED":
+    if test in ("ENDED", "RULE"):     # RULE: named in a Custom rule, which decides, once it has ended
         return HOLDS                # ended in any way, Not run included, so clean-up jobs still run
     if test == "SUCCESS":
         met = status == "SUCCESS"
@@ -110,8 +120,35 @@ def prerequisite_state(test: str, codes: Optional[str], status: str, code: Optio
     return HOLDS if met else NEVER
 
 
-def readiness(planned: Planned, by_name: Dict[str, Planned]) -> str:
-    """HOLDS when the job may start, NEVER when it never can, WAIT otherwise. ALL or ANY decides."""
+def run_values(by_name: Dict[str, Planned], variables: Dict[str, Any]) -> Dict[str, Any]:
+    """Every %{Name.Output} of the run as it stands, unknown (None) for a job not yet ended, and the variables."""
+    values = dict(variables)
+    for planned in by_name.values():
+        row = planned.row
+        values.update(workflow_conditions.item_values(planned.name, row.Status, row.ReturnCode, row.Reason,
+                                                      planned.file_count, planned.size,
+                                                      row.StartedDateTime, row.EndedDateTime))
+    return values
+
+
+def rule_state(planned: Planned, by_name: Dict[str, Planned], values: Dict[str, Any]) -> Tuple[str, Optional[bool]]:
+    """
+    Where a Custom rule stands: (HOLDS, NEVER or WAIT, its answer). A rule using IS NULL, coalesce and
+    the like is only decided once all its jobs have ended, since those turn unknown into an answer.
+    """
+    ended = all(by_name[target].row.Status in FINAL for target, _t, _c in planned.prerequisites)
+    if not ended and conditions.uses_null_tests(planned.rule):
+        return WAIT, None
+    answer = conditions.decide(planned.rule, values)
+    if answer is None:
+        return (NEVER if ended else WAIT), None     # unknown once everything is known counts as false
+    return (HOLDS if answer else NEVER), answer
+
+
+def readiness(planned: Planned, by_name: Dict[str, Planned], values: Optional[Dict[str, Any]] = None) -> str:
+    """HOLDS when the job may start, NEVER when it never can, WAIT otherwise. ALL, ANY or its Custom rule decides."""
+    if planned.join == "CUSTOM":
+        return rule_state(planned, by_name, values if values is not None else run_values(by_name, {}))[0]
     if not planned.prerequisites:
         return HOLDS
     states = [prerequisite_state(test, codes, by_name[target].row.Status, by_name[target].row.ReturnCode)
@@ -127,6 +164,8 @@ def readiness(planned: Planned, by_name: Dict[str, Planned]) -> str:
 
 def why_never(planned: Planned, by_name: Dict[str, Planned]) -> str:
     """Which prerequisites can no longer hold, in words: "it waits for 'A' to succeed, and 'A' failed"."""
+    if planned.join == "CUSTOM":
+        return f"its Custom rule is false: {planned.rule}"
     reasons = []
     for target, test, codes in planned.prerequisites:
         row = by_name[target].row
@@ -156,6 +195,7 @@ class WorkflowRunner:
         self.killing: Optional[str] = None          # why the workflow is being killed, once it is
         self.times_used: Counter = Counter()        # (path, action id): how often a rerun has run in this run
         self.own: Optional[OwnReactions] = None     # its own Reactions, when it runs on its own
+        self.variables: Dict[str, Any] = {}         # the ${...} its conditions use, fixed at the start
 
     def run(self) -> int:
         """Runs the workflow to the end. Returns the exit code for whoever started it: 0 if it succeeded, else 1."""
@@ -198,23 +238,34 @@ class WorkflowRunner:
         return run
 
     def _finish(self, status: str, reason: Optional[str], error: Optional[str] = None) -> int:
-        code = 0 if status == "SUCCESS" else 1
+        code = self._return_code(status)
         counted = status
         if self.own is not None and reason != "KILLED":
             counted = self.own.after(status, code, self._own_event)
         self.record.Status, self.record.Reason, self.record.ErrorMessage = counted, reason, error
         self.record.StatusBeforeOverride = status if counted != status else None
         self.record.ReturnCode = code
+        self.record.FileCount = sum(p.file_count or 0 for p in self.items)
+        self.record.Bytes = sum(p.size or 0 for p in self.items)
         self.record.EndedDateTime = utcnow()
         self._save()
         return 0 if counted == "SUCCESS" else 1
+
+    def _return_code(self, status: str) -> int:
+        """0 if it succeeded, 1 if not; or, by its completion rules, a chosen job's, where that job has one."""
+        source = self.by_name.get(self.workflow.ReturnCodeFrom or "")
+        if source is not None and source.row.ReturnCode is not None:
+            return source.row.ReturnCode
+        return 0 if status == "SUCCESS" else 1
 
     def _own_event(self, act: Act, result: str, message: str) -> None:
         self.db.add(ReactionEvent(JobRun_id=self.record.id, ReactionAction_id=act.id, Action=act.action,
                                   Result=result, Message=message))
 
     def _conclude(self) -> int:
-        """Succeeded, unless a failure went unhandled or jobs were cancelled."""
+        """Succeeded, unless a failure went unhandled or jobs were cancelled; or as its Succeeds when says."""
+        if self.workflow.SucceedsWhen and self.items:
+            return self._conclude_by_rule()
         cancelled = [p.name for p in self.items if p.row.Reason == "CANCELLED"]
         unhandled, handled = self._failures()
         not_run = [p.name for p in self.items if p.row.Status == "NOT_RUN" and p.row.Reason != "CANCELLED"]
@@ -239,6 +290,24 @@ class WorkflowRunner:
         job_log.summary(f"Workflow '{self.workflow.JobKey}' completed successfully"
                         + (f"; {_count(not_run, 'job')} did not run, as planned: {', '.join(not_run)}." if not_run else "."))
         return self._finish("SUCCESS", None)
+
+    def _conclude_by_rule(self) -> int:
+        """Succeeds when, worked out now that every job has ended. A kill or cancel is still its Reason."""
+        rule = self.workflow.SucceedsWhen
+        values = run_values(self.by_name, self.variables)
+        try:
+            answer = bool(conditions.decide(rule, values))
+        except ValueError as e:
+            job_log.error(f"Succeeds when cannot be worked out: {e}")
+            return self._finish("FAILED", "ERROR", f"Succeeds when cannot be worked out: {e}")
+        self._record_check("SUCCEEDS_WHEN", None, rule, values, answer)
+        reason = "KILLED" if self.killing else "CANCELLED" if any(p.row.Reason == "CANCELLED" for p in self.items) else None
+        if answer:
+            job_log.summary(f"Workflow '{self.workflow.JobKey}' completed successfully: Succeeds when holds.")
+            return self._finish("SUCCESS", reason)
+        message = f"Succeeds when does not hold: {rule}"
+        job_log.error(f"Workflow '{self.workflow.JobKey}' failed. {message}")
+        return self._finish("FAILED", reason or "SUCCEEDS_WHEN", message)
 
     def _failures(self) -> Tuple[List[str], List[str]]:
         """The failed jobs, as (unhandled, handled): handled if a job that waits for it started anyway."""
@@ -269,10 +338,56 @@ class WorkflowRunner:
             prerequisites = [(p.target.ItemName, p.Test, p.ReturnCodes) for p in item.prerequisites if p.target]
             self.items.append(Planned(item.ItemName, item.job.JobKey, item.JoinRule, prerequisites, row,
                                       active=bool(item.job.IsActive), disabled_here=item.DisabledHere,
-                                      job_type=item.job.JobType, rules=read_rules(item.job, item)))
+                                      job_type=item.job.JobType, rules=read_rules(item.job, item),
+                                      rule=item.StartRule if item.JoinRule == "CUSTOM" else None))
         self.by_name = {p.name: p for p in self.items}
+        self.variables = self._fixed_variables()
         job_log.detail(f"{_count(self.items, 'job')}: " + ", ".join(p.name for p in self.items))
         self._save()
+
+    def _conditions(self) -> List[str]:
+        return [p.rule for p in self.items if p.rule] + ([self.workflow.SucceedsWhen] if self.workflow.SucceedsWhen else [])
+
+    def _fixed_variables(self) -> Dict[str, Any]:
+        """The ${...} the conditions use, filled in once, as the run starts (the pre-run check found them all)."""
+        refs = {ref for text in self._conditions() for ref in conditions.references(text) if ref.startswith("${")}
+        if not refs:
+            return {}
+        from engine.scope_engine import ScopeResolutionEngine
+        engine = ScopeResolutionEngine(db=self.db, job_id=self.workflow.MasterObject_id, instance_id=self.options.instance_id,
+                                       environment=dict(os.environ), business_date=self.options.business_date)
+        engine.build_context()
+        values = {}
+        for ref in sorted(refs):
+            try:
+                values[ref] = engine.interpolate(ref)
+            except ValueError as e:
+                job_log.warning(f"{ref} has no value, so it counts as unknown: {e}")
+                values[ref] = None
+        return values
+
+    def _record_check(self, kind: str, path: Optional[str], text: str, values: Dict[str, Any], answer: Optional[bool]) -> None:
+        """Keeps a condition's decision, with the values it used, for Explain."""
+        used = {ref: values.get(ref) for ref in conditions.references(text)}
+        self.db.add(ConditionCheck(WorkflowRun_id=self.record.id, Path=path, Kind=kind, ConditionText=text,
+                                   ValuesJson=json.dumps(used), Result={True: "TRUE", False: "FALSE"}.get(answer, "UNKNOWN")))
+        shown = ", ".join(f"{ref} = {'unknown' if value is None else repr(value)}" for ref, value in used.items())
+        job_log.detail(f"{'Custom rule of ' + repr(path.split('/')[-1]) if path else 'Succeeds when'}: {text} "
+                       f"is {'true' if answer else 'false' if answer is False else 'unknown'}" + (f" ({shown})" if shown else ""))
+
+    def _readiness(self, planned: Planned) -> str:
+        if planned.join != "CUSTOM":
+            return readiness(planned, self.by_name)
+        values = run_values(self.by_name, self.variables)
+        try:
+            state, answer = rule_state(planned, self.by_name, values)
+        except ValueError as e:             # checked when saved, so only something the run could not foresee
+            job_log.error(f"'{planned.name}': its Custom rule cannot be worked out: {e}")
+            return NEVER
+        if state != WAIT and planned.checked_attempt != planned.row.Attempt:   # once per attempt, not per pass
+            planned.checked_attempt = planned.row.Attempt
+            self._record_check("START_RULE", planned.row.Path, planned.rule, values, answer)
+        return state
 
     # --- Each pass ---
 
@@ -321,7 +436,7 @@ class WorkflowRunner:
                     self._not_run(planned, "CANCELLED", f"'{planned.name}' will not run: the workflow was cancelled.")
                     changed = True
                     continue
-                state = readiness(planned, self.by_name)
+                state = self._readiness(planned)
                 if state == NEVER:
                     self._not_run(planned, "PREREQUISITES_NOT_MET",
                                   f"'{planned.name}' will not run: {why_never(planned, self.by_name)}.")
@@ -393,6 +508,7 @@ class WorkflowRunner:
             row = planned.row
             row.Status, row.ReturnCode, row.Reason, row.EndedDateTime = status, code, reason, utcnow()
             row.ChildRun_id = child.id if child else None
+            planned.file_count, planned.size = (child.FileCount, child.Bytes) if child else (None, None)
             words = "succeeded" if status == "SUCCESS" else "was killed" if reason == "KILLED" else "failed"
             job_log.summary(f"'{planned.name}' {words}" + (f", return code {code}." if code is not None else ".")
                             + (f" {child.ErrorMessage}" if status == "FAILED" and child and child.ErrorMessage else ""))
@@ -457,7 +573,7 @@ class WorkflowRunner:
             if p.row.Status == "RUNNING":
                 continue                    # still going: its own end stands
             p.row.Status, p.row.ReturnCode, p.row.Reason, p.row.StatusBeforeOverride = "PENDING", None, None, None
-            p.row.EndedDateTime, p.process = None, None
+            p.row.EndedDateTime, p.process, p.file_count, p.size = None, None, None, None
         chain[0].start_after = time.time() + act.wait_seconds
         used = self.times_used[(planned.row.Path, act.id)]
         wait = f" after {act.wait_seconds} s" if act.wait_seconds else ""

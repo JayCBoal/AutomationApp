@@ -220,11 +220,62 @@ def test_a_jobs_prerequisites_are_in_their_own_box_with_starts_when_under_them(p
     shown_in_outline(page, 1)
     box = page.locator("#side .wf-item:visible fieldset.wf-prereqs")
     assert box.locator("legend").text_content() == "Prerequisites"
-    assert box.locator(".item-join").is_disabled()                             # one prerequisite: All or Any doesn't matter
+    # One prerequisite: All or Any doesn't matter, so only Custom rule can be chosen (docs/WORKFLOWS_PHASE4.md)
+    assert box.locator(".item-join option").evaluate_all("options => options.map(o => o.disabled)") == [True, True, False]
     assert "Job in this workflow" in box.inner_text() and "Start rule" in box.inner_text()
     assert box.locator(".item-join option:checked").inner_text() == "When all prerequisites are satisfied"
-    assert box.locator('.item-join option[value="CUSTOM"]').is_disabled()       # not built yet
     boxes(page).nth(2).click()
     page.wait_for_function("() => document.querySelector('#side .wf-item[data-name=\"Report\"]')?.offsetParent")
     box = page.locator("#side .wf-item:visible fieldset.wf-prereqs")
     assert box.locator(".item-join").is_enabled() and box.locator(".item-join").input_value() == "ANY"
+
+
+def test_the_side_panel_opens_only_for_a_selected_job_and_changed_jobs_are_marked(page, flow):
+    flow()
+    page.goto("/ui/workflow.html?key=FLOW")
+    boxes(page)
+    assert not page.locator("#side").is_visible()                              # nothing selected: the diagram has the width
+    page.locator("#edit-button").click()
+    boxes(page).nth(2).click()
+    page.locator("#side .wf-item[data-name='Report']").wait_for(state="visible")
+    assert page.locator("#diagram .wf-changed").count() == 0
+    page.locator("#side .wf-item:visible .item-name").fill("Publish")
+    page.wait_for_function("() => document.querySelectorAll('#diagram .wf-changed').length === 1")
+    assert page.locator("#diagram .wf-box[data-name='Publish'] .wf-changed").count() == 1   # only the renamed job
+    page.locator(".wf-side-close").click()
+    page.locator("#side").wait_for(state="hidden")
+    page.locator("#cancel-button").click()
+    page.wait_for_function("() => document.querySelectorAll('#diagram .wf-changed').length === 0")
+
+
+def test_a_click_anywhere_on_the_empty_canvas_deselects_even_beside_the_drawing(page, flow):
+    flow()
+    page.goto("/ui/workflow.html?key=FLOW")
+    boxes(page).nth(1).click()
+    page.locator("#side").wait_for(state="visible")
+    canvas = page.locator("#diagram").bounding_box()
+    drawing = page.locator("#diagram svg").bounding_box()
+    assert canvas["x"] + canvas["width"] - 10 > drawing["x"] + drawing["width"]     # empty space right of the drawing
+    page.mouse.click(canvas["x"] + canvas["width"] - 10, canvas["y"] + 20)
+    page.locator("#side").wait_for(state="hidden")
+
+
+def test_the_job_pane_is_resized_by_dragging_its_edge_and_remembers_it(page, flow):
+    flow()
+    page.goto("/ui/workflow.html?key=FLOW")
+    boxes(page).nth(1).click()
+    side = page.locator("#side")
+    side.wait_for(state="visible")
+    before = side.bounding_box()["width"]
+    handle = page.locator(".wf-resize").bounding_box()
+    page.mouse.move(handle["x"] + 5, handle["y"] + handle["height"] / 2)
+    page.mouse.down()
+    page.mouse.move(handle["x"] - 145, handle["y"] + handle["height"] / 2, steps=5)
+    page.mouse.up()
+    assert side.bounding_box()["width"] > before + 100
+    page.reload()
+    boxes(page).nth(1).click()
+    side.wait_for(state="visible")
+    assert side.bounding_box()["width"] > before + 100                         # remembered in this browser
+    page.locator(".wf-resize").dblclick()
+    page.wait_for_function(f"() => Math.abs(document.querySelector('#side').getBoundingClientRect().width - {before}) < 2")

@@ -166,6 +166,19 @@ AutoApp's long-term features, beyond workflows. Each item is something RunMyJobs
 - **In RunMyJobs:** for the owner to describe.
 - **Builds on:** Workflows Phase 4's `%{Name.Output}` paths to other jobs, and flow control's outputs ([FLOW_CONTROL.md](FLOW_CONTROL.md)).
 
+### A job's Operations object downstream
+
+- **In RunMyJobs:** handing data from one job to the next in a workflow is limited. AutoApp workflows today pass only totals downstream (`FileCount`, `Bytes`, return codes).
+- **The idea** (the owner, 2026-10-17; raised again 2026-10-19; WORKFLOWS.md, "A job's operations as an object downstream"):
+  - a job's operations (file, endpoints, bytes, status) readable downstream as a table in conditions, e.g. `EXISTS (SELECT 1 FROM Extract.Operations WHERE DestEndpoint = 'FINANCE_IN' AND Status = 'SUCCESS')`, so a condition can ask about particular files rather than totals;
+  - a downstream job's For Each File looping over the files an upstream job delivered, rather than what matches a pattern, with the trace linking the handoff;
+  - a limit on a huge number of files, like While's `MaxIterations`.
+- **Direction:** the Operations *object* the job runner already builds for each run (what it sends to the telemetry API) travels downstream with the job's own end report, the core record.
+  - It never reads the Operations *table*, which is filled in after the fact and must stay off the critical path (see Telemetry that never slows a job; D40).
+  - The owner's point: the table is not real-time, but the object is what already feeds the telemetry endpoint, so it only needs to be made accessible downstream.
+- **Builds on:** Workflows Phase 4 (job outputs, conditions); the telemetry split; Return values from a job, which covers named values a job sets itself, where this covers the files themselves.
+- **Status in the workflow docs:** D42 in WORKFLOW_DECISIONS.md, *Deferred*: a later workflow enhancement, not needed by Phases 5 to 8. Decision 18 in WORKFLOWS_PHASE4.md.
+
 ### Telemetry that never slows a job
 
 - **Not a RunMyJobs shortcoming:** AutoApp's own architecture. Raised by the owner on 2026-10-18: "this is a big deal and I don't want it to get lost". Full details and the current state: [TO-DO.md](TO-DO.md), decision 10.

@@ -43,7 +43,7 @@ Compiled 2026-10-18, from the design record and Phases 1 to 4.
 **D7. A workflow holds jobs embedded (its own) or shared (used from elsewhere)**; no separate Reference object, no new noun for a use on screen.
 - *Why:* an embedded workflow is what RunMyJobs' structural sub-chains should have been: it belongs to its parent and stays out of lists (shortcoming 6). Shared jobs let one definition run several times with different values. Everything on the diagram is a job or a workflow, so there is nothing new to learn.
 - *Considered:* ActiveBatch's Reference objects.
-- *Status:* Designed (Phase 6); Phase 1 to 4 workflows use shared jobs only. *Source:* WORKFLOWS.md, "What a workflow holds".
+- *Status:* Designed (Phase 6; details D116 to D128); Phase 1 to 5 workflows use shared jobs only. *Source:* WORKFLOWS.md, "What a workflow holds".
 
 **D8. The model was built for the full design from the start**: unique names, a path for every job, attempts on job runs, an owner column for embedded jobs, a column for conditions.
 - *Why:* later phases then add behaviour without reshaping data, and without migrations that move existing records around.
@@ -317,7 +317,7 @@ Compiled 2026-10-18, from the design record and Phases 1 to 4.
 
 **D91. Workflow variables**: a workflow's `${...}` reach every job it runs, fixed once when the run starts; a use can override a variable for that use only; a secret is kept on the run as a reference, never as its value. Through workflows used in workflows with Phase 6.
 - *Why:* the owner: "a must". Fixed at the start so every job in the run sees the same values, which Resume (Phase 7) also needs; overrides on a use because a job is used in many workflows.
-- *Status:* Agreed, the rest of Phase 4. *Source:* WORKFLOWS_PHASE4.md, decision 19; replaces D53.
+- *Status:* Agreed, the rest of Phase 4. *Source:* WORKFLOWS_PHASE4.md, decision 19; replaces D53. Through workflows in workflows: D123 (Phase 6).
 
 **D92. A workflow's tags feed its jobs, and the order is the system-wide Variable precedence setting**: highest first, the use's override, the job's own, the workflow's own, the workflow's tags, the job's tags, then endpoint, application, entity, system values and the scheduler. The setting gains *Workflow* and *This use*.
 - *Why:* tags already work this way on every other object (just below the object's own); where the workflow and a job's tags disagree, the workflow sets the context (a workflow tagged `Environment / TEST` runs its jobs as TEST). One order everywhere, rather than a switch on each workflow, keeps "where did this value come from" predictable, the concern behind D53's switch.
@@ -418,6 +418,83 @@ Compiled 2026-10-18, from the design record and Phases 1 to 4.
 **D69. Steps' On failure is expected to become Reactions**, one mechanism for both.
 - *Why:* **Reason not recorded beyond "one mechanism".**
 - *Status:* Designed, no phase. *Source:* WORKFLOWS.md.
+
+## Embedded and shared workflows (Phase 6)
+
+**D116. Working folders stay named by the job's key; renaming a job that has history warns, and can move the folder.**
+- A top-level job with run history or a folder on the server's disk gets a plain-words warning on rename: scheduler definitions using the old key must change, past runs keep the old key, files in the old folder are not moved. A tickbox *Move the working folder with it* is offered only when the folder is on the server's own disk and the job is not running; a rename is refused while it runs. Audited. Built first (step 0), as a change outside workflows.
+- *Why:* the owner has met this trouble before and never had the chance to build the fix in. Folders by key can be read by an operator and survive a scheduler migration.
+- *Considered:* folders named by Job Id (owner's first idea; rejected: opaque to an operator, and the Id differs between databases, so a migration breaks it); renaming the folder automatically (rejected: a job's folder may be on several hosts, a run may be using it, and a move that fails halfway leaves the job pointing at nothing).
+- *Status:* Designed (Phase 6, agreed 2026-10-19). *Source:* WORKFLOWS_PHASE6.md.
+
+**D117. An embedded job's key is made from names and follows renames until the job has first run.**
+- The key is the owner's key, a dot, the item's name (`MONTH_END.Transform.Enrich` when nested). It follows renames of the item and of its owners until that job has run, then it is frozen, decided job by job. A scheduler never uses an embedded key. Keys over the 320-character limit are refused on save, naming the item to shorten.
+- *Why:* a job needs a unique key (it names the working folder, and runs and logs show it), but nobody should have to invent one for a job that belongs to a workflow. Once it has run, files sit in its folder, so the key stops moving.
+- *Considered:* a key fixed at creation and never changed (rejected: the key drifts from the name for no reason before anything has run); folders by Job Id (see D116).
+- *Status:* Designed (Phase 6, agreed 2026-10-19). *Source:* WORKFLOWS_PHASE6.md.
+
+**D118. An embedded item is an ordinary item whose job has an owner; no new table.**
+- Removing the item, or its workflow, deletes the embedded job and everything inside it; a shared job is never deleted that way.
+- *Why:* every property of a job (steps, variables, Reactions, success return codes) then works on an embedded one without new machinery, which is D3 again.
+- *Considered:* a separate embedded-item table (rejected: it would duplicate everything a job has).
+- *Status:* Designed (Phase 6, agreed 2026-10-19). *Source:* WORKFLOWS_PHASE6.md.
+
+**D119. Each frame (embedded workflow) is a child workflow run of its own, with its own instance id.**
+- The mechanism shared workflows already use. A job inside a frame that waits for something outside it looks the item up in the enclosing runs of the same top-level run.
+- *Why:* a frame has its own status, Reactions, Disable here, Kill, Success return codes and place in Job History, as the design wants (D3, D7).
+- *Considered:* flattening the tree into one graph at run time (rejected: simpler lines, but a frame would have no status of its own).
+- *Status:* Designed (Phase 6, agreed 2026-10-19). *Source:* WORKFLOWS_PHASE6.md.
+
+**D120. The workflow and everything embedded in it are edited as one form and saved with one Save, all or nothing.**
+- The checks (names, prerequisites, cycles) run over the whole tree.
+- *Why:* the diagram shows one thing; saving a frame alone could break its parent (a cycle) and would make the changed-since-last-save markers confusing.
+- *Considered:* a Save per frame.
+- *Status:* Designed (Phase 6, agreed 2026-10-19). *Source:* WORKFLOWS_PHASE6.md.
+
+**D121. Names are unique within their own workflow only; conditions reach into embedded items by path, and into a shared workflow by its outputs only.**
+- `%{Extract.Status}` for a neighbour, `%{Transform.Stage.Status}` down into a frame. A shared workflow offers `Status`, `ReturnCode`, `FileCount` and `Bytes`, not its inner jobs.
+- *Why:* two frames can each hold a `Stage` (D6 stands). Another workflow's inside can change without this one being opened, so a path into it could break a workflow nobody touched.
+- *Considered:* names unique across the whole tree (rejected: forces long names for no gain).
+- *Status:* Designed (Phase 6, agreed 2026-10-19). *Source:* WORKFLOWS_PHASE6.md.
+
+**D122. A job inside a frame may wait for any item in the same top-level tree; cycles are refused across the tree, and the wait is on this run, never the latest.**
+- The frame as a whole has prerequisites and a Start rule like any item and gates everything inside. A job inside a frame is waited for from outside by its path, not its short name. A test for "this run, not yesterday's" comes first.
+- *Why:* "all of these, then those" is the point of embedded workflows (WORKFLOWS.md); and a rerun that quietly waits on yesterday's result would defeat it.
+- *Considered:* waits only within a frame (rejected: the design draws a line from outside into the frame).
+- *Status:* Designed (Phase 6, agreed 2026-10-19). *Source:* WORKFLOWS_PHASE6.md.
+
+**D123. A workflow's variables reach everything inside it, embedded or shared; the nearest workflow wins, then a use's override.**
+- Fixed when the top-level run starts. A shared workflow gets its parent's values only while it runs there. A secret goes down by reference, never as a value.
+- *Why:* completes D91; fixed values are what Resume (Phase 7) needs.
+- *Status:* Designed (Phase 6, agreed 2026-10-19). *Source:* WORKFLOWS_PHASE6.md.
+
+**D124. Disable here, Success return codes and completion rules apply to a frame as to any item, for everything inside it.**
+- Disable here (stop) ends the frame Disabled and what is inside Not run; pass through ends it Bypassed.
+- *Why:* a frame is a job (D3), so nothing new to learn.
+- *Status:* Designed (Phase 6, agreed 2026-10-19). *Source:* WORKFLOWS_PHASE6.md.
+
+**D125. Reactions inside a frame name items of that frame only; "Kill the workflow" kills the frame and nothing above it.**
+- The frame ends Failed, `KILLED`, which its parent treats like any failed item. A Reaction on the frame's own item works as on any job. An operator can still Kill the top-level run by hand.
+- *Why:* the owner, 2026-10-19: just the frame. A Reaction that reached across frames could not be drawn or explained simply.
+- *Considered:* a separate "kill the top-level workflow" Reaction (not wanted).
+- *Status:* Designed (Phase 6, agreed 2026-10-19). *Source:* WORKFLOWS_PHASE6.md.
+
+**D126. Embedded items stay out of lists and search; their changes are in the parent's Audit Log; tags go on top-level jobs and workflows only.**
+- A workflow's tags feed everything inside it (D92). Job History gains the frame level.
+- *Why:* no clutter, which was shortcoming 6; tagging each embedded item as well would make inheritance confusing.
+- *Status:* Designed (Phase 6, agreed 2026-10-19). *Source:* WORKFLOWS_PHASE6.md.
+
+**D127. An embedded job or workflow can be made shared, and a shared one used as an embedded copy.**
+- *Make shared* gives it a key the owner chooses (refused if taken), clears its owner and lists it; the item now uses it, folder unchanged. *Use an embedded copy* duplicates a shared job or workflow, everything inside included; later changes to the original do not reach the copy. Neither merges back. Both audited.
+- *Why:* a second workflow will want a job that began as embedded, and a use sometimes needs to differ. The owner, 2026-10-19: a small addition, so in this phase.
+- *Considered:* leaving it to TO-DO (the owner chose to include it).
+- *Status:* Designed (Phase 6, agreed 2026-10-19). *Source:* WORKFLOWS_PHASE6.md.
+
+**D128. No limit on nesting depth, and no warning for it.**
+- Depth is tested instead: a deep, wide sample is measured for speed (every frame is a runner process that polls).
+- *Why:* the owner, 2026-10-19: production chains in RunMyJobs go well past five levels, so a warning would only be ignored; depth follows the work.
+- *Considered:* a warning past five levels (rejected).
+- *Status:* Designed (Phase 6, agreed 2026-10-19). *Source:* WORKFLOWS_PHASE6.md.
 
 ## Moved out of the workflow track
 

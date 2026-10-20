@@ -2,7 +2,7 @@
 
 The design record for AutoApp's workflows, built up in design sessions with the owner. What a workflow is for, and the RunMyJobs shortcomings it answers, are in [PROJECT_GOALS.md](PROJECT_GOALS.md) goal 2. This page holds everything else: the starting point, what is decided, what is proposed, and the open questions.
 
-Status: **Phases 1 to 4 are built and merged (Phase 4's Operations object and For Each File over an upstream job's files were deferred, D42); Phase 5 (outside dependencies) is built, 2026-10-19, awaiting review.** The design topics below are all settled.
+Status: **Phases 1 to 4 are built and merged (Phase 4's Operations object and For Each File over an upstream job's files were deferred, D42); Phase 5 (outside dependencies) is built and merged (2026-10-19); Phase 6 (embedded and shared workflows) is planned and agreed (WORKFLOWS_PHASE6.md, D116 to D128).** The design topics below are all settled.
 
 **Every decision, with its reason, is in [WORKFLOW_DECISIONS.md](WORKFLOW_DECISIONS.md)**: look there first for "why does it work like this?".
 

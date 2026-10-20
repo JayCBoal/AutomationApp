@@ -148,13 +148,14 @@ const WorkflowDiagram = (() => {
                                icons.length * (ICON + 4) + (external ? textWidth(external, EXTERNAL_FONT) + 4 : 0),
                                sub ? Math.min(textWidth(sub, SMALL_FONT), SUB_MAX) : 0);
         const height = PAD + (icons.length ? ICON + 4 : 0) + lines.length * LINE + subLines * SUB_LINE + PAD;
-        return { lines, icons, sub, external, width: Math.ceil(width + 2 * PAD), height: Math.ceil(height) };
+        const indent = item.frame && item.folded ? FOLD_INDENT : 0;        // room for the arrow at the top left
+        return { lines, icons, sub, external, indent, width: Math.ceil(width + 2 * PAD + indent), height: Math.ceil(height + (indent && !icons.length ? ICON + 4 : 0)) };
     }
 
     // ---------- The graph elkjs lays out ----------
 
     const FRAME_PADDING = "[top=40,left=14,bottom=14,right=14]";
-    const FRAME_HEAD = 34;
+    const FRAME_HEAD = 34, FOLD_INDENT = 22;
 
     /** The items that can be seen: those not inside a folded frame. */
     function visibleItems(diagram) {
@@ -336,8 +337,8 @@ const WorkflowDiagram = (() => {
         drawBoxText(g, at, model, look);
         if (item.frame && item.folded) {            // a frame folded to one box: its arrow opens it
             const toggle = svg("g", { class: "wf-fold", "data-fold": item.id, cursor: "pointer" }, g);
-            svg("rect", { x: at.x + at.width - 24, y: at.y + 2, width: 22, height: 20, fill: "transparent" }, toggle);
-            svg("text", { x: at.x + at.width - 19, y: at.y + 17, fill: css("--text"), style: "font: 700 14px system-ui, sans-serif" }, toggle).textContent = "▸";
+            svg("rect", { x: at.x + 2, y: at.y + 2, width: 26, height: 24, fill: "transparent" }, toggle);
+            svg("text", { x: at.x + 6, y: at.y + 22, fill: css("--text"), style: "font: 700 20px system-ui, sans-serif" }, toggle).textContent = "▸";
             tooltip(toggle, "Open this frame (or double-click it)");
         }
         tooltip(g, item.status ? `${item.name}: ${item.statusText}` : item.name);
@@ -362,10 +363,10 @@ const WorkflowDiagram = (() => {
         svg("rect", { class: "wf-frame-head", x: at.x, y: at.y, width: at.width, height: FRAME_HEAD, rx: 8, fill: css("--panel-raised"),
                       "fill-opacity": 0.9, stroke: "none" }, g);
         const toggle = svg("g", { class: "wf-fold", "data-fold": item.id, cursor: "pointer" }, g);
-        svg("rect", { x: at.x + 4, y: at.y + 4, width: 22, height: 26, fill: "transparent" }, toggle);
-        svg("text", { x: at.x + 9, y: at.y + 22, fill: css("--text"), style: "font: 700 14px system-ui, sans-serif" }, toggle).textContent = "▾";
+        svg("rect", { x: at.x + 3, y: at.y + 3, width: 26, height: 28, fill: "transparent" }, toggle);
+        svg("text", { x: at.x + 7, y: at.y + 24, fill: css("--text"), style: "font: 700 20px system-ui, sans-serif" }, toggle).textContent = "▾";
         tooltip(toggle, "Fold this frame into one box (or double-click it)");
-        icon(g, "frame", at.x + 30, at.y + 10, css("--muted"), "A workflow embedded in this one: it belongs to this workflow");
+        icon(g, "frame", at.x + 32, at.y + 10, css("--muted"), "A workflow embedded in this one: it belongs to this workflow");
         // The sub-title goes beside the name when the frame is wide enough anyway, and under it when it would stretch the frame
         const note = subLine(item), nameWidth = textWidth(item.name || "(no name yet)", NAME_FONT);
         const beside = !note || at.width >= 50 + nameWidth + 24 + textWidth(note, SMALL_FONT) + PAD;
@@ -378,10 +379,10 @@ const WorkflowDiagram = (() => {
 
     function drawBoxText(g, at, model, look) {
         let y = at.y + PAD;
-        if (model.icons.length) {
-            model.icons.forEach(([name, words], i) => icon(g, name, at.x + PAD + i * (ICON + 4), y, css("--muted"), words));
+        if (model.icons.length || model.indent) {
+            model.icons.forEach(([name, words], i) => icon(g, name, at.x + PAD + model.indent + i * (ICON + 4), y, css("--muted"), words));
             if (model.external) {
-                svg("text", { x: at.x + PAD + model.icons.length * (ICON + 4), y: y + 11, fill: look.stroke, style: `font: ${EXTERNAL_FONT}; letter-spacing: 0.5px` }, g).textContent = model.external;
+                svg("text", { x: at.x + PAD + model.indent + model.icons.length * (ICON + 4), y: y + 11, fill: look.stroke, style: `font: ${EXTERNAL_FONT}; letter-spacing: 0.5px` }, g).textContent = model.external;
             }
             y += ICON + 4;
         }
@@ -503,17 +504,23 @@ const WorkflowDiagram = (() => {
         return into;
     }
 
-    /** Every line of the laid-out graph with its points on the whole drawing: each is relative to the frame it runs inside. */
-    function placedEdges(node, ox = 0, oy = 0, into = []) {
-        for (const edge of node.edges || []) {
-            const move = p => ({ x: p.x + ox, y: p.y + oy });
-            const sections = (edge.sections || []).map(sec => ({ ...sec, startPoint: move(sec.startPoint), endPoint: move(sec.endPoint),
-                                                                bendPoints: (sec.bendPoints || []).map(move) }));
-            const labels = (edge.labels || []).map(l => ({ ...l, x: l.x + ox, y: l.y + oy }));
-            into.push({ ...edge, sections, labels });
-        }
-        for (const child of node.children || []) placedEdges(child, ox + child.x, oy + child.y, into);
-        return into;
+    /**
+     * Every line of the laid-out graph with its points on the whole drawing. elkjs gives a line's points relative to
+     * the frame that holds both its ends (its "container", the drawing itself when none), wherever it lists the line.
+     */
+    function placedEdges(root, nodes) {
+        const origin = new Map(nodes.map(node => [node.id, node]));
+        const found = [];
+        const collect = node => { found.push(...(node.edges || [])); (node.children || []).forEach(collect); };
+        collect(root);
+        return found.map(edge => {
+            const at = origin.get(edge.container) || { x: 0, y: 0 };
+            const move = p => ({ x: p.x + at.x, y: p.y + at.y });
+            return { ...edge,
+                     sections: (edge.sections || []).map(sec => ({ ...sec, startPoint: move(sec.startPoint), endPoint: move(sec.endPoint),
+                                                                   bendPoints: (sec.bendPoints || []).map(move) })),
+                     labels: (edge.labels || []).map(l => ({ ...l, x: l.x + at.x, y: l.y + at.y })) };
+        });
     }
 
     function picture(result, models, diagram, prefix) {
@@ -531,7 +538,7 @@ const WorkflowDiagram = (() => {
             if (item.frame && !item.folded) drawFrame(frames, item, node, diagram, prefix);
             else drawBox(boxes, item, node, models.get(node.id), diagram, prefix);
         }
-        for (const edge of placedEdges(result)) {
+        for (const edge of placedEdges(result, nodes)) {
             const line = linesById.get(edge.id);
             drawLine(lines, edge, line, lineWords(line, names), diagram, prefix);
         }

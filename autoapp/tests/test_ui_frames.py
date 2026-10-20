@@ -230,3 +230,19 @@ def test_a_saved_tree_is_changed_in_place_one_save_covers_the_frames(page, month
     page.locator('#outline .wf-item[data-name="Pull"]').wait_for()
     page.locator("#edit-button").click()
     assert page.locator("#submit-button").is_disabled()                        # and what was saved reads back unchanged
+
+
+def test_a_line_between_two_jobs_inside_a_frame_is_drawn_inside_it_and_the_fold_arrow_is_at_the_top_left(page, month_end):
+    page.goto("/ui/workflow.html?key=MONTH_END")
+    boxes(page)
+    other = box(page, "Other").bounding_box()
+    frame = page.locator('#diagram .wf-frame[data-name="Transform"]').bounding_box()
+
+    assert page.locator("#diagram .wf-line").count() == 2
+    arrow = page.locator('#diagram .wf-frame[data-name="Transform"] .wf-fold').bounding_box()
+    assert arrow["x"] - frame["x"] < 20 and arrow["y"] - frame["y"] < 20          # top left, open ...
+    page.locator('#diagram .wf-frame[data-name="Transform"] .wf-fold').click()
+    page.wait_for_function("() => !document.querySelector('#diagram .wf-frame[data-name=\"Transform\"]')")
+    folded = box(page, "Transform").bounding_box()
+    arrow = box(page, "Transform").locator(".wf-fold").bounding_box()
+    assert arrow["x"] - folded["x"] < 20 and arrow["y"] - folded["y"] < 20        # ... and folded

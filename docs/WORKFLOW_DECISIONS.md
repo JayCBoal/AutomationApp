@@ -604,6 +604,38 @@ Compiled 2026-10-18, from the design record and Phases 1 to 4.
 - *Why:* later phases (frames, outside dependencies) are drawn there before they are built.
 - *Status:* Kept (Phase 2, decision 3). *Source:* WORKFLOWS_PHASE2.md.
 
+## Restarts, planned in Phase 7
+
+**D136. Resume reads a control file of its own, never the operations spool or the database.** The runner keeps it on its host as the job goes, written before and after each step and after each file; a killed job's steps write what they knew as it stops.
+- *Why:* the telemetry principle (D40): nothing the workflow acts on may depend on operations records, which are an audit trail sent in the background; the runner never writes the database. The spool holds operations only, and its life belongs to the telemetry redesign.
+- *Considered:* reading the spool back (the original design); sending the record with the job's end report (a killed runner sends none); a database table written by the runner.
+- *Status:* Designed (Phase 7). *Source:* WORKFLOWS_PHASE7.md, proposal 1; the owner, 2026-10-20.
+
+**D137. Each step type says what a failed step knew: not done, partly done and known, or effect unknown; one that does not say counts as unknown.**
+- *Why:* D76. The safe default makes a new step type's author decide.
+- *Status:* Designed (Phase 7). *Source:* WORKFLOWS_PHASE7.md, proposal 3.
+
+**D138. "Failed (effect unknown)" does not hold the run; the Resume dialog asks the operator.** They choose per step: run it again, count it as done, or restart the job.
+- *Why:* the owner, 2026-10-20: the dialog is unmissable, since it comes when Resume is chosen; a waiting state would be Hold for an operator, which is a later feature. The label is the owner's wording; "unknown failure" did not say what was unknown.
+- *Status:* Designed (Phase 7). *Source:* WORKFLOWS_PHASE7.md, proposal 3.
+
+**D139. A Reaction's Rerun this job has two options, Restart from the beginning and Resume from failure; new ones default to Resume, existing ones stay Restart.** An automatic Resume does not fire after "Failed (effect unknown)"; an automatic Restart still does.
+- *Why:* the owner: a job of steps is AutoApp's standard job. The default after an unknown effect is the careful one. A restart is chosen knowing the work is done again, so it is left as built.
+- *Considered:* both stop (the original design; changes the existing Rerun); neither stops.
+- *Status:* Designed (Phase 7). *Source:* WORKFLOWS_PHASE7.md, proposals 3 and 13.
+
+**D140. A run that has ended is reopened, on the same record, by a new runner process;** refused when the workflow was edited and an item of the run no longer exists. A Succeeded run is reopened by Advanced only.
+- *Why:* D74. The simple rule for an edited workflow: the owner is adding a roadmap item for doing it properly.
+- *Status:* Designed (Phase 7). *Source:* WORKFLOWS_PHASE7.md, proposal 5.
+
+**D141. Phase 7 is built in two parts: Rerun ▸ with Resume and Restart first, Advanced… second; Hold at… is left out.**
+- *Why:* part 1 shows the whole idea (as Phase 4 was split); Hold needs Hold for an operator (D90).
+- *Status:* Designed (Phase 7). *Source:* WORKFLOWS_PHASE7.md.
+
+**D142. Every restart choice is recorded on the run and in the Audit Log** ("web interface" until accounts), with the changed `${...}` names and never values.
+- *Why:* D75; secrets never reach records.
+- *Status:* Designed (Phase 7). *Source:* WORKFLOWS_PHASE7.md, proposal 11.
+
 ## How the work is done
 
 **D89. Phases, each a working, demonstrable AutoApp**, in the order of the shortcomings' priority, except the diagram second and restarts and time-based Reactions last; each planned in detail with the owner just before it is built.

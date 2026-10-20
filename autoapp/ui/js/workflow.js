@@ -717,14 +717,18 @@ function workflowDetail() {
         },
 
         async submit() {
-            if (!AutoApp.confirmDisable(this.job, this.payload())) return;
+            const payload = this.payload();
+            if (!AutoApp.confirmDisable(this.job, payload)) return;
+            const rename = await AutoApp.askRename(this.job, payload.job_key);
+            if (!rename) return;
+            payload.move_working_folder = rename.move;
             this.busy = true;
             this.error = "";
             this.notice = "";
             try {
                 const result = this.job
-                    ? await AutoApp.send("PUT", "/jobs/" + encodeURIComponent(this.job.job_key), this.payload())
-                    : await AutoApp.send("POST", "/jobs", this.payload());
+                    ? await AutoApp.send("PUT", "/jobs/" + encodeURIComponent(this.job.job_key), payload)
+                    : await AutoApp.send("POST", "/jobs", payload);
                 this.job = result.job;
                 this.check = { valid: result.valid, problems: result.problems, warnings: [] };
                 this.show(result.job);

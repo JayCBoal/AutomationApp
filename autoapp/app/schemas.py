@@ -329,6 +329,18 @@ class JobSave(BaseModel):
         None, description="Paths of the tags the job carries. Leave out to keep them as they are")
     reactions: Optional[List[ReactionIO]] = Field(
         None, description="What happens after it ends. Leave out to keep them as they are; send a list to replace them")
+    move_working_folder: bool = Field(False, description=(
+        "With a new job_key: move the job's working folder to the new key's name. Ignored when the folder is not on "
+        "this server's disk"))
+
+
+class RenameFacts(BaseModel):
+    """What renaming a job would leave behind, for the warning shown before a rename."""
+    run_count: int
+    running: bool = Field(..., description="The job is running, so a rename is refused")
+    working_folder: Optional[str] = Field(None, description="The working folder on this server's disk, if it exists")
+    can_move_folder: bool = Field(..., description="The folder can be moved with the job")
+    needs_warning: bool = Field(..., description="The job has run history or a working folder")
 
 
 class JobSaveResult(BaseModel):

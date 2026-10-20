@@ -8,12 +8,12 @@ from sqlalchemy import case, func
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app import tag_store
+from app import rename_store, tag_store
 from app.job_store import JobStoreError, apply_job, delete_job, describe_job, inherited_variables, save_job
 from app.models import Job, JobRun, JobStep, JobStepParameter, Operation, Variable
 from app.schemas import (
     FieldPreview, JobCheckResult, JobDetail, JobInitRequest, JobInitResponse, JobPreview, JobSave, JobSaveResult,
-    JobStepPayloadSchema, JobSummary, LastRun
+    JobStepPayloadSchema, JobSummary, LastRun, RenameFacts
 )
 from engine.step_catalog import ENDPOINT_SUFFIX
 from engine.handlers import get_handler
@@ -329,6 +329,15 @@ def update_job(job_key: str, payload: JobSave, db: Session = Depends(get_db)):
     out is deleted. To rename the job, send a different job_key in the body.
     """
     return _save(db, payload, existing_key=job_key)
+
+
+@router.get("/{job_key}/rename-facts", response_model=RenameFacts)
+def rename_facts(job_key: str, db: Session = Depends(get_db)):
+    """What renaming the job would leave behind: run history, scheduler definitions, the working folder."""
+    job = db.query(Job).filter(Job.JobKey == job_key).first()
+    if not job:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"No job with JobKey '{job_key}' exists.")
+    return rename_store.rename_facts(db, job)
 
 
 @router.delete("/{job_key}", status_code=status.HTTP_204_NO_CONTENT)

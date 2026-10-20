@@ -24,7 +24,7 @@ Updated 2026-10-13. The order under "Work queue" is a proposal; the items under 
    - **Open:** an optional setting on the job saying which tag wins. Later: a parent marked "pick one", so a job cannot carry two of its children (e.g. both `Environment / DEV` and `Environment / PROD`).
    - **Settings table:** settings are declared in the code (name, type, default, allowed values, description), like the step catalog; the `Settings` table holds only the values changed from the default (`SettingKey`, `SettingValue`, when and by whom), and every change is audited. A Settings page is drawn from the declarations. Settings are not variables and cannot be read with `${...}`.
 
-4. **Working folder.** Currently `<working root>/<JobKey>`, private to the job and reused by every run of it. Confirm, or make it per run. Also decide whether archive folders live inside it or are registered endpoints.
+4. **Working folder.** Currently `<working root>/<JobKey>`, private to the job and reused by every run of it. **Decided 2026-10-19 (D116): it stays named by the key**; renaming warns and can move the folder. Still open: make it per run? Also decide whether archive folders live inside it or are registered endpoints.
 
 5. **Destination endpoints.** Should a delivery be checked against the destination endpoint's `FilenamePattern`, including after a rename mask has been applied?
 

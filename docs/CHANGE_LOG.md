@@ -6,6 +6,14 @@ Notable structural, schema and design changes to AutoApp, newest first. Line-by-
 
 ## 2026-10-19
 
+### Renaming a job: a warning that says what it leaves behind (Workflows Phase 6, step 0)
+
+Decision D116 in [WORKFLOW_DECISIONS.md](WORKFLOW_DECISIONS.md). Working folders stay named by the job's key.
+
+- **Added:** renaming a job or workflow that has run history or a working folder on this server now opens a warning: Job History keeps the old key on past runs, scheduler definitions using the old key must change, and the files in the old working folder stay where they are. A tickbox, *Move the working folder with it*, moves the folder to the new key's name when it is on this server's disk and the job is not running. A job with neither history nor folder renames with the earlier confirmation, as before.
+- **Added:** a rename is refused while the job is running. Moving the folder is refused, and nothing is renamed, when a folder with the new name already exists. A move is audited ("Moved the working folder with the job.").
+- **API:** `GET /api/v1/jobs/{key}/rename-facts` (run count, running, folder, whether it can move); `move_working_folder` on the job save. Nothing changes for callers that do not send it.
+
 ### Workflows, Phase 5: outside dependencies
 
 Plan: [WORKFLOWS_PHASE5.md](WORKFLOWS_PHASE5.md). Decisions D99 to D115 in [WORKFLOW_DECISIONS.md](WORKFLOW_DECISIONS.md) (D16 to D20 and D80 are now built).

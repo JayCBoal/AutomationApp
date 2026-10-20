@@ -300,7 +300,7 @@ The rule: **a location outside the job's working folder must be a registered end
 
 **Built** (`engine/step_params.py`)
 
-- Each job has its own working folder: `<working root>/<JobKey>`. No other job can use it, so a file passed from one job to another goes through an endpoint, which also records the handoff. The working root comes from `--working-root` or the `AUTOAPP_WORKING_ROOT` environment variable.
+- Each job has its own working folder: `<working root>/<JobKey>`. No other job can use it, so a file passed from one job to another goes through an endpoint, which also records the handoff. The working root comes from `--working-root` or the `AUTOAPP_WORKING_ROOT` environment variable. The folder stays named by the key: renaming a job with run history or a folder warns, and offers to move the folder with it when it is on the server's own disk (D116).
 - Each side of a file step is given one of two ways:
   - `Source` / `Dest`: a raw path. It must be inside the working folder; a relative path is taken relative to it. Anything else is rejected.
   - `SourceEndpoint` / `DestEndpoint`: the name of an endpoint.

@@ -604,6 +604,53 @@ const AutoApp = (() => {
             "to succeed will not run. Jobs that wait only for it to end will still run. The workflows themselves still run.");
     }
 
+    /** The sentences of the rename warning for a job with run history or a working folder. */
+    function renameWords(job, newKey, facts) {
+        const lines = [`Job History keeps the old key '${job.job_key}' on the ${facts.run_count} past run${facts.run_count === 1 ? "" : "s"}.`,
+            "Every scheduler definition that uses the old key must be changed to the new one."];
+        if (facts.working_folder) lines.push(`Its working folder ${facts.working_folder} is named after the old key; ` +
+            "the files in it stay there unless you move the folder with the job.");
+        return lines;
+    }
+
+    /**
+     * Before a save that renames a job: asks, and for a job with run history or a working folder says what
+     * the rename leaves behind. Resolves to null when the rename is called off, else { move }: whether to
+     * move the working folder with the job. Nothing is asked when the key is not changing.
+     */
+    async function askRename(job, newKey) {
+        if (!job || newKey === job.job_key) return { move: false };
+        const facts = await get("/jobs/" + encodeURIComponent(job.job_key) + "/rename-facts");
+        if (!facts.needs_warning && !facts.running) {
+            return confirm(`Rename this job from '${job.job_key}' to '${newKey}'?\n\n` +
+                "The scheduler runs it by its key, so every scheduler definition that uses the old key must be " +
+                "changed too. Its working folder also changes, to one named after the new key.") ? { move: false } : null;
+        }
+        return new Promise(resolve => {
+            const move = element("input", { type: "checkbox", id: "rename-move" });
+            const ok = element("button", { type: "button", className: "primary", id: "rename-go", textContent: "Rename" });
+            const cancel = element("button", { type: "button", className: "secondary", id: "rename-cancel", textContent: "Cancel" });
+            const words = facts.running
+                ? [`'${job.job_key}' is running, so it cannot be renamed now. Rename it when the run has ended.`]
+                : renameWords(job, newKey, facts);
+            const body = [element("p", { textContent: `Rename '${job.job_key}' to '${newKey}'?` }),
+                ...words.map(text => element("p", { className: "message", textContent: text }))];
+            if (facts.can_move_folder) body.push(element("label", { className: "rename-move" }, [move, " Move the working folder with it"]));
+            else if (!facts.running && !facts.working_folder) body.push(element("p", { className: "muted small",
+                textContent: "No working folder was found on this server, so there is nothing to move from here." }));
+            if (facts.running) ok.hidden = true;
+            const dialog = element("dialog", { className: "popup rename-warning" }, [
+                element("div", { className: "popup-head" }, [element("h2", { textContent: "Rename a job" }), cancel, ok]),
+                element("div", { className: "popup-body" }, body)]);
+            let answer = null;
+            ok.addEventListener("click", () => { answer = { move: move.checked }; dialog.close(); });
+            cancel.addEventListener("click", () => dialog.close());
+            dialog.addEventListener("close", () => { dialog.remove(); resolve(answer); });
+            document.body.append(dialog);
+            dialog.showModal();
+        });
+    }
+
     /** The page of a job, or of a workflow. */
     function jobPage(job) {
         return (job.job_type === "WORKFLOW" ? "workflow.html?" : "job.html?") + new URLSearchParams({ key: job.job_key });
@@ -775,5 +822,5 @@ const AutoApp = (() => {
     }
 
     return { PAGES, EMBEDDED, link, go, tellHost, get, send, createInPlace, ensureLookups, parseUtc, formatTime, localInputToUtc, timeZoneName, formatSize, toCsv, download, searchPage,
-             jobContents, jobPage, confirmDisable, showPath, normalPath, fillTagPanels, tagEditing };
+             jobContents, jobPage, confirmDisable, askRename, showPath, normalPath, fillTagPanels, tagEditing };
 })();

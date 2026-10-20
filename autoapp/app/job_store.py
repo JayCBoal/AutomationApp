@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session, object_session
 
 from app.models import Audit, Job, JobRun, JobStep, JobStepParameter, StepType, Variable, utcnow
 from app.schemas import JobDetail, JobSave, JobStepOut, JobStepSave, VariableOut
-from app import outside_store, reaction_store, workflow_store
+from app import outside_store, reaction_store, rename_store, workflow_store
 from engine import return_codes, step_tree
 from engine.handlers import HANDLER_REGISTRY
 from engine.handlers.flow import BRANCH_NAMES, BRANCHES, structure_problems, top_level_problems
@@ -349,13 +349,41 @@ def save_job(db: Session, payload: JobSave, existing_key: Optional[str], who: st
     records the change. Returns (job, changes), where changes says in words what
     the save did. Raises JobStoreError if it cannot be done.
     """
+    old_key = existing_key if existing_key and payload.job_key.strip() != existing_key else None
+    if old_key:
+        _check_rename(db, old_key, payload)
     job, changes = apply_job(db, payload, existing_key, who)
+    moved = bool(old_key and payload.move_working_folder and _move_folder(db, old_key, job.JobKey))
+    if moved:
+        changes.append("Moved the working folder with the job.")
     if changes:
         _audit(db, job, "JOB_CREATED" if existing_key is None else "JOB_UPDATED", who,
                {"job_key": job.JobKey, "changes": changes})
-    db.commit()
+    try:
+        db.commit()
+    except Exception:
+        if moved:
+            rename_store.move_folder(job.JobKey, old_key)      # the rename did not happen: put the folder back
+        raise
     db.refresh(job)
     return job, changes
+
+
+def _check_rename(db: Session, old_key: str, payload: JobSave) -> None:
+    job = db.query(Job).filter(Job.JobKey == old_key).first()
+    if job is None:
+        return                          # apply_job reports the missing job
+    try:
+        rename_store.check_rename(db, job, payload.job_key.strip(), payload.move_working_folder)
+    except rename_store.RenameError as e:
+        raise JobStoreError(str(e), status=e.status)
+
+
+def _move_folder(db: Session, old_key: str, new_key: str) -> bool:
+    try:
+        return rename_store.move_folder(old_key, new_key)
+    except rename_store.RenameError as e:
+        raise JobStoreError(str(e), status=e.status)
 
 
 def apply_job(db: Session, payload: JobSave, existing_key: Optional[str], who: str) -> tuple:

@@ -630,10 +630,9 @@ function jobDetail() {
         async submit() {
             const payload = this.payload();
             if (!AutoApp.confirmDisable(this.job, payload)) return;
-            if (this.job && payload.job_key !== this.job.job_key && !confirm(
-                `Rename this job from '${this.job.job_key}' to '${payload.job_key}'?\n\n` +
-                "The scheduler runs it by its key, so every scheduler definition that uses the old key must be " +
-                "changed too. Its working folder also changes, to one named after the new key.")) return;
+            const rename = await AutoApp.askRename(this.job, payload.job_key);
+            if (!rename) return;
+            payload.move_working_folder = rename.move;
 
             this.busy = true;
             this.error = "";

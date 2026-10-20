@@ -104,6 +104,37 @@ Compiled 2026-10-18, from the design record and Phases 1 to 4.
 - *Why:* how workflows are initiated is not what AutoApp demonstrates; scheduling may come later.
 - *Status:* Built (Phase 1). *Source:* WORKFLOWS.md, "Starting a workflow".
 
+**D99. When an outside prerequisite's "up to N minutes" starts is a choice on the prerequisite:** (1) after the job's other prerequisites have held (the default); (2) after the first of them holds; (3) after a chosen prerequisite holds; (4) from the start of the workflow run. "Until a time" is a clock time and needs none.
+- *Why:* counting from the workflow's start alone would time out a job sitting behind a long upstream job; the right start differs by case, and the four are the natural anchors (all, first, a chosen one, the run). The owner, 2026-10-19, made the third "a chosen prerequisite" rather than the fourth option proposed ("after a chosen job ends"), as it fits the others and reads better.
+- *Status:* Designed (Phase 5). *Source:* WORKFLOWS_PHASE5.md, proposal 2; refines D16.
+
+**D100. An outside prerequisite waits at most 24 hours by default**, a system setting ("Default wait for outside prerequisites"), shown on each prerequisite as "Default (24 h)"; "No limit" is a deliberate choice, and saving a prerequisite with none warns.
+- *Why:* AutoApp has no daily cycle to end a stale wait (Control-M's New Day Process does), so an unlimited wait could hang forever; a limit that is visible and editable is not hidden magic.
+- *Considered:* no limit by default (the owner was not sure an indefinite wait is better than an arbitrary default).
+- *Status:* Designed (Phase 5). *Source:* WORKFLOWS_PHASE5.md, proposal 3; the owner, 2026-10-19.
+
+**D101. An optional prerequisite is waited for up to its limit, then dropped from the job's check; the job's other prerequisites still decide.** It needs a limit (without one it would be the same as required). If nothing else is left, the job starts. In a Custom rule, its outputs are unknown (`NULL`).
+- *Why:* the owner's reading: "wait N minutes, then run without it if the others are satisfied". Counting it as *held* instead (the first proposal) would start a job with the Start rule Any at once when the optional wait timed out, even if none of its other prerequisites held.
+- *Considered:* counting a timed-out optional prerequisite as held.
+- *Status:* Designed (Phase 5). *Source:* WORKFLOWS_PHASE5.md, proposal 4; the owner, 2026-10-19.
+
+**D102. A prerequisite's target can also be a whole workflow** (its final status), not only a job in it.
+- *Why:* "wait for the nightly load" is the common wish, and sub-workflows (structural ones) could not work otherwise. Cheap, because a workflow is a kind of job (D3) and its run is a job run.
+- *Status:* Designed (Phase 5). *Source:* WORKFLOWS_PHASE5.md, proposal 9; the owner, 2026-10-19.
+
+**D103. A time window that spans midnight is written `%{Now.Time} IN WINDOW '18:00' TO '06:00'`**: after the start, or before the end when the end is earlier. It is AutoApp's own syntax, translated to plain comparisons before the condition is worked out; the builder shows it in words.
+- *Why:* `BETWEEN` cannot wrap past midnight and the `OR` form is easy to get wrong (a `23:59` end leaves a gap). A mainframe scheduler's times past 24 hours (`99:00` for 4d3h) made users do the arithmetic.
+- *Considered:* the `OR` form alone (still works); times beyond 24:00.
+- *Status:* Designed (Phase 5). *Source:* WORKFLOWS_PHASE5.md, proposal 6; the owner, 2026-10-19.
+
+**D104. Prerequisites may not form a cycle, within a workflow or between workflows**; the message points to Rerun from… (D39). A cross-workflow loop (a Rerun-workflow Reaction with a limit) is a TO-DO item.
+- *Why:* neither job of a prerequisite cycle can ever make its first start, so no exit could fire (D39).
+- *Status:* Designed (Phase 5). *Source:* WORKFLOWS_PHASE5.md, proposal 7; the owner, 2026-10-19.
+
+**D105. An endpoint prerequisite checks the files where the endpoint says; no queue or agent field yet.** If agents or queues come, the endpoint reference gains a "checked on" field, as ActiveBatch's file constraint names a queue.
+- *Why:* AutoApp has neither queues nor agents; the owner thought ActiveBatch's way worked well, so the place for it is kept free.
+- *Status:* Designed (Phase 5, local endpoints only). *Source:* WORKFLOWS_PHASE5.md, proposal 10; the owner, 2026-10-19.
+
 ## Running
 
 **D22. The workflow runner works on the database directly**, beside the server, not on an agent; job runners report through the API as before.
@@ -246,7 +277,33 @@ Compiled 2026-10-18, from the design record and Phases 1 to 4.
 **D92. A workflow's tags feed its jobs, and the order is the system-wide Variable precedence setting**: highest first, the use's override, the job's own, the workflow's own, the workflow's tags, the job's tags, then endpoint, application, entity, system values and the scheduler. The setting gains *Workflow* and *This use*.
 - *Why:* tags already work this way on every other object (just below the object's own); where the workflow and a job's tags disagree, the workflow sets the context (a workflow tagged `Environment / TEST` runs its jobs as TEST). One order everywhere, rather than a switch on each workflow, keeps "where did this value come from" predictable, the concern behind D53's switch.
 - *Considered:* the job's tags above the workflow's (the workflow only filling gaps); D53's per-workflow switch.
-- *Status:* Agreed, the rest of Phase 4. *Source:* WORKFLOWS_PHASE4.md, decisions 20 and 21; the owner, 2026-10-19.
+- *Status:* Built (the rest of Phase 4). *Source:* WORKFLOWS_PHASE4.md, decisions 20 and 21; the owner, 2026-10-19.
+
+**D93. Variables and Tags sit below the jobs on the workflow page.**
+- *Why:* put above the jobs, they pushed the diagram below the fold, and the diagram is the page's point.
+- *Status:* Built (WORKFLOWS_PHASE4.md, decision 22); approved by the owner 2026-10-19.
+
+**D94. Where a workflow variable's value came from is shown in the job log and on the workflow page**, not on the job page.
+- *Why:* a job on its own belongs to no workflow, so its page has no workflow level to name; the log names the variables each job got from its workflow and its use, never their values.
+- *Status:* Built (decision 23); approved by the owner 2026-10-19. Added the same day: the workflow page's steps view shows it for each `${Name}` in a job's steps (D97).
+
+**D97. A job used in a workflow shows its steps read only beside its use, each `${Name}` marked with its value and where it comes from**, in the Diagram's pane and the Outline; and **Open job ↗** opens the job in a new tab.
+- *Why:* the owner asked how to see where workflow variables are used without leaving for the job editor. A job is stored on its own and a workflow only points at it, so editing it in another tab cannot disturb the workflow's unsaved changes; the new tab is the way to change the steps, and the pane only reads them.
+- *Considered:* editing steps inside the workflow page (a second step editor, against D90's tight scope); opening the job in the same tab (loses unsaved workflow changes).
+- *Status:* Built (WORKFLOWS_PHASE4.md, decisions 27 and 28); approved by the owner 2026-10-19.
+
+**D98. A job opened from a workflow is checked as that workflow runs it, with a switch to check it on its own.**
+- *Why:* the pre-run check on the job page knew nothing of the workflow, so a job that relies on a workflow's variable warned there although it would run fine in its workflow (the owner saw it on both jobs of the sample). Checking in context tells the truth about the case the user came from; the switch keeps the independent check one click away, since the job can also run alone.
+- *Considered:* checking only on its own (what warned); including unsaved workflow edits (the page would have to send the whole workflow; the check uses the workflow as last saved and says so).
+- *Status:* Built (WORKFLOWS_PHASE4.md, decision 29); approved by the owner 2026-10-19.
+
+**D95. A workflow's value is filled in as the run starts, in the workflow's own context**; one needing something only a job has is kept as written for the job to fill in.
+- *Why:* every job in the run then sees the same value, which Resume (Phase 7) needs; but a workflow cannot know a job's own variables.
+- *Status:* Built (decision 24); approved by the owner 2026-10-19.
+
+**D96. The pre-run check judges each use, not each job**, with its workflow's and its use's values.
+- *Why:* two uses of one job can set different variables, so one may pass where the other fails.
+- *Status:* Built (decision 26); approved by the owner 2026-10-19.
 
 **D54. The condition box: one component wherever a condition is written** (Custom rule, Succeeds when, If, Else If, While): Builder or Text, Names and outputs, checking as you type, Explain.
 - *Why:* shortcoming 3 asks for help, validation and a way to see why a condition came out as it did; one box means one thing to learn in the job editor and the workflow editor alike ("One editor experience").

@@ -77,11 +77,10 @@ class Conflict:
     name: str
     sources: List[Tuple[str, str]]       # (path of the tag that defines it, path of the tag attached), one per value
 
-    def message(self) -> str:
+    def message(self, advice: str = "Give it a value of its own here, or remove one of the tags.") -> str:
         tags = " and ".join(shown(attached) + ("" if source == attached else f" (from {shown(source)})")
                             for source, attached in self.sources)
-        return (f"Variable '{self.name}' is given different values by tags {tags}. "
-                f"Give it a value of its own here, or remove one of the tags.")
+        return f"Variable '{self.name}' is given different values by tags {tags}. {advice}"
 
 
 @dataclass

@@ -8,7 +8,7 @@ a setting with no row has its default.
 
 Settings are not variables: nothing reads them through ${...}.
 
-    current(db, "VariablePrecedence")   ->  ["ENV", "SYS", "ENTITY", "APP", "ENDPOINT", "TAG", "JOB"]
+    current(db, "VariablePrecedence")   ->  ["ENV", "SYS", "ENTITY", "APP", "ENDPOINT", "TAG", "WORKFLOW", "JOB", "USE"]
 
 An order is stored, and given by the API, lowest priority first: the order the
 levels are merged in. The Settings page shows it the other way round.
@@ -36,16 +36,20 @@ class Setting:
 SETTINGS: Dict[str, Setting] = {s.key: s for s in [
     Setting(
         "VariablePrecedence", ORDER,
-        default="ENV,SYS,ENTITY,APP,ENDPOINT,TAG,JOB",
+        default="ENV,SYS,ENTITY,APP,ENDPOINT,TAG,WORKFLOW,JOB,USE",
         title="Variable precedence",
         description="Where a ${Name} is looked for. When two of these define the same variable, the one with "
-                    "the higher priority wins. The tags on an application, entity or endpoint always count "
-                    "just below that object's own variables.",
-        choices=("ENV", "SYS", "ENTITY", "APP", "ENDPOINT", "TAG", "JOB"),
+                    "the higher priority wins. The tags on an application, entity, endpoint or workflow always "
+                    "count just below that object's own variables. Workflow and This use apply only to a job "
+                    "run in a workflow.",
+        choices=("ENV", "SYS", "ENTITY", "APP", "ENDPOINT", "TAG", "WORKFLOW", "JOB", "USE"),
         labels=(("ENV", "The environment the runner starts in, where a scheduler puts the job's own variables"),
                 ("SYS", "System values"), ("ENTITY", "The endpoint's entity"),
                 ("APP", "The endpoint's application"), ("ENDPOINT", "The endpoint's tags"),
-                ("TAG", "The job's tags"), ("JOB", "The job's own variables")),
+                ("TAG", "The job's tags"),
+                ("WORKFLOW", "The workflow the job runs in: its own variables, then its tags'"),
+                ("JOB", "The job's own variables"),
+                ("USE", "This use of the job in a workflow: the variables set on it there")),
     ),
     Setting(
         "LogRetentionDays", CHOICE,
@@ -109,14 +113,28 @@ def current(db: Optional[Session], key: str) -> Any:
     text = stored(db).get(key) if db is not None else None
     if text is not None:
         if s.kind == ORDER:
-            # An order saved before a choice existed keeps its order; the new choice goes in at the lowest priority
-            items = [item.strip().upper() for item in text.split(",") if item.strip()]
-            text = ",".join([c for c in s.choices if c not in items] + items)
+            text = ",".join(_with_new_choices(s, [item.strip().upper() for item in text.split(",") if item.strip()]))
         try:
             return parse(key, text)
         except ValueError:
             pass
     return parse(key, s.default)
+
+
+def _with_new_choices(s: Setting, items: List[str]) -> List[str]:
+    """
+    An order saved before a choice existed keeps its order, and the new choice goes in just above
+    the highest-ranked choice the default puts below it: WORKFLOW above TAG, USE above everything,
+    and ENV, with nothing below it, at the lowest priority.
+    """
+    default = s.default.split(",")
+    for choice in s.choices:
+        if choice in items:
+            continue
+        below = [items.index(c) for c in default[:default.index(choice)] if c in items] if choice in default else []
+        place = max(below) + 1 if below else 0
+        items = items[:place] + [choice] + items[place:]
+    return items
 
 
 def describe_all(db: Session) -> List[Dict[str, Any]]:

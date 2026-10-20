@@ -444,7 +444,7 @@ body.embedded main { padding-top: 12px; }
 .wf-side h3 { margin: 0 0 6px; font-size: 15px; }
 .wf-side > div > * + * { margin-top: 4px; }
 .wf-side .wf-outline > li { border-bottom: 0; padding: 0; }
-.wf-side .wf-prereqs, .wf-side .wf-item-reactions { margin-left: 0; }
+.wf-side .wf-prereqs, .wf-side .wf-item-reactions, .wf-side .wf-item-variables { margin-left: 0; }
 .wf-side .wf-prerequisites > li.wf-row + li.wf-row { border-top: 1px dashed var(--border); padding-top: 8px; margin-top: 4px; }
 .wf-side .wf-row input[type=text] { min-width: 0; width: 100%; }
 .wf-side .wf-row label { flex-wrap: wrap; }
@@ -470,8 +470,8 @@ body.embedded main { padding-top: 12px; }
 .reaction { border: 1px solid var(--border); border-radius: 5px; padding: 6px 10px; margin: 6px 0; }
 .reaction-actions { list-style: none; margin: 4px 0 0 18px; padding: 0; }
 .reaction select, .reaction input { width: auto; max-width: 100%; }
-.wf-item-reactions { border: 1px solid var(--border); border-radius: 5px; margin: 8px 0 6px 58px; padding: 4px 10px 10px; min-width: 0; }
-.wf-item-reactions legend { padding: 0 6px; color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.6px; }
+.wf-item-reactions, .wf-item-variables { border: 1px solid var(--border); border-radius: 5px; margin: 8px 0 6px 58px; padding: 4px 10px 10px; min-width: 0; }
+.wf-item-reactions legend, .wf-item-variables legend { padding: 0 6px; color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.6px; }
 .wf-disabled-here select { width: auto; max-width: 100%; }
 .wf-reactions { margin: 2px 0 0; padding-left: 18px; }
 .reaction-events { margin-top: 8px; }
@@ -508,3 +508,11 @@ body.embedded main { padding-top: 12px; }
 .wf-side .cond-row select { min-width: 0; }
 .wf-side .cond-row .cond-op, .wf-side .cond-row .cond-join { flex: none; }
 .wf-side .cond-row .cond-subject { min-width: 13em; }
+
+.wf-steps { margin: 8px 0 4px 58px; }
+.wf-side .wf-steps { margin-left: 0; }
+.wf-steps summary { cursor: pointer; color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.6px; }
+.wf-step-list { list-style: none; margin: 6px 0 0; padding: 0; }
+.wf-step-list > li { margin: 4px 0; }
+.wf-step-uses, .wf-step-uses ul { list-style: none; margin: 2px 0 2px 16px; padding: 0; }
+.wf-step-uses .no-value { color: var(--failure); }

@@ -214,16 +214,16 @@ def test_the_variable_precedence_is_put_in_order_and_saved(page, world):
     assert setting.locator(".save-setting").is_disabled()
     # shown highest priority first
     assert [li.get_attribute("data-choice") for li in setting.locator("li").all()] == [
-        "JOB", "TAG", "ENDPOINT", "APP", "ENTITY", "SYS", "ENV"]
+        "USE", "JOB", "WORKFLOW", "TAG", "ENDPOINT", "APP", "ENTITY", "SYS", "ENV"]
 
-    setting.locator('[data-choice="TAG"] .move-up').click()          # the job's tags over its own variables
+    setting.locator('[data-choice="TAG"] .move-up').click()          # the job's tags over the workflow's
     with page.expect_response(lambda r: r.request.method == "PUT"):
         setting.locator(".save-setting").click()
 
     page.locator("#save-notice").wait_for(state="visible")
-    assert "to ENV,SYS,ENTITY,APP,ENDPOINT,JOB,TAG." in page.locator("#save-notice").inner_text()
-    assert page.request.get("/api/v1/settings").json()[0]["value"][-2:] == ["JOB", "TAG"]
-    assert [li.get_attribute("data-choice") for li in setting.locator("li").all()][:2] == ["TAG", "JOB"]
+    assert "to ENV,SYS,ENTITY,APP,ENDPOINT,WORKFLOW,TAG,JOB,USE." in page.locator("#save-notice").inner_text()
+    assert page.request.get("/api/v1/settings").json()[0]["value"][-4:] == ["WORKFLOW", "TAG", "JOB", "USE"]
+    assert [li.get_attribute("data-choice") for li in setting.locator("li").all()][:4] == ["USE", "JOB", "TAG", "WORKFLOW"]
 
 
 def test_how_long_job_logs_are_kept_is_chosen_from_a_list(page, world):

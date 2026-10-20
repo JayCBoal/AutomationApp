@@ -412,6 +412,22 @@ class WorkflowItem(Base):
                              passive_deletes=True, order_by=lambda: [Reaction.Section, Reaction.ReactionOrder])
     prerequisites = relationship("WorkflowPrerequisite", foreign_keys="WorkflowPrerequisite.Item_id", backref="item",
                                  cascade="all, delete-orphan", passive_deletes=True, order_by="WorkflowPrerequisite.id")
+    # This use's own variables, over the job's own (the This use level of the Variable precedence setting)
+    variables = relationship("WorkflowItemVariable", cascade="all, delete-orphan", passive_deletes=True,
+                             order_by="WorkflowItemVariable.VarName")
+
+
+class WorkflowItemVariable(Base):
+    """A variable of one use of a job in a workflow, overriding the job's own for that use only."""
+    __tablename__ = 'WorkflowItemVariables'
+    __table_args__ = (UniqueConstraint('Item_id', 'VarName', name='uq_item_var'),)
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    Item_id = Column(Integer, ForeignKey('WorkflowItems.id', ondelete='CASCADE'), nullable=False, index=True)
+    VarName = Column(String(100), nullable=False)
+    VarValue = Column(Text, nullable=True)
+    IsSecret = Column(Boolean, default=False, server_default=false())
+    Description = Column(Text, nullable=True)
 
 
 class WorkflowPrerequisite(Base):
@@ -543,6 +559,9 @@ class JobRun(Base):
     # host's log folder, and when it was removed for being older than the Settings page's limit
     LogFile = Column(String(500), nullable=True)
     LogRemovedDateTime = Column(PreciseDateTime, nullable=True)
+    # A workflow run's variables, fixed as it starts (engine/workflow_vars.py): its own and its tags',
+    # and each use's, as JSON. A secret is kept by name only, never its value
+    WorkflowVariables = Column(Text, nullable=True)
 
     job = relationship("Job")
     operations = relationship("Operation", back_populates="run", cascade="all, delete-orphan",

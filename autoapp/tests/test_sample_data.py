@@ -11,6 +11,7 @@ from datetime import date
 from sqlalchemy import text
 
 from app.catalog import sync_catalog
+from app.log_agent import run_log
 from app.models import Endpoint, Job, JobRun, StepType, Variable, WorkflowRunItem
 from conftest import AUTOAPP_DIR, subprocess_env
 from create_dev_db import create_sales_db, load_seed
@@ -177,6 +178,24 @@ def test_the_conditions_sample_starts_post_by_its_rule_and_succeeds_by_succeeds_
         "Collect": "SUCCESS", "Rates": "SUCCESS", "Fallback_rates": "NOT_RUN", "Post": "SUCCESS", "EU_report": "SUCCESS"}
     assert items["Collect"].child_run.FileCount >= 1
     assert (run.Status, run.ReturnCode) == ("SUCCESS", 0)
+
+
+def test_the_variables_sample_gives_each_use_its_own_region_and_currency(db, db_url, tmp_path):
+    """DEV-VARIABLES_SAMPLE (docs/WORKFLOWS_PHASE4.md): the workflow's variables and its tag reach its jobs."""
+    load_seed(db)
+    result = subprocess.run([sys.executable, "-m", "engine.runner", "--job-key", "DEV-VARIABLES_SAMPLE",
+                             "--instance-id", "5001", "--spool-dir", str(tmp_path / "spool"),
+                             "--working-root", str(tmp_path / "work")],
+                            cwd=AUTOAPP_DIR, env={**subprocess_env(db_url), "AUTOAPP_WORKFLOW_POLL_SECONDS": "0.2"},
+                            capture_output=True, text=True, timeout=120)
+    assert result.returncode == 0, result.stdout[-3000:]
+    db.expire_all()
+    run = db.query(JobRun).filter(JobRun.JobKey == "DEV-VARIABLES_SAMPLE").one()
+    items = {i.ItemName: i for i in db.query(WorkflowRunItem).filter_by(WorkflowRun_id=run.id)}
+    assert {name: i.Status for name, i in items.items()} == {"Summary_EU": "SUCCESS", "Summary_US": "SUCCESS"}
+    logs = {name: "\n".join(run_log(i.child_run)) for name, i in items.items()}
+    assert "Summary for EU, in EUR; reports kept 30 days" in logs["Summary_EU"]
+    assert "Summary for US, in USD; reports kept 30 days" in logs["Summary_US"]
 
 
 def test_rows_inserted_by_plain_sql_get_the_schema_defaults(db):

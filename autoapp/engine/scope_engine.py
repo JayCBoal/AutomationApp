@@ -22,10 +22,13 @@ class ScopeResolutionEngine:
         APP        the endpoint's application: its tags' variables, then its own
         ENDPOINT   the endpoint's tags
         TAG        the job's tags
+        WORKFLOW   the workflow the job runs in: its own variables, over its tags'
         JOB        the job's own variables
+        USE        this use of the job in a workflow: the variables set on it there
 
     ENTITY, APP and ENDPOINT apply only while an endpoint's path and pattern are
-    being filled in. A variable two tags on one object disagree about is a
+    being filled in; WORKFLOW and USE only for a job in a workflow (engine/workflow_vars.py).
+    A variable two tags on one object disagree about is a
     conflict at that level; using it, unless a higher level gives it a value, is
     an error (see engine/tag_vars.py).
     """
@@ -58,12 +61,14 @@ class ScopeResolutionEngine:
         global_config: Optional[Dict[str, Any]] = None,
         environment: Optional[Dict[str, str]] = None,
         business_date: Optional[date] = None,
+        workflow: Optional[Any] = None,
     ):
         """
         environment: the environment variables a run has, which the runner passes. None
         where there is none to give: the server checking or previewing a job, which
         cannot know what a scheduler will set, so ${ENV:...} is left for the run to fill in.
         business_date: the date the run is for, if the scheduler gave one.
+        workflow: for a job in a workflow, what the workflow gives it (engine.workflow_vars.Levels).
         """
         self.db = db
         self.job_id = job_id
@@ -71,6 +76,7 @@ class ScopeResolutionEngine:
         self.global_config = global_config or {}
         self.environment = dict(environment) if environment is not None else None
         self.business_date = business_date
+        self.workflow = workflow
 
         # Isolated scope caches for targeted lookup
         self.scoped_vars: Dict[str, Dict[str, Any]] = {
@@ -81,6 +87,8 @@ class ScopeResolutionEngine:
             "ENDPOINT": {},
             "JOB": {},
             "TAG": {},      # what the job's tags give
+            "WORKFLOW": {}, # what the workflow it runs in gives
+            "USE": {},      # what its use in that workflow sets
             "TARGETED": {
                 "APP": {},
                 "ENTITY": {},
@@ -161,7 +169,13 @@ class ScopeResolutionEngine:
         self.conflicts["TAG"] = job_tags.conflicts
         self.reachable_tags = tag_vars.reachable(job_tags.tags)
 
-        # 6. Merge the levels, in the order the VariablePrecedence setting gives
+        # 6. In a workflow: what the workflow gives, and what this use of the job sets
+        if self.workflow is not None:
+            self.scoped_vars["WORKFLOW"] = dict(self.workflow.values)
+            self.conflicts["WORKFLOW"] = dict(self.workflow.conflicts)
+            self.scoped_vars["USE"] = dict(self.workflow.use_values)
+
+        # 7. Merge the levels, in the order the VariablePrecedence setting gives
         self.precedence = self.global_config.get("CASCADE_PRECEDENCE") or settings.current(self.db, "VariablePrecedence")
         self.resolved_cascade, self.resolved_conflicts = self._merge_cascade()
         return self.resolved_cascade

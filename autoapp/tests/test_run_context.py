@@ -77,7 +77,8 @@ def test_a_precedence_saved_before_env_existed_keeps_its_order(db, seed):
     db.add(SettingValue(SettingKey="VariablePrecedence", SettingValue="SYS,ENTITY,APP,ENDPOINT,JOB,TAG"))
     db.flush()
 
-    assert settings.current(db, "VariablePrecedence") == ["ENV", "SYS", "ENTITY", "APP", "ENDPOINT", "JOB", "TAG"]
+    assert settings.current(db, "VariablePrecedence") == [
+        "ENV", "SYS", "ENTITY", "APP", "ENDPOINT", "JOB", "TAG", "WORKFLOW", "USE"]
 
 
 # --- Business date -----------------------------------------------------------------------------

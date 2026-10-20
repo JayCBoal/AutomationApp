@@ -276,18 +276,20 @@ def test_the_settings_are_listed_with_their_defaults(client, world):
 
     assert (retention["key"], retention["kind"], retention["value"]) == ("LogRetentionDays", "CHOICE", "30")
     assert precedence["key"] == "VariablePrecedence"
-    assert precedence["value"] == precedence["default"] == ["ENV", "SYS", "ENTITY", "APP", "ENDPOINT", "TAG", "JOB"]
+    assert precedence["value"] == precedence["default"] == ["ENV", "SYS", "ENTITY", "APP", "ENDPOINT", "TAG",
+                                                                 "WORKFLOW", "JOB", "USE"]
     assert precedence["changed"] is False
 
 
 def test_a_setting_is_changed_and_put_back(client, db, world):
     result = ok(client.put("/api/v1/settings/VariablePrecedence",
-                           json={"value": ["ENV", "SYS", "ENTITY", "APP", "ENDPOINT", "JOB", "TAG"]}))
+                           json={"value": ["ENV", "SYS", "ENTITY", "APP", "ENDPOINT", "WORKFLOW", "JOB", "USE", "TAG"]}))
 
-    assert result["setting"]["value"][-2:] == ["JOB", "TAG"] and result["setting"]["changed"] is True
-    assert result["changes"] == ["Changed Variable precedence from ENV,SYS,ENTITY,APP,ENDPOINT,TAG,JOB "
-                                 "to ENV,SYS,ENTITY,APP,ENDPOINT,JOB,TAG."]
-    back = ok(client.put("/api/v1/settings/VariablePrecedence", json={"value": "ENV,SYS,ENTITY,APP,ENDPOINT,TAG,JOB"}))
+    assert result["setting"]["value"][-2:] == ["USE", "TAG"] and result["setting"]["changed"] is True
+    assert result["changes"] == ["Changed Variable precedence from ENV,SYS,ENTITY,APP,ENDPOINT,TAG,WORKFLOW,JOB,USE "
+                                 "to ENV,SYS,ENTITY,APP,ENDPOINT,WORKFLOW,JOB,USE,TAG."]
+    back = ok(client.put("/api/v1/settings/VariablePrecedence",
+                         json={"value": "ENV,SYS,ENTITY,APP,ENDPOINT,TAG,WORKFLOW,JOB,USE"}))
     assert back["setting"]["changed"] is False
     db.commit()
     assert db.query(Audit).filter(Audit.Action == "SETTING_CHANGED").count() == 2

@@ -20,6 +20,7 @@ DROP TABLE IF EXISTS ReactionActions;
 DROP TABLE IF EXISTS Operations;
 DROP TABLE IF EXISTS WorkflowRunItems;
 DROP TABLE IF EXISTS WorkflowPrerequisites;
+DROP TABLE IF EXISTS WorkflowItemVariables;
 DROP TABLE IF EXISTS Reactions;
 DROP TABLE IF EXISTS JobStepParameters;
 DROP TABLE IF EXISTS Endpoints;
@@ -211,6 +212,7 @@ CREATE TABLE `JobRuns` (
 	`Bytes` BIGINT, 
 	`LogFile` VARCHAR(500), 
 	`LogRemovedDateTime` DATETIME(6), 
+	`WorkflowVariables` TEXT, 
 	PRIMARY KEY (id), 
 	UNIQUE (`RunID`), 
 	FOREIGN KEY(`Job_MasterObject_id`) REFERENCES `Jobs` (`MasterObject_id`) ON DELETE SET NULL, 
@@ -339,6 +341,20 @@ CREATE TABLE `Reactions` (
 CREATE INDEX `ix_Reactions_Item_id` ON `Reactions` (`Item_id`);
 
 CREATE INDEX `ix_Reactions_Job_MasterObject_id` ON `Reactions` (`Job_MasterObject_id`);
+
+CREATE TABLE `WorkflowItemVariables` (
+	id INTEGER NOT NULL AUTO_INCREMENT, 
+	`Item_id` INTEGER NOT NULL, 
+	`VarName` VARCHAR(100) NOT NULL, 
+	`VarValue` TEXT, 
+	`IsSecret` BOOL DEFAULT false, 
+	`Description` TEXT, 
+	PRIMARY KEY (id), 
+	CONSTRAINT uq_item_var UNIQUE (`Item_id`, `VarName`), 
+	FOREIGN KEY(`Item_id`) REFERENCES `WorkflowItems` (id) ON DELETE CASCADE
+)ENGINE=InnoDB CHARSET=utf8mb4 COLLATE utf8mb4_bin;
+
+CREATE INDEX `ix_WorkflowItemVariables_Item_id` ON `WorkflowItemVariables` (`Item_id`);
 
 CREATE TABLE `WorkflowPrerequisites` (
 	id INTEGER NOT NULL AUTO_INCREMENT, 

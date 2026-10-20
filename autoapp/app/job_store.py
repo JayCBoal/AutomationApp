@@ -90,12 +90,7 @@ def describe_job(job: Job) -> JobDetail:
         modified=job.ModifiedDateTime,
         modified_by=job.ModifiedBy,
         steps=_describe_steps(step_tree.build(job.steps)),
-        variables=[
-            # A secret's value never leaves the server
-            VariableOut(name=v.VarName, value=None if v.IsSecret else v.VarValue, secret=bool(v.IsSecret),
-                        description=v.Description)
-            for v in sorted(job.variables, key=lambda v: (v.VarName.lower(), v.VarName))
-        ],
+        variables=describe_variables(job.variables),
         tags=tag_store.paths_on(job),
         inherited_variables=inherited_variables(db, job) if db is not None else [],
         items=workflow_store.describe_items(job) if job.JobType == "WORKFLOW" else [],
@@ -119,10 +114,18 @@ def _name(title: Optional[str], position: int) -> str:
     return f"step {position} ('{title}')" if title else f"step {position}"
 
 
-def apply_variables(job, submitted: list, creating: bool) -> List[str]:
+def describe_variables(variables) -> List[VariableOut]:
+    """Variables as the page sees them, in name order. A secret's value never leaves the server."""
+    return [VariableOut(name=v.VarName, value=None if v.IsSecret else v.VarValue, secret=bool(v.IsSecret),
+                        description=v.Description)
+            for v in sorted(variables, key=lambda v: (v.VarName.lower(), v.VarName))]
+
+
+def apply_variables(job, submitted: list, creating: bool, model=Variable) -> List[str]:
     """
     Makes the variables of a job (or of any other object that can hold variables) match the
-    list submitted. Returns what changed, naming variables but never values.
+    list submitted. Returns what changed, naming variables but never values. model: the kind
+    of row they are kept in (WorkflowItemVariable for a use of a job in a workflow).
     """
     names = [v.name.strip() for v in submitted]
     for name in names:
@@ -141,7 +144,7 @@ def apply_variables(job, submitted: list, creating: bool) -> List[str]:
         blank = wanted.value is None or wanted.value == ""
         variable = have.get(name)
         if variable is None:
-            job.variables.append(Variable(VarName=name, VarValue=wanted.value or "", IsSecret=wanted.secret,
+            job.variables.append(model(VarName=name, VarValue=wanted.value or "", IsSecret=wanted.secret,
                                           Description=description))
             added.append(name)
             continue

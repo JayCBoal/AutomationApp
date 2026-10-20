@@ -47,7 +47,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from sqlalchemy.orm import Session
 
 from app.models import ConditionCheck, Job, JobRun, ReactionEvent, WorkflowRunItem, utcnow
-from engine import conditions, job_log, log_files, return_codes, workflow_conditions
+from engine import conditions, job_log, log_files, return_codes, workflow_conditions, workflow_vars
 from engine.reactions import Act, OwnReactions, Rule, judge, read_rules, start_workflow
 
 AUTOAPP_DIR = Path(__file__).resolve().parents[1]
@@ -342,8 +342,17 @@ class WorkflowRunner:
                                       rule=item.StartRule if item.JoinRule == "CUSTOM" else None))
         self.by_name = {p.name: p for p in self.items}
         self.variables = self._fixed_variables()
+        self._fix_workflow_variables()
         job_log.detail(f"{_count(self.items, 'job')}: " + ", ".join(p.name for p in self.items))
         self._save()
+
+    def _fix_workflow_variables(self) -> None:
+        """Keeps the workflow's variables and each use's on the run, for its jobs to read as they start."""
+        fixed = workflow_vars.fixed_values(self.db, self.workflow, self.options.instance_id,
+                                           environment=dict(os.environ), business_date=self.options.business_date)
+        self.record.WorkflowVariables = json.dumps(fixed)
+        if fixed["workflow"]:
+            job_log.detail("Variables for its jobs: " + ", ".join(sorted(fixed["workflow"])) + ".")
 
     def _conditions(self) -> List[str]:
         return [p.rule for p in self.items if p.rule] + ([self.workflow.SucceedsWhen] if self.workflow.SucceedsWhen else [])

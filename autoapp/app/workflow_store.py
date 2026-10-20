@@ -25,9 +25,9 @@ from typing import Dict, List, Optional, Set
 from sqlalchemy.orm import Session
 
 from app import reaction_store
-from app.models import Job, WorkflowItem, WorkflowPrerequisite
+from app.models import Job, WorkflowItem, WorkflowItemVariable, WorkflowPrerequisite
 from app.schemas import PrerequisiteOut, PrerequisiteSave, WorkflowItemOut, WorkflowItemSave
-from engine import return_codes, workflow_conditions
+from engine import return_codes, workflow_conditions, workflow_vars
 
 TEST_WORDS = {"SUCCESS": "succeeded", "FAILED": "failed", "ENDED": "ended", "RC": "gave return codes",
               "RULE": "is named in its rule"}
@@ -53,9 +53,15 @@ def describe_items(job: Job) -> List[WorkflowItemOut]:
             disabled_here=item.DisabledHere, job_active=bool(item.job.IsActive),
             reactions_overridden=bool(item.ReactionsOverridden),
             reactions=reaction_store.describe(item.reactions) if item.ReactionsOverridden else [],
-            job_reactions=reaction_store.describe(item.job.reactions))
+            job_reactions=reaction_store.describe(item.job.reactions),
+            variables=_describe_variables(item.variables))
         for item in job.items
     ]
+
+
+def _describe_variables(variables):
+    from app.job_store import describe_variables
+    return describe_variables(variables)
 
 
 def describe_prerequisite(target: str, test: str, codes: Optional[str]) -> str:
@@ -343,7 +349,24 @@ def _apply_use(db: Session, item: WorkflowItem, submitted: WorkflowItemSave, by_
     if reaction_store.apply(db, item.reactions, wanted, {"Item_id": item.id}, by_name) and item.ReactionsOverridden \
             and "its own Reactions replace its job's" not in changed:
         changed.append("changed its Reactions")
+    if submitted.variables is not None:
+        changed += _apply_use_variables(item, submitted.variables)
     return changed
+
+
+def _apply_use_variables(item: WorkflowItem, submitted: list) -> List[str]:
+    """The use's own variables, as the job's are kept; what changed, in words, naming no values."""
+    from app.job_store import JobStoreError, apply_variables
+    try:
+        said = apply_variables(item, submitted, False, model=WorkflowItemVariable)
+    except JobStoreError as e:
+        raise WorkflowError(f"'{item.ItemName}': {e}")
+    # "Added variable Region." becomes "added its variable Region", to join the use's other changes
+    return [_first_lower(line.rstrip(".").replace(" variable", " its variable", 1)) for line in said]
+
+
+def _first_lower(text: str) -> str:
+    return text[:1].lower() + text[1:]
 
 
 def apply_completion(workflow: Job, succeeds_when: Optional[str], return_code_from: Optional[str], creating: bool,
@@ -397,10 +420,11 @@ def workflow_problems(db: Session, workflow: Job, warnings: Optional[List[str]] 
         if not job.IsActive:
             warnings.append(f"'{item.ItemName}' is disabled: it will end Disabled, and what needs it to succeed will not run.")
             continue
-        if job.MasterObject_id not in checked:
-            checked[job.MasterObject_id] = (workflow_problems(db, job, [], seen) if job.JobType == "WORKFLOW"
-                                            else job_problems(db, job))
-        for problem in checked[job.MasterObject_id][:1]:     # the first is enough to say it would fail
+        # A job is checked once for each use, which may set variables of its own
+        if item.id not in checked:
+            checked[item.id] = (workflow_problems(db, job, [], seen) if job.JobType == "WORKFLOW"
+                                else job_problems(db, job, workflow=workflow_vars.for_check(db, workflow, item)))
+        for problem in checked[item.id][:1]:     # the first is enough to say it would fail
             warnings.append(f"'{item.ItemName}' would fail: {problem}")
     return problems
 

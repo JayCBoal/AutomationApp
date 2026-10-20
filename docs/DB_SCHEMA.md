@@ -45,6 +45,7 @@ erDiagram
     JobSteps ||--o{ JobStepParameters : "JobStep_id"
     Jobs |o--o{ Reactions : "Job_MasterObject_id"
     WorkflowItems |o--o{ Reactions : "Item_id"
+    WorkflowItems ||--o{ WorkflowItemVariables : "Item_id"
     WorkflowItems ||--o{ WorkflowPrerequisites : "Item_id"
     WorkflowItems |o--o{ WorkflowPrerequisites : "TargetItem_id"
     JobRuns ||--o{ WorkflowRunItems : "WorkflowRun_id"
@@ -231,6 +232,14 @@ erDiagram
         string(20) DisabledHere
         bool ReactionsOverridden "required"
     }
+    WorkflowItemVariables {
+        int id PK
+        int Item_id FK "required"
+        string(100) VarName "required"
+        text VarValue
+        bool IsSecret
+        text Description
+    }
     WorkflowPrerequisites {
         int id PK
         int Item_id FK "required"
@@ -287,6 +296,7 @@ erDiagram
         bigint Bytes
         string(500) LogFile
         datetime LogRemovedDateTime
+        text WorkflowVariables
     }
     WorkflowRunItems {
         int id PK
@@ -336,6 +346,7 @@ erDiagram
     JobRuns ||--o{ ConditionChecks : "WorkflowRun_id"
     Jobs |o--o{ Reactions : "Job_MasterObject_id"
     WorkflowItems |o--o{ Reactions : "Item_id"
+    WorkflowItems ||--o{ WorkflowItemVariables : "Item_id"
     WorkflowItems ||--o{ WorkflowPrerequisites : "Item_id"
     WorkflowItems |o--o{ WorkflowPrerequisites : "TargetItem_id"
     JobRuns ||--o{ WorkflowRunItems : "WorkflowRun_id"
@@ -390,6 +401,7 @@ erDiagram
         bigint Bytes
         string(500) LogFile
         datetime LogRemovedDateTime
+        text WorkflowVariables
     }
     Operations {
         int id PK
@@ -449,5 +461,6 @@ erDiagram
 | `Variables` | `MasterObject_id`, `VarName` |
 | `TagAssignments` | `Tag_MasterObject_id`, `Target_MasterObject_id` |
 | `WorkflowItems` | `Workflow_MasterObject_id`, `ItemName` |
+| `WorkflowItemVariables` | `Item_id`, `VarName` |
 | `WorkflowRunItems` | `WorkflowRun_id`, `Path` |
 | `Operations` | `JobRun_id`, `Seq` |

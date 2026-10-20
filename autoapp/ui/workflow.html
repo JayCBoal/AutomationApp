@@ -241,6 +241,8 @@
                                         <span class="tag disabled-here" x-show="item.disabled_here" x-text="disabledHereWords(item)"></span>
                                     </div>
                                     <div class="wf-needs muted small" x-text="needs(item)"></div>
+                                    <div class="wf-use-variables muted small" x-show="item.variables.length"
+                                         x-text="'Sets here: ' + item.variables.map(v => v.name).join(', ')"></div>
                                     <ul class="wf-reactions muted small" x-show="reactionsShown(item).length">
                                         <template x-for="r in reactionsShown(item)" :key="r.uid">
                                             <li x-text="reactionWords(r) + (item.reactions_overridden ? '' : ' (from the job)')"></li>
@@ -258,6 +260,8 @@
                                         <label>Job <input type="text" class="item-job" list="job-keys" x-model="item.job_key"
                                                           @focus="nameBefore = nameOf(item.uid)" @change="renamed(nameBefore, nameOf(item.uid))"
                                                           placeholder="Type to find a job" autocomplete="off"></label>
+                                        <a class="small open-job" target="_blank" rel="noopener" :href="jobLink(item)" x-show="knownJob(item)"
+                                           title="Opens the job in a new tab. Saving it there does not touch this workflow.">Open job ↗</a>
                                         <label>Named <input type="text" class="item-name" x-model="item.name" maxlength="100"
                                                             @focus="nameBefore = nameOf(item.uid)" @change="renamed(nameBefore, nameOf(item.uid))"
                                                             :placeholder="placeholder(item)"></label>
@@ -330,10 +334,71 @@
                                             </div>
                                         </template>
                                     </fieldset>
+                                    <fieldset class="wf-item-variables">
+                                        <legend>Variables for this use</legend>
+                                        <p class="muted small">Set only when this workflow runs the job, over the job's own
+                                            and the workflow's.</p>
+                                        <div class="table-scroll" x-show="item.variables.length > 0">
+                        <table class="results variables">
+                            <thead><tr><th>Name</th><th>Value</th><th>Secret</th><th>Description</th><th></th></tr></thead>
+                            <tbody>
+                                <template x-for="(variable, vIndex) in item.variables" :key="variable.uid">
+                                    <tr :data-variable="variable.uid">
+                                        <td><input type="text" class="variable-name" x-model="variable.name" :disabled="!editing"
+                                                   maxlength="100" placeholder="For example Region" aria-label="Variable name"></td>
+                                        <td><input :type="variable.secret ? 'password' : 'text'" class="variable-value" x-model="variable.value"
+                                                   :disabled="!editing" aria-label="Variable value" autocomplete="off"
+                                                   :placeholder="variable.secret && variable.savedSecret ? 'Set. Type a new value to replace it.' : ''"></td>
+                                        <td><input type="checkbox" class="variable-secret" x-model="variable.secret" :disabled="!editing"
+                                                   title="A secret's value is hidden here, in the job log and in previews, and is never sent back to this page"
+                                                   aria-label="Secret"></td>
+                                        <td><input type="text" class="variable-description" x-model="variable.description" :disabled="!editing"
+                                                   aria-label="Variable description"></td>
+                                        <td><button type="button" class="link remove-variable" x-show="editing"
+                                                    @click="removeVariable(item.variables, vIndex)">Remove</button></td>
+                                    </tr>
+                                </template>
+                            </tbody>
+                        </table>
+                    </div>
+                                        <button type="button" class="link small add-use-variable" @click="addVariable(item.variables)">+ Add a variable here</button>
+                                    </fieldset>
                                     <button type="button" class="link small remove-item" @click="removeItem(index)"
                                             title="Take this job out of the workflow">Remove this job</button>
                                 </div>
                             </template>
+                            <!-- Its steps, read only, and where each ${Name} in them gets its value here -->
+                            <details class="wf-steps" :open="view === 'diagram'" x-show="knownJob(item)"
+                                     x-effect="loadJobDetail(item.job_key)">
+                                <summary>Steps of this job</summary>
+                                <p class="muted small">Read only. <a class="open-job-steps" target="_blank" rel="noopener" :href="jobLink(item)">Open the job in a new tab</a>
+                                    to change it. Saving it there does not touch this workflow; reload this page to see the change.</p>
+                                <p class="muted small" x-show="isWorkflowJob(item)">This job is itself a workflow: open it to see its jobs.</p>
+                                <ol class="wf-step-list">
+                                    <template x-for="row in stepRows(item)" :key="row.key">
+                                        <li :style="{ paddingLeft: (row.depth * 16) + 'px' }" :class="{ muted: !row.active }">
+                                            <span class="muted" x-text="row.number + '.'"></span>
+                                            <strong x-text="row.title"></strong>
+                                            <span class="muted small" x-text="row.type + (row.active ? '' : ' (disabled)')"></span>
+                                            <ul class="wf-step-uses small" x-show="row.uses.length">
+                                                <template x-for="use in row.uses" :key="use.param">
+                                                    <li><code x-text="use.param"></code>: <code x-text="use.text"></code>
+                                                        <ul>
+                                                            <template x-for="source in use.sources" :key="source.name">
+                                                                <li :class="{ 'no-value': !source.where }">
+                                                                    <code x-text="'$' + '{' + source.name + '}'"></code>
+                                                                    <span x-text="source.where ? '= ' + source.value + ', from ' + source.where
+                                                                                  : 'has no value here: set it on this use, the workflow, the job or a tag'"></span>
+                                                                </li>
+                                                            </template>
+                                                        </ul>
+                                                    </li>
+                                                </template>
+                                            </ul>
+                                        </li>
+                                    </template>
+                                </ol>
+                            </details>
                         </li>
                     </template>
                 </ul>
@@ -371,6 +436,47 @@
             </section>
 
             <!-- Its recent runs -->
+            <!-- Its variables: every job it runs sees them, fixed when the run starts -->
+            <section class="panel" aria-label="Variables" id="variables-panel">
+                <div class="steps-head">
+                    <h2 class="section" style="margin-top: 0">Variables</h2>
+                    <span class="muted small">Every job in this workflow sees them as <code>${Name}</code>. A job's own variable of
+                        the same name wins, and so does a use's, set on the job below. Their values are fixed when a run starts.</span>
+                </div>
+                <p class="message" id="no-variables" x-show="form.variables.length === 0">This workflow has no variables of its own.</p>
+                <div class="table-scroll" x-show="form.variables.length > 0">
+                        <table class="results variables">
+                            <thead><tr><th>Name</th><th>Value</th><th>Secret</th><th>Description</th><th></th></tr></thead>
+                            <tbody>
+                                <template x-for="(variable, vIndex) in form.variables" :key="variable.uid">
+                                    <tr :data-variable="variable.uid">
+                                        <td><input type="text" class="variable-name" x-model="variable.name" :disabled="!editing"
+                                                   maxlength="100" placeholder="For example Region" aria-label="Variable name"></td>
+                                        <td><input :type="variable.secret ? 'password' : 'text'" class="variable-value" x-model="variable.value"
+                                                   :disabled="!editing" aria-label="Variable value" autocomplete="off"
+                                                   :placeholder="variable.secret && variable.savedSecret ? 'Set. Type a new value to replace it.' : ''"></td>
+                                        <td><input type="checkbox" class="variable-secret" x-model="variable.secret" :disabled="!editing"
+                                                   title="A secret's value is hidden here, in the job log and in previews, and is never sent back to this page"
+                                                   aria-label="Secret"></td>
+                                        <td><input type="text" class="variable-description" x-model="variable.description" :disabled="!editing"
+                                                   aria-label="Variable description"></td>
+                                        <td><button type="button" class="link remove-variable" x-show="editing"
+                                                    @click="removeVariable(form.variables, vIndex)">Remove</button></td>
+                                    </tr>
+                                </template>
+                            </tbody>
+                        </table>
+                    </div>
+                <div class="actions" x-show="editing">
+                    <button type="button" class="secondary" id="add-variable" @click="addVariable(form.variables)">Add variable</button>
+                </div>
+                <!-- Then what its tags give its jobs -->
+                <div data-tags-give></div>
+            </section>
+
+            <!-- Its tags, and the variables they give -->
+            <div data-tags-panel></div>
+
             <section class="panel" aria-label="Runs" x-show="job">
                 <h2 class="section" style="margin-top: 0">Recent runs</h2>
                 <p class="muted" x-show="!runs.length">It has not run yet.</p>
@@ -393,6 +499,6 @@
         </div>
     </template>
 </main>
-<script>AutoApp.fillReactionBoxes(); AutoApp.fillConditionBoxes()</script>
+<script>AutoApp.fillTagPanels(); AutoApp.fillReactionBoxes(); AutoApp.fillConditionBoxes()</script>
 </body>
 </html>

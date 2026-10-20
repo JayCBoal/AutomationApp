@@ -147,6 +147,7 @@ classDiagram
         +bigint Bytes
         +string(500) LogFile
         +datetime LogRemovedDateTime
+        +text WorkflowVariables
     }
     class JobStep {
         +int id
@@ -269,6 +270,14 @@ classDiagram
         +string(20) DisabledHere
         +bool ReactionsOverridden
     }
+    class WorkflowItemVariable {
+        +int id
+        +int Item_id
+        +string(100) VarName
+        +text VarValue
+        +bool IsSecret
+        +text Description
+    }
     class WorkflowPrerequisite {
         +int id
         +int Item_id
@@ -319,6 +328,7 @@ classDiagram
     WorkflowItem "*" --> "0..1" Job : job
     WorkflowItem "1" --> "*" Reaction : reactions
     WorkflowItem "1" --> "*" WorkflowPrerequisite : prerequisites
+    WorkflowItem "1" --> "*" WorkflowItemVariable : variables
     WorkflowPrerequisite "*" --> "0..1" WorkflowItem : target
     WorkflowRunItem "*" --> "0..1" JobRun : child_run
 ```

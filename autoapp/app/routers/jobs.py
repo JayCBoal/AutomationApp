@@ -17,7 +17,7 @@ from app.schemas import (
 )
 from engine.step_catalog import ENDPOINT_SUFFIX
 from engine.handlers import get_handler
-from engine import step_tree
+from engine import step_tree, workflow_vars
 from engine.handlers.flow import BRANCHES
 from engine.preflight import prepare_job
 from engine.scope_engine import ScopeResolutionEngine
@@ -31,12 +31,33 @@ MAX_RESULTS = 500
 EDITOR_NAME = "web interface"
 
 
+def workflow_context(db: Session, workflow: Optional[str], use: Optional[str], job_key: Optional[str] = None):
+    """
+    What a workflow gives the job it runs as `use` (engine.workflow_vars.Levels), or None when no workflow is
+    named, so the job is checked on its own. job_key: the job the use must run, when known.
+    """
+    if not workflow and not use:
+        return None
+    if not (workflow and use):
+        raise HTTPException(status_code=422, detail="Give both the workflow and the use in it, or neither.")
+    found = workflow_vars.for_use(db, workflow, use)
+    if found is None or (job_key is not None and found[1].job.JobKey != job_key):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                            detail=f"Workflow '{workflow}' has no use '{use}' of job '{job_key or 'this job'}'.")
+    return found[0]
+
+
+def checked_as(workflow: Optional[str], use: Optional[str]) -> Optional[str]:
+    return f"workflow '{workflow}', as '{use}'" if workflow and use else None
+
+
 def job_problems(db: Session, job: Job, environment: Optional[Dict[str, str]] = None,
-                 warnings: Optional[List[str]] = None) -> List[str]:
+                 warnings: Optional[List[str]] = None, workflow=None) -> List[str]:
     """
     Everything that would stop the job from running, as the runner would report it. Runs nothing.
     environment: what the scheduler will set when it runs the job, if known (a WLA job's parameters).
     warnings: given a list, what is worth knowing but does not stop the job is added to it.
+    workflow: for a job used in a workflow, what the workflow gives it (engine.workflow_vars.Levels).
     """
     if job.JobType == "WORKFLOW":
         from app.workflow_store import workflow_problems
@@ -44,7 +65,8 @@ def job_problems(db: Session, job: Job, environment: Optional[Dict[str, str]] = 
     problems = []
     if not job.IsActive:
         problems.append(f"Job '{job.JobKey}' is disabled.")
-    engine = ScopeResolutionEngine(db=db, job_id=job.MasterObject_id, instance_id="CHECK", environment=environment)
+    engine = ScopeResolutionEngine(db=db, job_id=job.MasterObject_id, instance_id="CHECK", environment=environment,
+                                   workflow=workflow)
     engine.build_context()
     return problems + prepare_job(db, job, engine, warnings)[1]
 
@@ -237,6 +259,8 @@ def preview_job(payload: JobSave, existing_key: Optional[str] = Query(
         None, description="The key of the job being edited; leave out for a job not yet saved"),
         scheduler: Optional[str] = Query(None, description="With wla_job: the scheduler the job is edited from"),
         wla_job: Optional[str] = Query(None, description="The scheduler's job, whose parameters it will run with"),
+        workflow: Optional[str] = Query(None, description="With use: check it as this workflow runs the job"),
+        use: Optional[str] = Query(None, description="With workflow: the name of the job's use in it"),
         db: Session = Depends(get_db)):
     """
     What a job would resolve to if it were saved as submitted: each step's parameters
@@ -247,6 +271,7 @@ def preview_job(payload: JobSave, existing_key: Optional[str] = Query(
     if existing_key is None and not payload.job_key.strip():
         payload = payload.model_copy(update={"job_key": "UNNAMED-JOB"})     # so a new job can be previewed before it is named
     environment, scheduler_warnings = wla_environment(db, scheduler, wla_job)
+    in_workflow = workflow_context(db, workflow, use)
     try:
         job, _ = apply_job(db, payload, existing_key, who=EDITOR_NAME)
         secrets = sorted({value for (value,) in db.query(Variable.VarValue).filter(Variable.IsSecret.is_(True)) if value},
@@ -258,8 +283,9 @@ def preview_job(payload: JobSave, existing_key: Optional[str] = Query(
             return text
 
         check_warnings: List[str] = []
-        problems = [safe(problem) for problem in job_problems(db, job, environment, check_warnings)]
-        engine = ScopeResolutionEngine(db=db, job_id=job.MasterObject_id, instance_id="PREVIEW", environment=environment)
+        problems = [safe(problem) for problem in job_problems(db, job, environment, check_warnings, workflow=in_workflow)]
+        engine = ScopeResolutionEngine(db=db, job_id=job.MasterObject_id, instance_id="PREVIEW", environment=environment,
+                                       workflow=in_workflow)
         engine.build_context()
         steps = []
         for node in step_tree.walk(step_tree.build(job.steps)):
@@ -277,7 +303,8 @@ def preview_job(payload: JobSave, existing_key: Optional[str] = Query(
         # Tags that disagree about a variable the job does not use: worth saying, but nothing stops
         warnings = scheduler_warnings + [safe(w) for w in check_warnings] + [
             w for w in tag_store.job_tag_warnings(db, job) if not any(w in problem for problem in problems)]
-        return JobPreview(valid=not problems, problems=problems, warnings=warnings, steps=steps,
+        return JobPreview(valid=not problems, checked_as=checked_as(workflow, use), problems=problems,
+                          warnings=warnings, steps=steps,
                           tags=tag_store.paths_on(job), inherited_variables=inherited_variables(db, job))
     except JobStoreError as e:
         raise HTTPException(status_code=e.status, detail=str(e))
@@ -314,10 +341,13 @@ def remove_job(job_key: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=e.status, detail=str(e))
 
 
-@router.get("/{job_key}/check", response_model=JobCheckResult)
+@router.get("/{job_key}/check", response_model=JobCheckResult, response_model_exclude_none=True)
 def check_job(job_key: str,
               scheduler: Optional[str] = Query(None, description="With wla_job: the scheduler that runs the job"),
               wla_job: Optional[str] = Query(None, description="The scheduler's job, whose parameters it runs with"),
+              workflow: Optional[str] = Query(None, description=(
+                  "With use: check it as this workflow runs it, with the workflow's variables and the use's")),
+              use: Optional[str] = Query(None, description="With workflow: the name of the job's use in it"),
               db: Session = Depends(get_db)):
     """
     Checks a job without running it: every active step against its step type,
@@ -329,9 +359,11 @@ def check_job(job_key: str,
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"No job with JobKey '{job_key}' exists.")
 
     environment, warnings = wla_environment(db, scheduler, wla_job)
+    in_workflow = workflow_context(db, workflow, use, job_key)
     # A workflow's warnings name the jobs in it that are disabled or would fail: it runs all the same
-    problems = job_problems(db, job, environment, warnings if job.JobType == "WORKFLOW" else None)
-    return JobCheckResult(job_key=job_key, valid=not problems, problems=problems, warnings=warnings)
+    problems = job_problems(db, job, environment, warnings if job.JobType == "WORKFLOW" else None, workflow=in_workflow)
+    return JobCheckResult(job_key=job_key, valid=not problems, checked_as=checked_as(workflow, use),
+                          problems=problems, warnings=warnings)
 
 
 def wla_environment(db: Session, scheduler: Optional[str], wla_job: Optional[str]):

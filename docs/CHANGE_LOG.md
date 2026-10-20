@@ -4,6 +4,24 @@ Notable structural, schema and design changes to AutoApp, newest first. Line-by-
 
 ---
 
+## 2026-10-19
+
+### Workflows, Phase 4 (the rest): workflow variables
+
+Plan: [WORKFLOWS_PHASE4.md](WORKFLOWS_PHASE4.md), "The rest of Phase 4". Decisions D91 and D92 in [WORKFLOW_DECISIONS.md](WORKFLOW_DECISIONS.md) (they replace D53's switch on each workflow).
+
+- **Schema:** a use's own variables (`WorkflowItemVariables`); the values a workflow run fixed as it started (`JobRuns.WorkflowVariables`, a secret kept by name only). `SQL/migrate_workflow_variables.py` brings a Phase 4 database up to date, keeping its data. Back up first.
+- **Added:** a workflow's variables, and those its tags give, reach every job it runs. A use of a job can set variables for that use only. Values are filled in once, as the run starts; a secret's value is never stored on the run, each job reads it as it starts. A tag clash on the workflow fails the job that uses the variable, with a message saying where to settle it.
+- **Added (Settings):** the Variable precedence setting gains two levels, *Workflow* (just below the job's own) and *This use* (the highest). An order saved before keeps its order and gets them in those places.
+- **Added (pages):** the workflow page has Variables and Tags sections (below the jobs, so the diagram stays high on the page), and each job in the outline or beside the diagram has **Variables for this use**.
+- **Added (steps view):** a job used in a workflow shows its steps read only, in the diagram's pane and in the outline, with each `${Name}` in them marked with its value and where it comes from (this use, the job, the workflow, a tag), following what is on screen. **Open job ↗** opens the job in a new tab; saving it there does not touch the workflow.
+- **Added (job opened from a workflow):** the workflow page's links to a job carry the workflow and the use, and the job page checks the job (and its live preview) as that workflow runs it, with its variables and the use's, saying so; **Check it on its own** shows the independent check. `GET /api/v1/jobs/{key}/check` and `POST /api/v1/jobs/preview` take optional `workflow` and `use`, and answer `checked_as`.
+- **Added (checks):** the pre-run check judges each job with its workflow's and its use's values, so a job that relies on a workflow variable is no longer flagged as failing.
+- **Added (sample):** `DEV-VARIABLES_SAMPLE`: one job used twice, one use taking the workflow's Region and Currency, the other setting its own; the Finance tag gives both.
+- **Deferred:** the Operations object and For Each File over an upstream job's files (D42), handed to the roadmap.
+
+---
+
 ## 2026-10-18
 
 ### Workflows, Phase 4: conditions

@@ -2,7 +2,7 @@
 
 The fourth phase of [WORKFLOWS.md](WORKFLOWS.md) ("Implementation in phases"): **conditions people can read and write.** It answers shortcoming 3 ([PROJECT_GOALS.md](PROJECT_GOALS.md) goal 2): RunMyJobs' precondition expressions are hard to read, harder to write, poorly documented, have no helpers in the UI, and cannot be validated or debugged. Workflow conditions come with help, validation and a way to see why they evaluated as they did.
 
-Status: **agreed with the owner 2026-10-18; steps 1 to 6 built 2026-10-18 and decisions 7 to 17 approved by the owner the same day. Still to do in Phase 4: workflow variables, planned with the owner 2026-10-19 (below, "The rest of Phase 4"). The Operations object and For Each File over an upstream job's files are deferred to a later workflow enhancement (decision 18).**
+Status: **agreed with the owner 2026-10-18; steps 1 to 6 built 2026-10-18 and decisions 7 to 17 approved by the owner the same day. The rest of Phase 4, workflow variables, was built 2026-10-19 and its decisions 18 to 29 approved the same day; the Operations object and For Each File over an upstream job's files are deferred (decision 18). Phase 4 is complete.**
 
 ## Starting point
 
@@ -69,7 +69,7 @@ Already built:
 
 ## The rest of Phase 4: workflow variables (planned with the owner 2026-10-19)
 
-The part of Phase 4 the owner called 4b. Status: **decisions 18 to 21 agreed with the owner 2026-10-19; plan agreed the same day; build started.**
+The part of Phase 4 the owner called 4b. Status: **decisions 18 to 21 agreed with the owner 2026-10-19; built the same day (steps 1 to 4); decisions 22 to 29 approved by the owner 2026-10-19. Phase 4 is complete.**
 
 ### Settled with the owner (2026-10-19)
 
@@ -91,4 +91,15 @@ The part of Phase 4 the owner called 4b. Status: **decisions 18 to 21 agreed wit
 1. **Model and migration:** a use's variables; the values fixed on a workflow run; the setting's two new levels.
 2. **Engine:** fixing the workflow's values at the start; the two levels in each job run; the pre-run check.
 3. **Pages:** Variables and Tags on the workflow page; Variables for this use in the job pane; where each value came from.
-4. **Sample, docs and tests:** a sample workflow whose variable and tag reach its jobs, with one use overriding; CHANGE_LOG, WORKFLOWS.md, the decision register; engine tests for the order (each level beating the one below it, the setting swapping them, secrets never stored), UI tests for the new sections.
+4. **Sample, docs and tests (built):** a sample workflow whose variable and tag reach its jobs, with one use overriding; CHANGE_LOG, WORKFLOWS.md, the decision register; engine tests for the order (each level beating the one below it, the setting swapping them, secrets never stored), UI tests for the new sections.
+
+### Decided while building (2026-10-19), approved by the owner the same day
+
+22. **Variables and Tags sit below the jobs on the workflow page**, not above them: put above, they pushed the diagram below the fold.
+23. **Where a value came from** is the job log (it names, never gives, the variables from the workflow and from the use) and the workflow page (the use's own list, "Sets here: …" in the outline, and decision 27's steps view). The job page does not show it: a job on its own belongs to no workflow, so it has nothing to say.
+24. **A workflow's value is filled in as the run starts, in the workflow's own context**; one that needs something only a job has (`out/${Folder}`) is kept as written and the job fills it in.
+25. **A use's variables are saved with the workflow** (`variables` on each item), left out meaning "leave as they are", as the job's own variables are.
+26. **The pre-run check judges each use** with its workflow's and its use's values, once for each use rather than once for each job.
+27. **The steps of a job used in a workflow are shown read only beside its use**, in the diagram's pane and in the outline (open in the diagram, closed in the outline), with each `${Name}` in a step's parameters marked with its value and where it comes from: this use, the job's own variables, the workflow, the workflow's tag, the job's tag; or "has no value here". It follows what is on screen, saved or not, and the Variable precedence setting. The owner's question (2026-10-19): "is there a way to see the Steps of a job?" and the answer that a separate editor should not be needed to see how workflow variables are used. Plain `${Name}` only: `${DATE:...}`, `${SYS:...}` and the like are not marked.
+28. **Open job ↗** opens the job in a new tab, from the editing row and from the steps view, in both Diagram and Outline. A job is stored on its own and a workflow only points at it, so saving the job there does not touch the workflow; the workflow page shows the change after a reload.
+29. **A job opened from a workflow is checked as that workflow runs it.** The workflow page's links to a job (Open job, and the locked outline's link) add the workflow and the use's name; the job page then runs its pre-run check, and its live preview, with the workflow's variables and the use's, says so ("Checked as workflow 'W' runs it, as 'Use', with the workflow as last saved"), and offers **Check it on its own** (and back, **Check it as the workflow runs it**). Opened any other way, the job is checked on its own as before. The owner's idea (2026-10-19), after the sample's two jobs warned on the job page: they were being checked outside the workflow that gives them their variables. The workflow is read as last saved, so unsaved workflow edits are not in it; a link from an unsaved use carries no context. `GET /jobs/{key}/check` and `POST /jobs/preview` take optional `workflow` and `use` (both or neither), and say `checked_as`; additive, nothing existing changes.

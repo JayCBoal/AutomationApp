@@ -248,7 +248,7 @@ Step parameters, endpoint paths and variable values may contain `${...}` placeho
 | `${SYS:INSTANCE_ID}`, `${SYS:TIMESTAMP}`, `${SYS:WORKING_FOLDER}` | Values supplied by the runner. `${SYS:YYYYMMDD}` also still works; `${DATE:yyyyMMdd}` is the form to use |
 | `${FILE:NAME}`, `${FILE:STEM}`, `${FILE:EXT}` | Parts of a file's own name. Only in a rename mask; see section 5 |
 
-- Cascade order, lowest priority first, by default: `ENV`, `SYS`, `ENTITY`, `APP`, `ENDPOINT`, `TAG`, `JOB`. A higher level overrides a lower one of the same name. The order is the `VariablePrecedence` setting, changed on the Settings page.
+- Cascade order, lowest priority first, by default: `ENV`, `SYS`, `ENTITY`, `APP`, `ENDPOINT`, `TAG`, `WORKFLOW`, `JOB`, `USE`. A higher level overrides a lower one of the same name. `WORKFLOW` (the workflow's own variables, over its tags') and `USE` (variables set on a use of the job in a workflow) apply only to a job run in a workflow; the workflow runner fixes them as the run starts (`engine/workflow_vars.py`). The order is the `VariablePrecedence` setting, changed on the Settings page.
   - `ENTITY`, `APP` and `ENDPOINT` apply only while an endpoint's path and pattern are being filled in.
   - `TAG` is what the job's tags give it; `ENDPOINT` is what the endpoint's tags give it.
   - `ENV` is the runner's environment, so a plain `${Name}` finds a variable the scheduler set when nothing in RunMyFiles defines it. On the server there is no such environment, so a plain name found nowhere else is reported there as unresolved; write `${ENV:Name}` for a value that only the scheduler gives. Planned: RunMyFiles reading the WLA job's parameters from the scheduler (TO-DO decision 7), so the editor knows them too.

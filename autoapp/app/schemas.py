@@ -196,6 +196,8 @@ class WorkflowItemOut(BaseModel):
     reactions_overridden: bool = Field(False, description="True: reactions below replace the job's own")
     reactions: List[ReactionIO] = Field(default_factory=list, description="This use's own, when it overrides the job's")
     job_reactions: List[ReactionIO] = Field(default_factory=list, description="The job's own Reactions, as it has them")
+    variables: List[VariableOut] = Field(default_factory=list, description=(
+        "This use's own variables, over the job's own; a secret's value is always null"))
 
 
 class JobDetail(BaseModel):
@@ -241,6 +243,9 @@ class WorkflowItemSave(BaseModel):
     disabled_here: Optional[str] = Field(None, description="Empty, STOP (it ends Disabled) or PASS_THROUGH (Bypassed)")
     reactions_overridden: bool = Field(False, description="True: reactions replace the job's own, even when empty")
     reactions: List[ReactionIO] = Field(default_factory=list, description="Kept only when reactions_overridden")
+    variables: Optional[List[VariableSave]] = Field(None, description=(
+        "This use's own variables, over the job's own. Left out, they stay as they are; "
+        "for a secret that exists, a null or blank value keeps it"))
 
 
 class JobStepSave(BaseModel):
@@ -296,6 +301,8 @@ class FieldPreview(BaseModel):
 class JobPreview(BaseModel):
     """What a job, as submitted but not saved, would resolve to and whether it would run."""
     valid: bool
+    checked_as: Optional[str] = Field(None, description=(
+        "Set when it was checked as a workflow runs it (workflow and use given): which workflow and use"))
     problems: List[str]
     warnings: List[str] = Field(default_factory=list, description=(
         "Things worth knowing that do not stop the job, such as two tags disagreeing about a variable it does not use"))
@@ -309,6 +316,8 @@ class JobPreview(BaseModel):
 class JobCheckResult(BaseModel):
     job_key: str
     valid: bool
+    checked_as: Optional[str] = Field(None, description=(
+        "Set when it was checked as a workflow runs it (workflow and use given): which workflow and use"))
     problems: List[str]
     warnings: List[str] = Field(default_factory=list, description="Such as the scheduler's parameters not being readable")
 

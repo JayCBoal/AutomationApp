@@ -86,6 +86,12 @@
                         <span class="status FAILED" x-show="problems.length > 0"
                               x-text="problems.length + (problems.length === 1 ? ' problem' : ' problems') + ' found by the pre-run check'"></span>
                         <span class="muted small" id="unsaved-note" x-show="changed">(as it is on screen, not yet saved)</span>
+                        <!-- Opened from a workflow: the check is made as that workflow runs the job, or on its own -->
+                        <div class="small" id="check-context" x-show="context" style="margin-top: 4px">
+                            <span class="muted">Checked <span x-text="checkedAs"></span>, with the workflow as last saved.</span>
+                            <button type="button" class="link small" id="check-alone" x-show="!alone" @click="setAlone(true)">Check it on its own</button>
+                            <button type="button" class="link small" id="check-in-workflow" x-show="alone" @click="setAlone(false)">Check it as the workflow runs it</button>
+                        </div>
                     </div>
 
                     <template x-if="job">

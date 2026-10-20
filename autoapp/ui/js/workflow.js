@@ -64,6 +64,9 @@ function workflowDetail() {
     const SIDE_MIN = 320, DIAGRAM_MIN = 300;
     const ZOOM_STEP = 1.2, ZOOM_MIN = 0.3, ZOOM_MAX = 2.5;
     let nextUid = 1;
+    const SIMPLE_PLACEHOLDER = /\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g;     // ${Region}, not ${DATE:...} or ${SYS:...}
+    const DEFAULT_PRECEDENCE = ["ENV", "SYS", "ENTITY", "APP", "ENDPOINT", "TAG", "WORKFLOW", "JOB", "USE"];
+    const ownVariables = function () { return this.form ? this.form.variables.map(v => v.name.trim()).filter(Boolean) : []; };
     let pollTimer = null;
 
     /** An item's name made from its job key, as the server makes it. */
@@ -84,6 +87,7 @@ function workflowDetail() {
     };
 
     return {
+        ...AutoApp.tagEditing(ownVariables),
         ...AutoApp.reactionEditing(),
         key: address.get("key") || "",
         isNew: address.has("new"),
@@ -112,12 +116,16 @@ function workflowDetail() {
         savedKeys: {},          // each saved job as it was saved (itemKey), by its id, to mark the ones changed since
         nameBefore: "",         // a job's name as it was when its name (or job) box was entered, to carry renames
         conditionOutputs: [],   // what every job offers to conditions
+        jobDetails: {},         // each job used, as the server has it, by key: its steps are shown beside a use
+        precedence: DEFAULT_PRECEDENCE,     // the Variable precedence setting, lowest priority first
 
         async init() {
             this.chosen = this.key;
             new MutationObserver(() => this.themeTick++).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
             window.addEventListener("beforeunload", event => { if (this.changed) event.preventDefault(); });
             try {
+                await AutoApp.ensureLookups();
+                this.precedence = await this.loadPrecedence();
                 this.allJobs = await AutoApp.get("/jobs");
                 AutoApp.loadReactionWorkflows();
                 this.conditionOutputs = await AutoApp.loadConditionOutputs();
@@ -126,7 +134,8 @@ function workflowDetail() {
                 return;
             }
             if (this.isNew) {
-                this.show({ job_key: "", description: "", active: true, items: [], reactions: [], succeeds_when: null, return_code_from: null });
+                this.show({ job_key: "", description: "", active: true, items: [], reactions: [], succeeds_when: null, return_code_from: null,
+                            variables: [], tags: [] });
                 this.editing = true;
             } else if (this.key) {
                 await this.load();
@@ -173,7 +182,8 @@ function workflowDetail() {
                 return { uid: uids[item.name], id: item.id, name: item.name, job_key: item.job_key, join: item.join, prerequisites: [],
                          rule: item.rule || "", joinBefore: item.join,
                          disabled_here: item.disabled_here || "", reactions_overridden: Boolean(item.reactions_overridden),
-                         reactions: this.reactionsForm(item.reactions), job_reactions: this.reactionsForm(item.job_reactions) };
+                         reactions: this.reactionsForm(item.reactions), job_reactions: this.reactionsForm(item.job_reactions),
+                         variables: this.variablesForm(item.variables) };
             });
             (job.items || []).forEach((item, index) => {
                 if (item.join === "CUSTOM") return;             // its rule says what it waits for
@@ -182,11 +192,109 @@ function workflowDetail() {
             });
             this.form = { job_key: job.job_key, description: job.description || "", active: job.active, items,
                           reactions: this.reactionsForm(job.reactions), succeeds_when: job.succeeds_when || "",
-                          succeeds_choice: job.succeeds_when ? "RULE" : "DEFAULT", return_code_from: job.return_code_from || "" };
+                          succeeds_choice: job.succeeds_when ? "RULE" : "DEFAULT", return_code_from: job.return_code_from || "",
+                          variables: this.variablesForm(job.variables), tags: [...(job.tags || [])] };
+            this.tagCandidate = "";
+            this.tagPreview = null;
+            this.refreshTags();
             this.saved = JSON.stringify(this.payload());
             this.savedKeys = Object.fromEntries(items.filter(i => i.id).map(i => [i.id, this.itemKey(i)]));
             document.title = `${job.job_key || "New workflow"} - AutoApp`;
         },
+
+        // ---------- The steps of a job used here, and where each ${Name} in them gets its value ----------
+
+        async loadPrecedence() {
+            try {
+                const setting = (await AutoApp.get("/settings")).find(s => s.key === "VariablePrecedence");
+                return setting ? setting.value : DEFAULT_PRECEDENCE;
+            } catch (e) {
+                return DEFAULT_PRECEDENCE;
+            }
+        },
+
+        knownJob(item) { return this.allJobs.some(j => j.job_key === item.job_key.trim()); },
+
+        /** Fetches a job's steps once, when a use of it is on screen. A key that is not a job is left alone. */
+        async loadJobDetail(key) {
+            key = (key || "").trim();
+            if (!key || key in this.jobDetails || !this.allJobs.some(j => j.job_key === key)) return;
+            this.jobDetails[key] = null;
+            try {
+                this.jobDetails[key] = await AutoApp.get("/jobs/" + encodeURIComponent(key));
+            } catch (e) {
+                /* no steps are shown for it */
+            }
+        },
+
+        jobDetail(item) { return this.jobDetails[item.job_key.trim()] || null; },
+
+        isWorkflowJob(item) { const d = this.jobDetail(item); return Boolean(d) && d.job_type === "WORKFLOW"; },
+
+        /** The steps in the order the job runs them, each with the parameters that use a ${Name} and where it comes from. */
+        stepRows(item) {
+            const detail = this.jobDetail(item);
+            if (!detail || detail.job_type === "WORKFLOW") return [];
+            const rows = [];
+            const walk = (steps, depth) => steps.forEach(step => {
+                const uses = Object.entries(step.parameters || {})
+                    .map(([param, text]) => ({ param, text: text || "", names: [...new Set([...(text || "").matchAll(SIMPLE_PLACEHOLDER)].map(m => m[1]))] }))
+                    .filter(use => use.names.length)
+                    .map(use => ({ ...use, sources: use.names.map(name => this.sourceOf(item, detail, name)) }));
+                rows.push({ key: step.id, depth, number: step.number, title: step.title || step.step_type_name,
+                            type: step.step_type_name, active: step.active, uses });
+                walk(step.children || [], depth + 1);
+            });
+            walk(detail.steps || [], 0);
+            return rows;
+        },
+
+        /** Where ${name} gets its value for this use, going by the Variable precedence setting and what is on screen now. */
+        sourceOf(item, detail, name) {
+            const shown = v => (v.secret ? "********" : (v.value ?? ""));
+            const pick = (list, where) => {
+                const v = (list || []).find(x => (x.name || "").trim() === name);
+                return v ? { value: shown(v), where: typeof where === "function" ? where(v) : where } : null;
+            };
+            const levels = {
+                USE: () => pick(item.variables, "this use"),
+                JOB: () => pick(detail.variables, "the job's own variables"),
+                WORKFLOW: () => pick(this.form.variables, "the workflow")
+                    || pick(this.tagsView ? this.tagsView.variables : [], v => "the workflow's tag " + AutoApp.showPath(v.source)),
+                TAG: () => pick(detail.inherited_variables, v => "the job's tag " + AutoApp.showPath(v.source)),
+            };
+            for (const level of [...this.precedence].reverse()) {
+                const hit = levels[level] && levels[level]();
+                if (hit) return { name, ...hit };
+            }
+            return { name, value: null, where: null };
+        },
+
+        // ---------- Variables: the workflow's own, and those set on a use of a job ----------
+
+        variablesForm(list) {
+            return (list || []).map(v => ({ uid: nextUid++, name: v.name, value: v.value ?? "", secret: v.secret,
+                                            description: v.description || "",
+                                            // A saved secret's value is never sent to the page. Left blank, it is kept.
+                                            savedSecret: v.secret }));
+        },
+
+        variablesPayload(list) {
+            return list.map(v => ({ name: v.name.trim(), value: v.secret && v.savedSecret && v.value === "" ? null : v.value,
+                                    secret: v.secret, description: v.description.trim() || null }));
+        },
+
+        /** Adds a variable to the workflow (list = form.variables) or to a use (item.variables), and focuses it. */
+        addVariable(list) {
+            const variable = { uid: nextUid++, name: "", value: "", secret: false, description: "", savedSecret: false };
+            list.push(variable);
+            this.$nextTick(() => {
+                const row = document.querySelector(`[data-variable="${variable.uid}"]`);
+                if (row) row.querySelector(".variable-name").focus();
+            });
+        },
+
+        removeVariable(list, index) { list.splice(index, 1); },
 
         nameOf(uid) {
             const item = this.form.items.find(i => i.uid === uid);
@@ -211,7 +319,10 @@ function workflowDetail() {
                     disabled_here: item.disabled_here || null,
                     reactions_overridden: item.reactions_overridden,
                     reactions: item.reactions_overridden ? this.reactionsPayload(item.reactions) : [],
+                    variables: this.variablesPayload(item.variables),
                 })),
+                variables: this.variablesPayload(this.form.variables),
+                tags: [...this.form.tags],
                 reactions: this.reactionsPayload(this.form.reactions),
                 succeeds_when: this.form.succeeds_choice === "RULE" ? (this.form.succeeds_when.trim() || null) : null,
                 return_code_from: this.form.return_code_from || null,
@@ -255,6 +366,7 @@ function workflowDetail() {
             return JSON.stringify({ name: this.nameOf(item.uid), job: item.job_key.trim(), join: item.join,
                 rule: item.join === "CUSTOM" ? item.rule.trim() : null, here: item.disabled_here || null,
                 own: item.reactions_overridden, reactions: item.reactions_overridden ? this.reactionsPayload(item.reactions) : [],
+                variables: this.variablesPayload(item.variables),
                 after: item.join === "CUSTOM" ? [] : item.prerequisites.map(p => [idOf(p.target), p.test, p.test === "RC" ? p.return_codes.trim() : null]) });
         },
 
@@ -284,7 +396,7 @@ function workflowDetail() {
         addItem() {
             const uid = nextUid++;
             this.form.items.push({ uid, id: null, name: "", job_key: "", join: "ALL", prerequisites: [], rule: "", joinBefore: "ALL", disabled_here: "",
-                                   reactions_overridden: false, reactions: [], job_reactions: [] });
+                                   reactions_overridden: false, reactions: [], job_reactions: [], variables: [] });
             if (this.view === "diagram") this.select("item", uid);
         },
 
@@ -415,7 +527,11 @@ function workflowDetail() {
         jobLink(item) {
             const job = this.allJobs.find(j => j.job_key === item.job_key);
             const page = job && job.job_type === "WORKFLOW" ? "workflow.html" : "job.html";
-            return page + "?" + new URLSearchParams({ key: item.job_key });
+            const params = { key: item.job_key };
+            // A job opened from a saved use is checked as this workflow runs it
+            const saved = page === "job.html" && this.job && this.job.items.find(i => i.id === item.id);
+            if (saved) Object.assign(params, { workflow: this.job.job_key, use: saved.name });
+            return page + "?" + new URLSearchParams(params);
         },
 
         async submit() {

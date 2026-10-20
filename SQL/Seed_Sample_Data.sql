@@ -485,3 +485,42 @@ INSERT INTO WorkflowPrerequisites (id, Item_id, TargetItem_id, Test, ReturnCodes
 (16, 19, 16, 'RULE', NULL),
 (17, 19, 17, 'RULE', NULL),
 (18, 19, 18, 'RULE', NULL);
+
+-- ----------------------------------------------------------------------------
+-- 8. A sample of workflow variables (docs/WORKFLOWS_PHASE4.md, decisions 19 to 21):
+--    - The workflow has variables of its own (Region, Currency), and the Finance tag gives its
+--      jobs ReportRetentionDays.
+--    - One job is used twice: Summary_EU takes the workflow's values, Summary_US sets Region and
+--      Currency for its own use only. Each writes what it got to its log.
+-- ----------------------------------------------------------------------------
+INSERT INTO MasterObjects (id, ObjectType) VALUES
+(38, 'JOB'), (39, 'JOB');
+
+INSERT INTO Jobs (MasterObject_id, JobKey, Description) VALUES
+(38, 'DEV-SIM-SUMMARY', 'Stand-in: writes the summary for a region, in its currency');
+INSERT INTO Jobs (MasterObject_id, JobKey, JobType, Description) VALUES
+(39, 'DEV-VARIABLES_SAMPLE', 'WORKFLOW', 'Sample workflow: its variables and tag reach its jobs, and one use sets its own');
+
+INSERT INTO Variables (MasterObject_id, VarName, VarValue, Description) VALUES
+(39, 'Region',   'EU',  'The region its jobs write for, unless a use sets its own'),
+(39, 'Currency', 'EUR', 'The currency its jobs write in, unless a use sets its own');
+
+INSERT INTO TagAssignments (Tag_MasterObject_id, Target_MasterObject_id) VALUES
+(17, 39);
+
+INSERT INTO JobSteps (id, Job_MasterObject_id, StepType_id, StepOrder, StepTitle, StepName)
+SELECT 37, 38, id, 1, 'Write the summary', 'Write_the_summary' FROM StepTypes WHERE Code = 'SIMULATE';
+
+INSERT INTO JobStepParameters (JobStep_id, ParameterName, ParameterValue) VALUES
+(37, 'Messages', 'Summary for ${Region}, in ${Currency}; reports kept ${ReportRetentionDays} days');
+
+INSERT INTO WorkflowItems (id, Workflow_MasterObject_id, ItemName, Job_MasterObject_id, JoinRule, ItemOrder) VALUES
+(21, 39, 'Summary_EU', 38, 'ALL', 1),
+(22, 39, 'Summary_US', 38, 'ALL', 2);
+
+INSERT INTO WorkflowPrerequisites (id, Item_id, TargetItem_id, Test, ReturnCodes) VALUES
+(19, 22, 21, 'SUCCESS', NULL);
+
+INSERT INTO WorkflowItemVariables (Item_id, VarName, VarValue, Description) VALUES
+(22, 'Region',   'US',  'This use writes for the US'),
+(22, 'Currency', 'USD', 'and in dollars');

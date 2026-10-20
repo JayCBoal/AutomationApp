@@ -51,6 +51,10 @@ function jobDetail() {
         // Opened for one of a scheduler's jobs (scheduler=...&wla_job=...): the parameters it will run with
         wla: address.get("scheduler") && address.get("wla_job")
             ? { scheduler: address.get("scheduler"), job: address.get("wla_job") } : null,
+        // Opened from a workflow's page: the workflow and the job's use in it, so the check is made as that workflow runs it
+        context: address.get("workflow") && address.get("use")
+            ? { workflow: address.get("workflow"), use: address.get("use") } : null,
+        alone: false,           // true: check the job on its own, outside that workflow
         wlaJob: null,           // that job as the scheduler gives it, with its parameters
         wlaError: "",
         job: null,              // the job as last loaded or saved; null for one not yet saved
@@ -103,7 +107,7 @@ function jobDetail() {
             this.error = "";
             try {
                 const path = "/jobs/" + encodeURIComponent(this.key);
-                const [job, check] = await Promise.all([AutoApp.get(path), AutoApp.get(path + "/check", this.wlaQuery())]);
+                const [job, check] = await Promise.all([AutoApp.get(path), AutoApp.get(path + "/check", this.checkQuery())]);
                 if (job.job_type === "WORKFLOW") {          // a workflow has its own page
                     location.replace("workflow.html?" + address.toString());
                     return;
@@ -148,6 +152,26 @@ function jobDetail() {
 
         /** The scheduler's job, for the preview and the pre-run check: { scheduler, wla_job }, or nothing. */
         wlaQuery() { return this.wla ? { scheduler: this.wla.scheduler, wla_job: this.wla.job } : {}; },
+
+        /** The workflow and use to check the job as, unless the check is set to the job on its own. */
+        contextQuery() { return this.context && !this.alone ? { workflow: this.context.workflow, use: this.context.use } : {}; },
+
+        checkQuery() { return { ...this.wlaQuery(), ...this.contextQuery() }; },
+
+        /** Switches between checking as the workflow runs the job and checking it on its own. */
+        async setAlone(alone) {
+            this.alone = alone;
+            previewAsked = "";                  // the next look at the form asks again
+            this.preview = null;
+            if (this.job) {
+                try {
+                    this.check = await AutoApp.get("/jobs/" + encodeURIComponent(this.job.job_key) + "/check", this.checkQuery());
+                } catch (e) {
+                    this.error = e.message;
+                }
+            }
+            if (this.form) this.queuePreview(JSON.stringify(this.payload()));
+        },
 
         /** Reads the scheduler's job through AutoApp's connector for it. A failure is shown, not fatal. */
         async loadWlaJob() {
@@ -410,7 +434,7 @@ function jobDetail() {
             clearTimeout(previewTimer);
             previewTimer = setTimeout(async () => {
                 const request = ++previewRequest;
-                const query = { ...(this.job ? { existing_key: this.job.job_key } : {}), ...this.wlaQuery() };
+                const query = { ...(this.job ? { existing_key: this.job.job_key } : {}), ...this.checkQuery() };
                 const address = "/jobs/preview" + (Object.keys(query).length ? "?" + new URLSearchParams(query) : "");
                 let result;
                 try {
@@ -625,6 +649,7 @@ function jobDetail() {
                 });
                 this.job = result.job;
                 this.check = { valid: result.valid, problems: result.problems };
+                if (this.context && !this.alone) await this.setAlone(false);       // the save's own verdict is for the job alone
                 // The save's own verdict stands until a fresh preview arrives; any older one is discarded
                 clearTimeout(previewTimer);
                 previewRequest++;
@@ -682,6 +707,13 @@ function jobDetail() {
 
         /** What does not stop the job but is worth knowing, as of the latest preview. */
         get warnings() { return (this.verdict && this.verdict.warnings) || []; },
+
+        /** Words for what the verdict is for: the job in a workflow, or on its own. Empty if it was not opened from one. */
+        get checkedAs() {
+            if (!this.context) return "";
+            return this.alone ? "on its own, outside the workflow"
+                : `as workflow '${this.context.workflow}' runs it, as '${this.context.use}'`;
+        },
 
         /** What stops the job running, other than its being disabled, which is shown separately. */
         get problems() {

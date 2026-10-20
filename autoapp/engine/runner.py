@@ -29,8 +29,8 @@ from typing import Dict, Optional
 from sqlalchemy.orm import Session
 
 from app.database import SessionLocal
-from app.models import Job, Variable
-from engine import job_log, log_files, return_codes
+from app.models import Job, Variable, WorkflowItemVariable
+from engine import job_log, log_files, return_codes, workflow_vars
 from engine.executor import Executor
 from engine.preflight import describe_problems, prepare_job
 from engine.reactions import OwnReactions, read_rules
@@ -79,9 +79,11 @@ def run_job(db: Session, job_key: str, instance_id: str, spool_dir: str,
             job_id, success_codes = job.MasterObject_id, job.SuccessReturnCodes
 
             global_config = {"WORKING_ROOT": working_root} if working_root else {}
+            from_workflow = workflow_vars.for_run(db, parent_run_id, workflow_path)
+            _log_from_workflow(from_workflow)
             scope_engine = ScopeResolutionEngine(
                 db=db, job_id=job_id, instance_id=instance_id, global_config=global_config,
-                environment=environment, business_date=business_date,
+                environment=environment, business_date=business_date, workflow=from_workflow,
             )
             scope_engine.build_context()
             if scope_engine.working_folder:
@@ -106,6 +108,17 @@ def run_job(db: Session, job_key: str, instance_id: str, spool_dir: str,
             code = executor.job_return_code if executor and executor.job_return_code is not None else 1
             return _end(telemetry, own, "FAILED", code, "ERROR", str(e))
         return _finish(job_key, executor.job_return_code, success_codes, telemetry, own)
+
+
+def _log_from_workflow(levels: Optional[workflow_vars.Levels]) -> None:
+    """Names, never values, of the variables the job gets from its workflow and its use there."""
+    if levels is None:
+        return
+    if levels.values or levels.conflicts:
+        job_log.detail(f"Variables from workflow '{levels.workflow_key}': "
+                       + ", ".join(sorted({*levels.values, *levels.conflicts})) + ".")
+    if levels.use_values:
+        job_log.detail("Variables set on this use of the job: " + ", ".join(sorted(levels.use_values)) + ".")
 
 
 def _finish(job_key: str, code: Optional[int], success_codes: Optional[str], telemetry,
@@ -186,6 +199,8 @@ def main():
     try:
         # Values of secret variables must never reach the log: AutoApp's own, and the scheduler's it names
         secrets = [value for (value,) in db.query(Variable.VarValue).filter(Variable.IsSecret.is_(True))]
+        secrets += [value for (value,) in db.query(WorkflowItemVariable.VarValue)
+                    .filter(WorkflowItemVariable.IsSecret.is_(True))]
         secrets += [os.environ[name.strip()] for name in args.mask_env.split(",") if name.strip() in os.environ]
         job_log.configure(args.log_level, secrets=secrets)
         exit_code = run_with_reactions(db, args)

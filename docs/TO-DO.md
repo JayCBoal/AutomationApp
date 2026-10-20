@@ -157,6 +157,10 @@ Designed with the owner and built in RunMyFiles on 2026-10-16, then brought over
 
 8. **Dependency declaration.** Move dependencies from `requirements.txt` into `pyproject.toml` and make the project installable.
 
+9. **Loops across workflows.** A "Rerun workflow" Reaction with a required limit, so workflow A can run again after workflow B finishes, at most N times. Prerequisites between workflows may not form a cycle (D104); this is the way to repeat across them. Raised in Phase 5 planning, 2026-10-19.
+
+10. **A flaky test: `test_kill_and_cancel_on_a_workflow_and_kill_on_one_of_its_jobs`** (tests/test_reactions_api.py). On SQLite it fails about half the time when run on its own (the job ends `ERROR` instead of `KILLED`), on the code before workflow variables too (5 failures in 12 runs there, 6 in 12 after); it mostly passes inside the full suite. A race between the kill and the job's start. Found 2026-10-19.
+
 ## Done
 
 See [CHANGE_LOG.md](CHANGE_LOG.md).

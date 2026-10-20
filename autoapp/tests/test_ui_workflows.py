@@ -201,3 +201,99 @@ def test_disabling_a_job_used_in_a_workflow_warns_first_and_the_workflow_says_so
     wait_for_run_end(page)
     assert [s.inner_text() for s in page.locator("#run-items .wf-state").all()] == [
         "Succeeded · return code 0", "Disabled"]
+
+
+# ---------- Variables and tags (docs/WORKFLOWS_PHASE4.md, decisions 19 to 21) ----------
+
+def test_a_workflow_has_variables_and_tags_and_a_use_has_variables_of_its_own(page, saved_flow, seed, db):
+    saved_flow()
+    seed.tag("Environment-TEST", Region="EU")
+    db.commit()
+    page.goto("/ui/workflow.html?key=FLOW")
+    page.locator("#no-variables").wait_for()
+
+    page.locator("#edit-button").click()
+    page.locator("#add-variable").click()
+    page.locator("#variables-panel .variable-name").fill("Code")
+    page.locator("#variables-panel .variable-value").fill("3")
+    page.locator("#tag-candidate").fill("Environment-TEST")
+    page.locator("#add-tag").click()
+    page.locator(".add-use-variable").nth(1).click()
+    page.locator(".wf-item-variables .variable-name").fill("Code")
+    page.locator(".wf-item-variables .variable-value").fill("7")
+    page.locator("#submit-button").click()
+
+    page.locator("#save-notice").wait_for()
+    assert page.locator("#save-notice").inner_text().startswith("Saved.")
+    db.expire_all()
+    flow = db.query(Job).filter(Job.JobKey == "FLOW").one()
+    assert [(v.VarName, v.VarValue) for v in flow.variables] == [("Code", "3")]
+    second = [i for i in flow.items if i.ItemName == "Second"][0]
+    assert [(v.VarName, v.VarValue) for v in second.variables] == [("Code", "7")]
+    assert page.locator("#tag-list").inner_text().strip().startswith("Environment")
+    assert page.locator(".wf-use-variables:visible").inner_text() == "Sets here: Code"
+    assert page.locator("#tags-give").is_visible()                  # what the tag gives its jobs
+
+
+def steps_workflow(seed, db):
+    """GREET writes ${Region} in ${Currency}; the workflow gives both, and its tag adds Region's cousin."""
+    job = seed.job("GREET")
+    seed.step(job, 1, "SIMULATE", title="Say hello", Messages="Hello ${Region}, in ${Currency}, ${Nobody}")
+    flow = seed._add(Job(JobKey="STEPS_FLOW", JobType="WORKFLOW"))
+    seed._add(WorkflowItem(workflow=flow, ItemName="Greet", job=job, ItemOrder=1))
+    seed.set_vars(flow, Region="EU", Currency="EUR")
+    db.commit()
+
+
+def test_a_use_shows_its_jobs_steps_and_where_each_value_comes_from(page, seed, db):
+    steps_workflow(seed, db)
+    page.goto("/ui/workflow.html?key=STEPS_FLOW")
+    page.locator("#outline .wf-item").first.wait_for()
+    steps = page.locator(".wf-steps").first
+    steps.locator("summary").click()
+    text = steps.inner_text()
+    assert "Say hello" in text and "Messages" in text
+    assert "${Region} = EU, from the workflow" in text
+    assert "${Currency} = EUR, from the workflow" in text
+    assert "${Nobody} has no value here" in text
+
+    page.locator("#edit-button").click()            # what is on screen counts, saved or not
+    page.locator(".add-use-variable").click()
+    page.locator(".wf-item-variables .variable-name").fill("Region")
+    page.locator(".wf-item-variables .variable-value").fill("US")
+    assert "${Region} = US, from this use" in steps.inner_text()
+    link = page.locator(".open-job").first
+    assert (link.get_attribute("target"), link.get_attribute("href")) == (
+        "_blank", "job.html?key=GREET&workflow=STEPS_FLOW&use=Greet")        # so the job is checked as this workflow runs it
+
+
+def test_the_diagram_pane_shows_the_steps_of_the_selected_job_with_an_open_job_link(page, seed, db):
+    steps_workflow(seed, db)
+    page.add_init_script("localStorage.setItem('autoapp.workflow.view', 'diagram')")
+    page.goto("/ui/workflow.html?key=STEPS_FLOW")
+    page.locator("#diagram .wf-box").first.click()
+    steps = page.locator("#side .wf-steps:visible")
+    steps.wait_for()
+    assert steps.evaluate("el => el.open")                                    # open in the diagram, where it is the point
+    assert "${Region} = EU, from the workflow" in steps.inner_text()
+    assert steps.locator("a.open-job-steps").get_attribute("target") == "_blank"
+
+
+def test_a_job_opened_from_a_workflow_is_checked_as_that_workflow_runs_it_or_on_its_own(page, seed, db):
+    steps_workflow(seed, db)
+    seed.set_vars(db.query(Job).filter(Job.JobKey == "STEPS_FLOW").one(), Nobody="there")
+    db.commit()
+    page.goto("/ui/job.html?key=GREET&workflow=STEPS_FLOW&use=Greet")
+    page.locator("#check-context").wait_for()
+    assert "as workflow 'STEPS_FLOW' runs it, as 'Greet'" in page.locator("#check-context").inner_text()
+    assert page.locator("#runnability .ready-text").is_visible()
+
+    page.locator("#check-alone").click()                    # without the workflow, ${Region} has no value
+    assert "on its own, outside the workflow" in page.locator("#check-context").inner_text()
+    page.locator("#runnability .status.FAILED").wait_for()
+    page.locator("#check-in-workflow").click()
+    page.locator("#runnability .ready-text").wait_for()
+
+    page.goto("/ui/job.html?key=GREET")                     # opened on its own: no such line
+    page.locator("#runnability").wait_for()
+    assert not page.locator("#check-context").is_visible()

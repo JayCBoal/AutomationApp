@@ -41,7 +41,7 @@ Compiled 2026-10-18, from the design record and Phases 1 to 4.
 - *Status:* Built (Phase 1). *Source:* WORKFLOWS.md, "Names of jobs in a workflow".
 
 **D7. A workflow holds jobs embedded (its own) or shared (used from elsewhere)**; no separate Reference object, no new noun for a use on screen.
-- *Why:* an embedded workflow is what RunMyJobs' structural sub-chains should have been: it belongs to its parent and stays out of lists (shortcoming 6). Shared jobs let one definition run several times with different values. Everything on the diagram is a job or a workflow, so there is nothing new to learn.
+- *Why:* an embedded workflow is what RunMyJobs' structural sub-chains should have been: it belongs to its parent and stays out of the Jobs & Workflows page and the search pages (shortcoming 6); the editor of its workflow shows it. Shared jobs let one definition run several times with different values. Everything on the diagram is a job or a workflow, so there is nothing new to learn.
 - *Considered:* ActiveBatch's Reference objects.
 - *Status:* Built (Phase 1: shared jobs; Phase 6, 2026-10-20: embedded jobs and workflows, D116 to D135). *Source:* WORKFLOWS.md, "What a workflow holds".
 
@@ -479,7 +479,7 @@ Compiled 2026-10-18, from the design record and Phases 1 to 4.
 - *Considered:* a separate "kill the top-level workflow" Reaction (not wanted).
 - *Status:* Built (Phase 6, 2026-10-20; agreed 2026-10-19). *Source:* WORKFLOWS_PHASE6.md.
 
-**D126. Embedded items stay out of lists and search; their changes are in the parent's Audit Log; tags go on top-level jobs and workflows only.**
+**D126. Embedded items stay out of the Jobs & Workflows page, the search pages and the pickers (not out of the workflow editor, where they are shown in their workflow); their changes are in the parent's Audit Log; tags go on top-level jobs and workflows only.**
 - A workflow's tags feed everything inside it (D92). Job History gains the frame level.
 - *Why:* no clutter, which was shortcoming 6; tagging each embedded item as well would make inheritance confusing.
 - *Status:* Built (Phase 6, 2026-10-20; agreed 2026-10-19). *Source:* WORKFLOWS_PHASE6.md.

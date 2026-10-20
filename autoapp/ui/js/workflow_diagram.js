@@ -169,7 +169,8 @@ const WorkflowDiagram = (() => {
         models.set(item.id, model);
         const kids = item.frame && !item.folded ? visible.filter(child => child.parent === item.id) : null;
         if (!kids) return { id: item.id, width: model.width, height: model.height };
-        const head = 50 + textWidth(item.name || "(no name yet)", NAME_FONT) + 24 + textWidth(subLine(item) || "", SMALL_FONT) + PAD;
+        // The header's second line (name above, sub-title below) needs only the wider of the two; one line needs both
+        const head = 50 + Math.max(textWidth(item.name || "(no name yet)", NAME_FONT), textWidth(subLine(item) || "", SMALL_FONT)) + PAD;
         const width = Math.max(160, Math.ceil(head));
         return { id: item.id, children: kids.map(child => elkNode(child, visible, models)),
                  layoutOptions: { "elk.padding": FRAME_PADDING, "elk.nodeSize.constraints": "MINIMUM_SIZE",
@@ -365,9 +366,12 @@ const WorkflowDiagram = (() => {
         svg("text", { x: at.x + 9, y: at.y + 22, fill: css("--text"), style: "font: 700 14px system-ui, sans-serif" }, toggle).textContent = "▾";
         tooltip(toggle, "Fold this frame into one box (or double-click it)");
         icon(g, "frame", at.x + 30, at.y + 10, css("--muted"), "A workflow embedded in this one: it belongs to this workflow");
-        svg("text", { x: at.x + 50, y: at.y + 22, fill: css("--text"), style: `font: ${NAME_FONT}`, "pointer-events": "none" }, g).textContent = item.name || "(no name yet)";
-        const note = subLine(item);
-        if (note) svg("text", { class: "wf-sub", x: at.x + at.width - PAD, y: at.y + 22, "text-anchor": "end", fill: css("--muted"),
+        // The sub-title goes beside the name when the frame is wide enough anyway, and under it when it would stretch the frame
+        const note = subLine(item), nameWidth = textWidth(item.name || "(no name yet)", NAME_FONT);
+        const beside = !note || at.width >= 50 + nameWidth + 24 + textWidth(note, SMALL_FONT) + PAD;
+        svg("text", { x: at.x + 50, y: at.y + (beside ? 22 : 15), fill: css("--text"), style: `font: ${NAME_FONT}`, "pointer-events": "none" }, g).textContent = item.name || "(no name yet)";
+        if (note) svg("text", { class: "wf-sub", x: beside ? at.x + at.width - PAD : at.x + 50, y: at.y + (beside ? 22 : 29),
+                                "text-anchor": beside ? "end" : "start", fill: css("--muted"),
                                 style: `font: ${SMALL_FONT}`, "pointer-events": "none" }, g).textContent = note;
         tooltip(g, item.status ? `${item.name}: ${item.statusText}` : item.name);
     }

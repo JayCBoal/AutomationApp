@@ -161,6 +161,12 @@ Designed with the owner and built in RunMyFiles on 2026-10-16, then brought over
 
 10. **A flaky test: `test_kill_and_cancel_on_a_workflow_and_kill_on_one_of_its_jobs`** (tests/test_reactions_api.py). On SQLite it fails about half the time when run on its own (the job ends `ERROR` instead of `KILLED`), on the code before workflow variables too (5 failures in 12 runs there, 6 in 12 after); it mostly passes inside the full suite. A race between the kill and the job's start. Found 2026-10-19.
 11. **A workflow waited for as a whole shows no "Needed by".** *Done 2026-10-20 (Phase 6):* the workflow's page lists the jobs elsewhere that wait for it, or for a job in it. Still open: drawing them as boxes on its diagram. Found 2026-10-19.
+12. **The arrowhead that goes a little way into a folded frame** (Phase 6 plan; the mockup draws it). Today a line into a folded frame ends on the frame's edge. Left out of Phase 6, 2026-10-20.
+13. **Edit a frame's own Reactions and completion rules (Succeeds when, Return code from) on the workflow page.** They are kept as saved but not editable there; they can be set through the API only. Phase 6, 2026-10-20.
+14. **Drag a line between jobs in different frames before the workflow is saved.** It works once saved, because the wait names the other frame by its key. Phase 6, 2026-10-20.
+15. **What a job inside a frame waited for outside, in a run's pane.** The outside waits of a frame's jobs are kept on the frame's own run and are not shown on the top run's pane. Phase 6, 2026-10-20.
+16. **Update the mockup (`ui/mockup_workflow.html`) to match the real frames,** after comparing the two. Phase 6, 2026-10-20.
+17. **A job waiting for a job in a frame that never started** waits out its patience (D130). It could end Not run at once when the frame is known not to start. Phase 6, 2026-10-20.
 
 ## Done
 

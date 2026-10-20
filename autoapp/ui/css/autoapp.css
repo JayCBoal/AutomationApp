@@ -450,6 +450,12 @@ body.embedded main { padding-top: 12px; }
 .wf-side .wf-row label { flex-wrap: wrap; }
 .wf-item.found .wf-name { outline: 2px solid var(--accent); outline-offset: 2px; }
 .wf-prerequisites li.chosen { outline: 1px dashed var(--text); outline-offset: 2px; }
+.wf-outside-list { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 8px; }
+.wf-outside-row { border: 1px dashed var(--border); border-radius: 5px; padding: 6px 10px 8px; display: grid; gap: 6px; }
+.wf-outside-row select, .wf-outside-row input[type=number], .wf-outside-row input[type=time] { width: auto; }
+.wf-add-outside { display: flex; flex-wrap: wrap; gap: 4px 16px; }
+.wf-outside-words, .wf-needed-by { margin: 2px 0 0; padding: 0; list-style: none; }
+.tag.outside { border-style: dashed; }
 .wf-key { margin-top: 12px; }
 .wf-key summary { cursor: pointer; color: var(--muted); }
 .wf-key[open] summary { margin-bottom: 10px; }

@@ -2,7 +2,7 @@
 
 The design record for AutoApp's workflows, built up in design sessions with the owner. What a workflow is for, and the RunMyJobs shortcomings it answers, are in [PROJECT_GOALS.md](PROJECT_GOALS.md) goal 2. This page holds everything else: the starting point, what is decided, what is proposed, and the open questions.
 
-Status: **Phases 1 to 3 are built and merged; Phase 4 (conditions) is partly built (2026-10-18): Custom rules, completion rules and the condition box, with the Operations object, For Each File over an upstream job's files and workflow variables still to do.** The design topics below are all settled.
+Status: **Phases 1 to 4 are built and merged (Phase 4's Operations object and For Each File over an upstream job's files were deferred, D42); Phase 5 (outside dependencies) is built, 2026-10-19, awaiting review.** The design topics below are all settled.
 
 **Every decision, with its reason, is in [WORKFLOW_DECISIONS.md](WORKFLOW_DECISIONS.md)**: look there first for "why does it work like this?".
 
@@ -271,7 +271,7 @@ To be judged again in practice once built, above all the outside dependencies.
 - **Phase 4, conditions** (shortcoming 3): prerequisites in flow control's SQL language with `%{...}` paths; the Operations object downstream, with For Each File over an upstream job's files; the builder; Explain; workflow variables.
   - Split (2026-10-18): Phase 4 built job outputs (`%{Load.Succeeded}`, `FileCount` and the rest), Custom rules, Succeeds when and Return code from, and the condition box (help, validation, the builder, Explain). Plan: [WORKFLOWS_PHASE4.md](WORKFLOWS_PHASE4.md). The rest of Phase 4 (planned 2026-10-19, same plan): workflow variables, a workflow's tags feeding its jobs too, the order through the system-wide Variable precedence setting. The Operations object and For Each File over an upstream job's files are deferred to a later workflow enhancement: the telemetry principle rules out the Operations table, not the object (D42).
   - **Set Return Code becomes Set Return Values**, the owner's idea (2026-10-18), was noted here, then handed the same day to the roadmap planning session, for [ROADMAP.md](ROADMAP.md): nothing in the workflow phases depends on it. It still sets the job's return code, and can also set named values of the job's own (`RowsRejected`, `BatchId`) that join its outputs, so jobs downstream read them as `%{Load.RowsRejected}` in conditions and steps.
-- **Phase 5, outside dependencies** (shortcoming 4): prerequisites on jobs in other workflows (current or latest run), on endpoints (minimum age, sharing code with the Check Files change), on time windows and dates; their markers; Needed by.
+- **Phase 5, outside dependencies** (shortcoming 4): prerequisites on jobs in other workflows (current or latest run), on endpoints (minimum age, sharing code with the Check Files change), on time windows and dates; their markers; Needed by. **Built 2026-10-19.** Plan: [WORKFLOWS_PHASE5.md](WORKFLOWS_PHASE5.md); decisions D99 to D115.
 - **Phase 6, embedded and shared workflows** (shortcoming 6): embedded jobs and workflows, workflows used in workflows, frames, deep Find.
 - **Phase 7, restarts:** the Rerun ▸ menu; Resume from the record (not done, partly done, unknown); flow control state; Advanced….
 - **Phase 8, time-based Reactions** (the SLA reach): not started by, not ended by, runs longer than; Mark as late; Notify (needs a way to notify, such as the Send email step in TO-DO).
@@ -288,7 +288,7 @@ To be judged again in practice once built, above all the outside dependencies.
 - *on each prerequisite*, how long to wait and whether it is required: wait with no limit (the default inside a workflow), up to N minutes, or until a time ("until 02:00"); if it isn't met in time, **required** (the default: the job can't start) or **optional** (go ahead without it: "use today's FX rates if they arrive by 02:00, otherwise carry on");
 - *on the job*, what "can't start" means: **Not run** (the default, cascading), **Fail** (Failed, Reason `PREREQUISITES_NOT_MET` or `TIMED_OUT`, so failure paths and Reactions take over), or **Hold for an operator**.
 - Why two levels: patience belongs to each thing waited for (the file has until 02:00, the other workflow until 03:00); the consequence belongs to the job, which has one fate however it failed to start, as with Reactions' decisions. A time-based Reaction ("not started by 03:00") sits beside this as a side effect (notify, mark as late), not deciding the job's fate.
-- Built with outside dependencies (Phase 5).
+- Built with outside dependencies (Phase 5, 2026-10-19), except Hold for an operator.
 
 ### A workflow is a kind of Job (2026-10-17)
 

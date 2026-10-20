@@ -46,16 +46,17 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from sqlalchemy.orm import Session
 
-from app.models import ConditionCheck, Job, JobRun, ReactionEvent, WorkflowRunItem, utcnow
-from engine import conditions, job_log, log_files, return_codes, workflow_conditions, workflow_vars
+from app.models import (ConditionCheck, Job, JobRun, ReactionEvent, WorkflowPrerequisite, WorkflowPrerequisiteCheck,
+                        WorkflowRunItem, utcnow)
+from engine import conditions, job_log, log_files, outside, settings, workflow_conditions, workflow_vars
+from engine.outside_state import Context, Outside
+from engine.prerequisites import FINAL, HOLDS, NEVER, TIMED_OUT, WAIT, SKIPPED_OPTIONAL, prerequisite_state
 from engine.reactions import Act, OwnReactions, Rule, judge, read_rules, start_workflow
 
 AUTOAPP_DIR = Path(__file__).resolve().parents[1]
 CHILD_SCHEDULER = "AutoApp workflow"
 POLL_SECONDS = float(os.getenv("AUTOAPP_WORKFLOW_POLL_SECONDS", "1"))
-FINAL = ("SUCCESS", "FAILED", "NOT_RUN", "DISABLED", "BYPASSED", "SKIPPED")
 NOT_STARTED = ("PENDING", "WAITING")
-HOLDS, NEVER, WAIT = "HOLDS", "NEVER", "WAIT"
 OUTPUT_KEPT = 20                # lines of a job runner's own output kept, for one that left no record
 
 NEEDS = {"SUCCESS": "succeed", "FAILED": "fail", "ENDED": "end", "RC": "give return code", "RULE": "end"}
@@ -99,26 +100,14 @@ class Planned:
     file_count: Optional[int] = None    # what its latest attempt reported delivering
     size: Optional[int] = None
     checked_attempt: int = -1       # the attempt its Custom rule's decision was last kept for
+    inside_ids: List[int] = field(default_factory=list)     # the ids of the prerequisites above, in the same order
+    outside: List[Outside] = field(default_factory=list)    # its prerequisites outside the workflow (Phase 5)
+    held: Dict[int, float] = field(default_factory=dict)    # when each prerequisite first held, by id: patience counts from these
+    on_unmet: str = "NOT_RUN"       # what happens when it can't start: NOT_RUN or FAIL
+    attempt_waited: int = -1        # the attempt the waiting message was last said for
 
 
 # ---------- Whether a job may start ----------
-
-def prerequisite_state(test: str, codes: Optional[str], status: str, code: Optional[int]) -> str:
-    """HOLDS, NEVER (it can no longer hold) or WAIT, given how the job waited for stands."""
-    if status not in FINAL:
-        return WAIT
-    if status == "BYPASSED":            # treated as succeeded without running (docs/WORKFLOWS.md)
-        status, code = "SUCCESS", 0
-    if test in ("ENDED", "RULE"):     # RULE: named in a Custom rule, which decides, once it has ended
-        return HOLDS                # ended in any way, Not run included, so clean-up jobs still run
-    if test == "SUCCESS":
-        met = status == "SUCCESS"
-    elif test == "FAILED":
-        met = status == "FAILED"
-    else:
-        met = return_codes.matches(code, codes)
-    return HOLDS if met else NEVER
-
 
 def run_values(by_name: Dict[str, Planned], variables: Dict[str, Any]) -> Dict[str, Any]:
     """Every %{Name.Output} of the run as it stands, unknown (None) for a job not yet ended, and the variables."""
@@ -128,6 +117,9 @@ def run_values(by_name: Dict[str, Planned], variables: Dict[str, Any]) -> Dict[s
         values.update(workflow_conditions.item_values(planned.name, row.Status, row.ReturnCode, row.Reason,
                                                       planned.file_count, planned.size,
                                                       row.StartedDateTime, row.EndedDateTime))
+        for target in planned.outside:
+            values.update(target.values if target.state == HOLDS else target.blank_values())
+    values.update(outside.now_values(outside.now()))
     return values
 
 
@@ -136,7 +128,10 @@ def rule_state(planned: Planned, by_name: Dict[str, Planned], values: Dict[str, 
     Where a Custom rule stands: (HOLDS, NEVER or WAIT, its answer). A rule using IS NULL, coalesce and
     the like is only decided once all its jobs have ended, since those turn unknown into an answer.
     """
-    ended = all(by_name[target].row.Status in FINAL for target, _t, _c in planned.prerequisites)
+    if any(o.state == TIMED_OUT for o in planned.outside):
+        return TIMED_OUT, None
+    ended = (all(by_name[target].row.Status in FINAL for target, _t, _c in planned.prerequisites)
+             and all(o.state != WAIT for o in planned.outside))
     if not ended and conditions.uses_null_tests(planned.rule):
         return WAIT, None
     answer = conditions.decide(planned.rule, values)
@@ -146,20 +141,33 @@ def rule_state(planned: Planned, by_name: Dict[str, Planned], values: Dict[str, 
 
 
 def readiness(planned: Planned, by_name: Dict[str, Planned], values: Optional[Dict[str, Any]] = None) -> str:
-    """HOLDS when the job may start, NEVER when it never can, WAIT otherwise. ALL, ANY or its Custom rule decides."""
+    """
+    HOLDS when the job may start, NEVER when it never can, TIMED_OUT when a prerequisite outside the
+    workflow ran out of patience, WAIT otherwise. ALL, ANY or its Custom rule decides.
+    """
     if planned.join == "CUSTOM":
         return rule_state(planned, by_name, values if values is not None else run_values(by_name, {}))[0]
-    if not planned.prerequisites:
-        return HOLDS
     states = [prerequisite_state(test, codes, by_name[target].row.Status, by_name[target].row.ReturnCode)
               for target, test, codes in planned.prerequisites]
+    states += [o.state for o in planned.outside]
+    if not states:
+        return HOLDS
+    kept = [state for state in states if state != SKIPPED_OPTIONAL]       # an optional prerequisite that gave up is dropped
     if planned.join == "ANY":
-        if HOLDS in states:
-            return HOLDS
-        return NEVER if all(state == NEVER for state in states) else WAIT
-    if NEVER in states:
-        return NEVER
-    return HOLDS if all(state == HOLDS for state in states) else WAIT
+        return _any_of(kept)
+    for dead in (NEVER, TIMED_OUT):
+        if dead in kept:
+            return dead
+    return HOLDS if all(state == HOLDS for state in kept) else WAIT
+
+
+def _any_of(kept: List[str]) -> str:
+    """ANY: it may start when one holds; it cannot when every one is dead. Nothing left (all optional gave up): it starts."""
+    if not kept or HOLDS in kept:
+        return HOLDS
+    if all(state in (NEVER, TIMED_OUT) for state in kept):
+        return TIMED_OUT if TIMED_OUT in kept else NEVER
+    return WAIT
 
 
 def why_never(planned: Planned, by_name: Dict[str, Planned]) -> str:
@@ -174,6 +182,12 @@ def why_never(planned: Planned, by_name: Dict[str, Planned]) -> str:
         need = NEEDS[test] + (f" {codes}" if test == "RC" else "")
         reasons.append(f"it waits for '{target}' to {need}, and '{target}' {outcome_words(row)}")
     return "; ".join(reasons)
+
+
+def why_timed_out(planned: Planned) -> str:
+    """Which outside prerequisites ran out of patience, in words: "it waited for 'INBOUND' for up to 2 hours, and no files match"."""
+    return "; ".join(f"it waited for '{o.name}' {o.limit_words(0)}, and {o.words[:1].lower() + o.words[1:].rstrip('.')}"
+                     for o in planned.outside if o.state == TIMED_OUT)
 
 
 def outcome_words(row: WorkflowRunItem) -> str:
@@ -196,6 +210,7 @@ class WorkflowRunner:
         self.times_used: Counter = Counter()        # (path, action id): how often a rerun has run in this run
         self.own: Optional[OwnReactions] = None     # its own Reactions, when it runs on its own
         self.variables: Dict[str, Any] = {}         # the ${...} its conditions use, fixed at the start
+        self.record_start_ts = time.time()          # when the run started, for the patience that counts from it
 
     def run(self) -> int:
         """Runs the workflow to the end. Returns the exit code for whoever started it: 0 if it succeeded, else 1."""
@@ -203,6 +218,7 @@ class WorkflowRunner:
         if self.options.working_root:       # so the check of its jobs finds their working folders, as they will
             os.environ["AUTOAPP_WORKING_ROOT"] = self.options.working_root
         self.record = self._record_start()
+        self.record_start_ts = time.time()
         job_log.summary(f"Workflow '{self.workflow.JobKey}', instance {self.options.instance_id}")
         problems = workflow_problems(self.db, self.workflow)
         if problems:
@@ -335,16 +351,51 @@ class WorkflowRunner:
             row = WorkflowRunItem(WorkflowRun_id=self.record.id, Item_id=item.id, Path=base + item.ItemName,
                                   ItemName=item.ItemName, JobKey=item.job.JobKey, ItemOrder=position)
             self.db.add(row)
-            prerequisites = [(p.target.ItemName, p.Test, p.ReturnCodes) for p in item.prerequisites if p.target]
+            inside = [p for p in item.prerequisites if p.Kind == "JOB" and p.target]
+            prerequisites = [(p.target.ItemName, p.Test, p.ReturnCodes) for p in inside]
             self.items.append(Planned(item.ItemName, item.job.JobKey, item.JoinRule, prerequisites, row,
                                       active=bool(item.job.IsActive), disabled_here=item.DisabledHere,
                                       job_type=item.job.JobType, rules=read_rules(item.job, item),
-                                      rule=item.StartRule if item.JoinRule == "CUSTOM" else None))
+                                      rule=item.StartRule if item.JoinRule == "CUSTOM" else None,
+                                      inside_ids=[p.id for p in inside], on_unmet=item.OnUnmet,
+                                      outside=[self._outside(p) for p in item.prerequisites if p.Kind != "JOB"]))
         self.by_name = {p.name: p for p in self.items}
         self.variables = self._fixed_variables()
         self._fix_workflow_variables()
         job_log.detail(f"{_count(self.items, 'job')}: " + ", ".join(p.name for p in self.items))
         self._save()
+
+    def _outside(self, prerequisite: WorkflowPrerequisite) -> Outside:
+        """A prerequisite on something outside the workflow, ready to look at it."""
+        target = prerequisite.target
+        o = Outside(id=prerequisite.id, name=prerequisite.TargetName or "", kind=prerequisite.Kind,
+                    required=bool(prerequisite.Required), test=prerequisite.Test, codes=prerequisite.ReturnCodes,
+                    target_item_id=target.id if target else None,
+                    target_workflow_id=prerequisite.TargetJob_MasterObject_id,
+                    look_back_hours=prerequisite.LookBackHours, only_after_start=bool(prerequisite.OnlyAfterStart),
+                    min_age=prerequisite.MinAgeSeconds, time_condition=prerequisite.TimeCondition,
+                    wait_mode=prerequisite.WaitMode, wait_minutes=prerequisite.WaitMinutes,
+                    wait_until=prerequisite.WaitUntil, wait_from=prerequisite.WaitFrom,
+                    wait_from_id=prerequisite.WaitFromPrerequisite_id)
+        if prerequisite.Kind == "ENDPOINT":
+            o.pattern = self._files_pattern(prerequisite)
+        o.values = o.blank_values()
+        return o
+
+    def _files_pattern(self, prerequisite: WorkflowPrerequisite) -> str:
+        """The folder and file pattern of an endpoint prerequisite, with its ${...} filled in. Empty if it cannot be."""
+        from engine.scope_engine import ScopeResolutionEngine
+        endpoint = prerequisite.endpoint
+        engine = ScopeResolutionEngine(db=self.db, job_id=self.workflow.MasterObject_id, instance_id=self.options.instance_id,
+                                       environment=dict(os.environ), business_date=self.options.business_date)
+        engine.build_context()
+        try:
+            folder = engine.interpolate(endpoint.Path, endpoint=endpoint)
+            name = engine.interpolate(prerequisite.FilePattern or endpoint.FilenamePattern, endpoint=endpoint)
+        except ValueError as e:
+            job_log.error(f"'{prerequisite.TargetName}': the endpoint '{endpoint.Name}' cannot be worked out: {e}")
+            return ""
+        return os.path.join(folder, name)
 
     def _fix_workflow_variables(self) -> None:
         """Keeps the workflow's variables and each use's on the run, for its jobs to read as they start."""
@@ -435,7 +486,7 @@ class WorkflowRunner:
 
     def _advance(self) -> None:
         """Starts what may start and marks Not run what never can, until nothing more changes this pass."""
-        changed = True
+        changed, looked = True, set()
         while changed:
             changed = False
             for planned in self.items:
@@ -445,10 +496,15 @@ class WorkflowRunner:
                     self._not_run(planned, "CANCELLED", f"'{planned.name}' will not run: the workflow was cancelled.")
                     changed = True
                     continue
+                if planned.name not in looked:
+                    looked.add(planned.name)
+                    self._look_outside(planned)
                 state = self._readiness(planned)
                 if state == NEVER:
-                    self._not_run(planned, "PREREQUISITES_NOT_MET",
-                                  f"'{planned.name}' will not run: {why_never(planned, self.by_name)}.")
+                    self._unmet(planned, "PREREQUISITES_NOT_MET", why_never(planned, self.by_name))
+                    changed = True
+                elif state == TIMED_OUT:
+                    self._unmet(planned, "TIMED_OUT", why_timed_out(planned))
                     changed = True
                 elif state == HOLDS and (not planned.active or planned.disabled_here):
                     self._disabled(planned)
@@ -459,6 +515,7 @@ class WorkflowRunner:
                     planned.row.Status = "WAITING"
 
     def _disabled(self, planned: Planned) -> None:
+        self._close_checks(planned)
         row = planned.row
         if not planned.active:
             row.Status = "DISABLED"
@@ -472,10 +529,76 @@ class WorkflowRunner:
         row.EndedDateTime = utcnow()
 
     def _not_run(self, planned: Planned, reason: str, message: str) -> None:
+        self._close_checks(planned)
         planned.row.Status, planned.row.Reason, planned.row.EndedDateTime = "NOT_RUN", reason, utcnow()
         job_log.summary(message)
 
+    def _unmet(self, planned: Planned, reason: str, why: str) -> None:
+        """The job can't start (a prerequisite can never hold, or ran out of patience): Not run, or Failed, as the job says."""
+        if planned.on_unmet == "FAIL":
+            self._close_checks(planned)
+            planned.row.Status, planned.row.Reason, planned.row.EndedDateTime = "FAILED", reason, utcnow()
+            job_log.error(f"'{planned.name}' fails: {why}.")
+        else:
+            self._not_run(planned, reason, f"'{planned.name}' will not run: {why}.")
+
+    # --- Prerequisites outside the workflow (docs/WORKFLOWS_PHASE5.md) ---
+
+    def _context(self) -> Context:
+        return Context(self.db, self.record.StartedDateTime, utcnow(), outside.now(), time.time(),
+                       int(settings.current(self.db, "OutsideWaitHours")))
+
+    def _look_outside(self, planned: Planned) -> None:
+        """Reads what the job waits for outside the workflow, judges its patience, and keeps what it found."""
+        if not planned.outside:
+            return
+        ctx = self._context()
+        for o in planned.outside:
+            o.look(ctx)
+        self._note_held(planned, ctx.ts_now)
+        every = planned.inside_ids + [o.id for o in planned.outside]
+        for o in planned.outside:
+            before = o.state
+            o.judge(ctx, planned.held, [i for i in every if i != o.id], self.record_start_ts)
+            self._note_outside(planned, o, before, ctx.default_hours)
+
+    def _note_held(self, planned: Planned, now_ts: float) -> None:
+        """When each prerequisite of the job first held: its patience counts from these."""
+        for prerequisite_id, (target, test, codes) in zip(planned.inside_ids, planned.prerequisites):
+            row = self.by_name[target].row
+            if prerequisite_state(test, codes, row.Status, row.ReturnCode) == HOLDS:
+                planned.held.setdefault(prerequisite_id, now_ts)
+        for o in planned.outside:
+            if o.holding:
+                planned.held.setdefault(o.id, now_ts)
+
+    def _note_outside(self, planned: Planned, o: Outside, before: str, default_hours: int) -> None:
+        """Keeps what one outside prerequisite found for this attempt, and says in the log when it changes."""
+        if o.check is None:
+            o.check = WorkflowPrerequisiteCheck(WorkflowRun_id=self.record.id, Path=planned.row.Path,
+                                                Attempt=planned.row.Attempt + 1, Kind=o.kind, TargetName=o.name,
+                                                Result="WAITING")
+            self.db.add(o.check)
+            if o.state == WAIT:
+                job_log.summary(f"'{planned.name}' waits for '{o.name}', {o.limit_words(default_hours)}.")
+        o.check.Result = {WAIT: "WAITING"}.get(o.state, o.state)
+        o.check.UsedRunID, o.check.SeenStatus = o.run_id, o.seen
+        o.check.Message = o.words if o.state != WAIT else f"Waiting for '{o.name}', {o.limit_words(default_hours)}. {o.words}"
+        if o.state != before and o.state != WAIT:
+            logged = {HOLDS: job_log.detail, TIMED_OUT: job_log.warning, SKIPPED_OPTIONAL: job_log.summary}[o.state]
+            logged({HOLDS: f"'{planned.name}': '{o.name}' holds. {o.words}",
+                    TIMED_OUT: f"'{planned.name}': ran out of patience waiting for '{o.name}'. {o.words}",
+                    SKIPPED_OPTIONAL: f"'{planned.name}': stopped waiting for the optional '{o.name}' and went on without it. "
+                                      f"{o.words}"}[o.state])
+
+    def _close_checks(self, planned: Planned) -> None:
+        """The job is decided: what it was still waiting for, it did not need."""
+        for o in planned.outside:
+            if o.check is not None and o.check.Result == "WAITING":
+                o.check.Result = "NOT_NEEDED"
+
     def _start(self, planned: Planned) -> None:
+        self._close_checks(planned)
         planned.run_id, planned.kill_sent = str(uuid.uuid4()), False
         planned.row.Attempt += 1
         output = tempfile.NamedTemporaryFile(prefix="autoapp_workflow_job_", suffix=".log", delete=False)
@@ -583,6 +706,9 @@ class WorkflowRunner:
                 continue                    # still going: its own end stands
             p.row.Status, p.row.ReturnCode, p.row.Reason, p.row.StatusBeforeOverride = "PENDING", None, None, None
             p.row.EndedDateTime, p.process, p.file_count, p.size = None, None, None, None
+            p.held.clear()
+            for o in p.outside:
+                o.forget()
         chain[0].start_after = time.time() + act.wait_seconds
         used = self.times_used[(planned.row.Path, act.id)]
         wait = f" after {act.wait_seconds} s" if act.wait_seconds else ""

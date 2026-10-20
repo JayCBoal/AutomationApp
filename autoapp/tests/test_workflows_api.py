@@ -25,9 +25,12 @@ def jobs(seed, db):
 
 
 def item(job_key, name=None, join="ALL", after=(), **more):
-    """after: (target, test) or (target, test, codes) tuples, or plain target names (succeeded)."""
+    """after: (target, test) or (target, test, codes) tuples, plain target names (succeeded), or ready-made dicts."""
     prerequisites = []
     for p in after:
+        if isinstance(p, dict):
+            prerequisites.append(p)
+            continue
         p = (p, "SUCCESS") if isinstance(p, str) else p
         prerequisites.append({"target": p[0], "test": p[1], **({"return_codes": p[2]} if len(p) > 2 else {})})
     return {"job_key": job_key, **({"name": name} if name else {}), "join": join, "prerequisites": prerequisites, **more}
@@ -59,9 +62,8 @@ def test_a_workflow_is_created_with_its_jobs_and_what_each_waits_for(client, job
     assert saved["job_type"] == "WORKFLOW" and saved["steps"] == []
     assert [(i["name"], i["job_key"], i["join"]) for i in saved["items"]] == [
         ("Extract_US", "EXTRACT.US", "ALL"), ("Extract_EU", "EXTRACT_EU", "ALL"), ("LOAD", "LOAD", "ANY")]
-    assert saved["items"][2]["prerequisites"] == [
-        {"target": "Extract_US", "test": "SUCCESS", "return_codes": None},
-        {"target": "Extract_EU", "test": "RC", "return_codes": "0, 4"}]
+    assert [(p["target"], p["test"], p["return_codes"]) for p in saved["items"][2]["prerequisites"]] == [
+        ("Extract_US", "SUCCESS", None), ("Extract_EU", "RC", "0, 4")]
     assert client.get(f"{ROUTE}/MONTH_END").json()["items"] == saved["items"]
 
 

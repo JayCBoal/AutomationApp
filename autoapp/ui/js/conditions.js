@@ -16,14 +16,18 @@
  * A page puts it where it has
  *     <div data-condition-box data-model="item.rule" data-context="ruleContext(item)"></div>
  * (data-model: where the condition is kept, as text; data-context: an expression giving
- *  { kind: "workflow", names, outputs, workflowKey, runs } or { kind: "job", steps: [{ name, outputs }], variables }),
+ *  { kind: "workflow", names, outputs, workflowKey, runs, outside: [{ name, kind }], outsideOutputs } or
+ *  { kind: "job", steps: [{ name, outputs }], variables }; in a workflow, outside lists the job's own prerequisites outside the
+ *  workflow (OTHER_JOB, ENDPOINT or TIME) and outsideOutputs what files and the time offer: { endpoint, now }),
  * and calls AutoApp.fillConditionBoxes() from a script at the end of its body, before Alpine
  * starts. AutoApp.loadConditionOutputs() fetches what every job in a workflow offers.
  */
 (() => {
     const COMPARISONS = ["=", "<>", "<", "<=", ">", ">=", "LIKE"];
     const COMPARISON_WORDS = { "=": "is", "<>": "is not", "<": "is less than", "<=": "is at most", ">": "is more than",
-                               ">=": "is at least", "LIKE": "is like" };
+                               ">=": "is at least", "LIKE": "is like", "BETWEEN": "is between",
+                               "WINDOW": "is in the window" };
+    const TWO_VALUES = ["BETWEEN", "WINDOW"];
     const TOKEN = /\s+|'(?:[^']|'')*'|"(?:[^"]|"")*"|[%$]\{[^}]*\}|\d+(?:\.\d+)?|[A-Za-z_][A-Za-z0-9_]*|<>|!=|<=|>=|==|=|<|>|\(|\)|./g;
     const ANSWER = { true: "holds", false: "does not hold", null: "unknown" };
     let nextUid = 1;
@@ -78,7 +82,12 @@
                                     </template>
                                 </select>
                                 <input type="text" class="cond-value" x-show="!['TRUE', 'FALSE'].includes(entry.row.op)" x-model="entry.row.value"
-                                       placeholder="A value" style="max-width: 160px">
+                                       :placeholder="entry.row.op === 'WINDOW' ? 'From, as 18:00' : 'A value'" style="max-width: 160px">
+                                <span x-show="['BETWEEN', 'WINDOW'].includes(entry.row.op)">and</span>
+                                <input type="text" class="cond-value2" x-show="['BETWEEN', 'WINDOW'].includes(entry.row.op)" x-model="entry.row.value2"
+                                       :placeholder="entry.row.op === 'WINDOW' ? 'To, as 06:00' : 'A value'" style="max-width: 160px">
+                                <span class="muted small cond-next-day"
+                                      x-show="entry.row.op === 'WINDOW' && entry.row.value2 && entry.row.value2 < entry.row.value">(next day)</span>
                                 <button type="button" class="link small cond-remove-row" @click="removeItem(entry.parent, entry.row); $MODEL = written()">Remove</button>
                             </div>
                         </template>
@@ -162,10 +171,12 @@
     /** The pieces between each joiner (AND or OR) outside brackets. */
     function split(tokens, word) {
         const pieces = [[]];
-        let depth = 0;
+        let depth = 0, between = false;
         for (const t of tokens) {
             if (t === "(") depth++;
             if (t === ")") depth--;
+            if (depth === 0 && t.toUpperCase() === "BETWEEN") between = true;
+            else if (depth === 0 && word === "AND" && between && t.toUpperCase() === "AND") { between = false; pieces[pieces.length - 1].push(t); continue; }
             if (depth === 0 && t.toUpperCase() === word) { pieces.push([]); continue; }
             pieces[pieces.length - 1].push(t);
         }
@@ -186,10 +197,29 @@
         return ref.startsWith("${") ? { subject: "$VAR", variable: ref.slice(2, -1) } : { subject: ref, variable: "" };
     }
 
+    /** A value written as a quoted text or a number, as the row keeps it, or null. */
+    function plainValue(token) {
+        if (/^['"]/.test(token)) return unquote(token);
+        return isNumber(token) ? token : null;
+    }
+
+    /** `ref BETWEEN a AND b` and `ref IN WINDOW 'a' TO 'b'`, or null. */
+    function readTwoValues(tokens) {
+        if (!tokens.length || !isRef(tokens[0])) return null;
+        const word = (i, text) => tokens[i] !== undefined && tokens[i].toUpperCase() === text;
+        let op = null, a = null, b = null;
+        if (tokens.length === 5 && word(1, "BETWEEN") && word(3, "AND")) [op, a, b] = ["BETWEEN", tokens[2], tokens[4]];
+        else if (tokens.length === 6 && word(1, "IN") && word(2, "WINDOW") && word(4, "TO")) [op, a, b] = ["WINDOW", tokens[3], tokens[5]];
+        if (!op || plainValue(a) === null || plainValue(b) === null) return null;
+        return { ...subjectOf(tokens[0]), op, value: plainValue(a), value2: plainValue(b) };
+    }
+
     /** One row from its tokens, or null if it is not a shape a row can show. */
     function readRow(tokens) {
         if (tokens.length === 1 && isRef(tokens[0])) return { ...subjectOf(tokens[0]), op: "TRUE", value: "" };
         if (tokens.length === 2 && tokens[0].toUpperCase() === "NOT" && isRef(tokens[1])) return { ...subjectOf(tokens[1]), op: "FALSE", value: "" };
+        const two = readTwoValues(tokens);
+        if (two) return two;
         if (tokens.length !== 3 || !isRef(tokens[0])) return null;
         const op = tokens[1].toUpperCase() === "LIKE" ? "LIKE" : { "!=": "<>", "==": "=" }[tokens[1]] || tokens[1];
         if (!COMPARISONS.includes(op)) return null;
@@ -198,7 +228,7 @@
         return isNumber(value) ? { ...subjectOf(tokens[0]), op, value } : null;
     }
 
-    const emptyRow = () => ({ type: "row", subject: "", variable: "", op: "TRUE", value: "" });
+    const emptyRow = () => ({ type: "row", subject: "", variable: "", op: "TRUE", value: "", value2: "" });
 
     /** A condition as a tree of groups (all: AND, any: OR) and rows, or null if a part is not a row the builder shows. */
     function readNode(tokens) {
@@ -231,6 +261,11 @@
         if (!subject) return "";
         if (row.op === "TRUE") return subject;
         if (row.op === "FALSE") return "NOT " + subject;
+        if (TWO_VALUES.includes(row.op)) {
+            const as = value => (kindOf(row.subject) !== "STRING" && isNumber(value) ? String(value).trim() : quoted(value));
+            return row.op === "WINDOW" ? `${subject} IN WINDOW ${quoted(row.value)} TO ${quoted(row.value2)}`
+                : `${subject} BETWEEN ${as(row.value)} AND ${as(row.value2)}`;
+        }
         const text = kindOf(row.subject) === "STRING" || row.op === "LIKE" || !isNumber(row.value);
         return `${subject} ${row.op} ${text ? quoted(row.value) : String(row.value).trim()}`;
     }
@@ -352,7 +387,8 @@
             operators(row, context) {
                 this.subjects(context);
                 if (this.kinds[row.subject] === "BOOLEAN") return [{ value: "TRUE", label: "is true" }, { value: "FALSE", label: "is false" }];
-                return COMPARISONS.map(op => ({ value: op, label: COMPARISON_WORDS[op] }));
+                const all = [...COMPARISONS, "BETWEEN", ...(row.subject === "%{Now.Time}" ? ["WINDOW"] : [])];
+                return all.map(op => ({ value: op, label: COMPARISON_WORDS[op] }));
             },
 
             fitOperator(row, context) {
@@ -364,7 +400,12 @@
             helpNames(context) {
                 if (context.kind === "workflow") {
                     const offered = context.outputs || outputs;
-                    return (context.names || []).filter(Boolean).map(name => ({ label: name, prefix: `%{${name}.`, outputs: offered }));
+                    const files = (context.outsideOutputs || {}).endpoint || [];
+                    const jobs = (context.names || []).filter(Boolean).map(name => ({ label: name, prefix: `%{${name}.`, outputs: offered }));
+                    const elsewhere = (context.outside || []).filter(o => o.name && o.kind !== "TIME").map(o => ({
+                        label: o.name, prefix: `%{${o.name}.`, outputs: o.kind === "ENDPOINT" ? files : offered }));
+                    const now = (context.outsideOutputs || {}).now || [];
+                    return [...jobs, ...elsewhere, ...(now.length ? [{ label: "Now", prefix: "%{Now.", outputs: now }] : [])];
                 }
                 return (context.steps || []).filter(s => s.name).map(s => ({ label: s.name, prefix: `%{${s.name}.`, outputs: s.outputs }));
             },
@@ -386,7 +427,8 @@
                 this.seen = text || "";
                 if (context.kind !== "workflow" || !this.editing) return;
                 const request = JSON.stringify({ condition: text || "", names: (context.names || []).filter(Boolean),
-                                                 workflow_key: context.workflowKey || null });
+                                                 workflow_key: context.workflowKey || null,
+                                                 outside: Object.fromEntries((context.outside || []).filter(o => o.name).map(o => [o.name, o.kind])) });
                 if (request === lastChecked) return;
                 clearTimeout(checkTimer);
                 checkTimer = setTimeout(async () => {
@@ -415,6 +457,8 @@
     /** A Custom rule written from prerequisites, for a job switched to Custom rule: what it waited for, as a condition. */
     function ruleFrom(prerequisites, join) {
         const parts = prerequisites.filter(p => p.target).map(p => {
+            if (p.kind === "ENDPOINT") return `%{${p.target}.FileCount} > 0`;
+            if (p.kind === "TIME") return p.condition && /\b(AND|OR)\b/i.test(p.condition) ? `(${p.condition})` : p.condition || "1 = 1";
             if (p.test === "SUCCESS") return `%{${p.target}.Succeeded}`;
             if (p.test === "FAILED") return `%{${p.target}.Failed}`;
             if (p.test === "ENDED") return `%{${p.target}.Ended}`;
@@ -429,9 +473,15 @@
     }
 
     /** The jobs a condition names, in order, once each: %{Name.Output} -> Name. */
-    function namedJobs(text) {
-        const names = [];
-        for (const match of String(text || "").matchAll(/%\{([^.}]+)[.}]/g)) if (!names.includes(match[1])) names.push(match[1]);
+    function namedJobs(text, outsideNames = []) {
+        const names = [], longestFirst = [...outsideNames].sort((a, b) => b.length - a.length);
+        for (const match of String(text || "").matchAll(/%\{([^}]*)\}/g)) {
+            const inner = match[1];
+            if (inner === "Now" || inner.startsWith("Now.")) continue;
+            if (longestFirst.some(name => inner === name || inner.startsWith(name + "."))) continue;
+            const name = inner.split(".")[0];
+            if (name && !names.includes(name)) names.push(name);
+        }
         return names;
     }
 

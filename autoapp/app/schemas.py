@@ -154,10 +154,30 @@ class JobStepOut(BaseModel):
 
 
 class PrerequisiteOut(BaseModel):
-    """What a workflow's job waits for: another of the workflow's jobs, and how that one must have ended."""
-    target: str = Field(..., description="The name, in the workflow, of the job it waits for")
-    test: str = Field(..., description="SUCCESS, FAILED, ENDED (whatever happened) or RC (one of return_codes)")
+    """What a workflow's job waits for: another of the workflow's jobs, or something outside the workflow."""
+    kind: str = Field("JOB", description=(
+        "JOB (a job of this workflow), OTHER_JOB (a job, or a whole workflow, elsewhere), ENDPOINT (files) or TIME"))
+    target: str = Field(..., description=(
+        "Its name in the workflow: a job's name; for something outside, the name conditions use (MONTH_END.Extract)"))
+    test: str = Field("SUCCESS", description="SUCCESS, FAILED, ENDED (whatever happened) or RC (one of return_codes)")
     return_codes: Optional[str] = Field(None, description="For RC: the codes, as 0, 4 or 0-4")
+    workflow: Optional[str] = Field(None, description="OTHER_JOB: the key of the other workflow")
+    job: Optional[str] = Field(None, description="OTHER_JOB: the job in it, by its name there; empty: the whole workflow")
+    look_back_hours: Optional[int] = Field(None, description="OTHER_JOB: only a run that ended within this many hours counts")
+    only_after_start: bool = Field(False, description="OTHER_JOB: only a run started after this workflow's run started counts")
+    endpoint: Optional[str] = Field(None, description="ENDPOINT: the endpoint's name")
+    file_pattern: Optional[str] = Field(None, description="ENDPOINT: the files, if not the endpoint's own pattern")
+    min_age_seconds: Optional[int] = Field(None, description="ENDPOINT: every file must have been left alone this long")
+    time_condition: Optional[str] = Field(None, description="TIME: a condition over %{Now.Time}, %{Now.Date}, %{Now.Weekday}")
+    wait_mode: str = Field("DEFAULT", description=(
+        "How long to wait for something outside: DEFAULT (the system setting), NONE (no limit), MINUTES or UNTIL (a time)"))
+    wait_minutes: Optional[int] = None
+    wait_until: Optional[str] = Field(None, description="For UNTIL: a clock time, as 02:00")
+    wait_from: str = Field("OTHERS", description=(
+        "When the minutes start: OTHERS (the job's other prerequisites have held), FIRST (the first of them), "
+        "CHOSEN (wait_from_target) or RUN_START"))
+    wait_from_target: Optional[str] = Field(None, description="For CHOSEN: the name of another prerequisite of the job")
+    required: bool = Field(True, description="False: after its limit the job goes on without it (it needs a limit)")
 
 
 class ReactionActionIO(BaseModel):
@@ -180,6 +200,12 @@ class ReactionIO(BaseModel):
     actions: List[ReactionActionIO] = Field(default_factory=list)
 
 
+class NeededByOut(BaseModel):
+    """A job in another workflow that waits for a job of this one."""
+    workflow: str
+    job: str
+
+
 class WorkflowItemOut(BaseModel):
     """One job a workflow uses, under its name in the workflow."""
     id: int
@@ -198,6 +224,10 @@ class WorkflowItemOut(BaseModel):
     job_reactions: List[ReactionIO] = Field(default_factory=list, description="The job's own Reactions, as it has them")
     variables: List[VariableOut] = Field(default_factory=list, description=(
         "This use's own variables, over the job's own; a secret's value is always null"))
+    on_unmet: str = Field("NOT_RUN", description=(
+        "When it cannot start (a prerequisite can never hold, or ran out of patience): NOT_RUN or FAIL"))
+    needed_by: List["NeededByOut"] = Field(default_factory=list, description=(
+        "Jobs in other workflows that wait for this one"))
 
 
 class JobDetail(BaseModel):
@@ -226,9 +256,26 @@ class JobDetail(BaseModel):
 
 
 class PrerequisiteSave(BaseModel):
-    target: str = Field(..., max_length=100, description="The name, in the workflow, of the job it waits for")
-    test: str = Field("SUCCESS", description="SUCCESS, FAILED, ENDED or RC")
+    kind: str = Field("JOB", description="JOB, OTHER_JOB, ENDPOINT or TIME")
+    target: str = Field("", max_length=100, description=(
+        "A job: the name, in the workflow, of the job it waits for. Something outside: the name conditions use for it; "
+        "left out, it is made from what it waits for"))
+    test: str = Field("SUCCESS", description="SUCCESS, FAILED, ENDED or RC (a job, or a workflow elsewhere)")
     return_codes: Optional[str] = Field(None, max_length=100, description="For RC: the codes, as 0, 4 or 0-4")
+    workflow: Optional[str] = Field(None, max_length=320, description="OTHER_JOB: the key of the other workflow")
+    job: Optional[str] = Field(None, max_length=100, description="OTHER_JOB: its job there; empty: the whole workflow")
+    look_back_hours: Optional[int] = Field(None, ge=1, description="OTHER_JOB: only a run that ended within this long counts")
+    only_after_start: bool = False
+    endpoint: Optional[str] = Field(None, max_length=100, description="ENDPOINT: the endpoint's name")
+    file_pattern: Optional[str] = Field(None, max_length=256)
+    min_age_seconds: Optional[int] = Field(None, ge=0)
+    time_condition: Optional[str] = Field(None, description="TIME: for example %{Now.Time} BETWEEN '06:00' AND '18:00'")
+    wait_mode: str = Field("DEFAULT", description="DEFAULT, NONE, MINUTES or UNTIL")
+    wait_minutes: Optional[int] = Field(None, ge=1)
+    wait_until: Optional[str] = Field(None, max_length=5, description="For UNTIL: a clock time, as 02:00")
+    wait_from: str = Field("OTHERS", description="OTHERS, FIRST, CHOSEN or RUN_START")
+    wait_from_target: Optional[str] = Field(None, max_length=100)
+    required: bool = True
 
 
 class WorkflowItemSave(BaseModel):
@@ -246,6 +293,7 @@ class WorkflowItemSave(BaseModel):
     variables: Optional[List[VariableSave]] = Field(None, description=(
         "This use's own variables, over the job's own. Left out, they stay as they are; "
         "for a secret that exists, a null or blank value keeps it"))
+    on_unmet: str = Field("NOT_RUN", description="NOT_RUN (it ends Not run) or FAIL (it ends Failed) when it cannot start")
 
 
 class JobStepSave(BaseModel):

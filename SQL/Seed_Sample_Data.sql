@@ -524,3 +524,55 @@ INSERT INTO WorkflowPrerequisites (id, Item_id, TargetItem_id, Test, ReturnCodes
 INSERT INTO WorkflowItemVariables (Item_id, VarName, VarValue, Description) VALUES
 (22, 'Region',   'US',  'This use writes for the US'),
 (22, 'Currency', 'USD', 'and in dollars');
+
+-- ----------------------------------------------------------------------------
+-- 9. A sample of outside dependencies (docs/WORKFLOWS_PHASE5.md): two workflows.
+--    DEV-OUTSIDE_UPSTREAM extracts. In DEV-OUTSIDE_SAMPLE:
+--    - Load waits for UPSTREAM's Extract (its current or latest run), for orders files at an endpoint
+--      that have been left alone for 60 seconds, and for the business hours window (06:00 to 22:00).
+--      It waits up to 60 minutes for the first, and for 2 hours (the default) for the others.
+--    - Report waits for Load, and, as an optional extra, for a Sunday: it gives up after a minute and
+--      goes on without it, so on any other day Report shows an optional prerequisite that timed out.
+--    Run UPSTREAM first, and put a file such as orders_001.csv in the billing application's orders_in folder.
+-- ----------------------------------------------------------------------------
+INSERT INTO MasterObjects (id, ObjectType) VALUES
+(40, 'ENDPOINT'), (41, 'JOB'), (42, 'JOB'), (43, 'JOB'), (44, 'JOB'), (45, 'JOB');
+
+INSERT INTO Endpoints (MasterObject_id, Name, Application_MasterObject_id, Site_MasterObject_id, Path, FilenamePattern, Description) VALUES
+(40, 'BILLING_ORDERS_IN', 2, NULL, '${APP.Root}/orders_in', 'orders_*.csv', 'Order files for billing, which a workflow waits for');
+
+INSERT INTO Jobs (MasterObject_id, JobKey, Description) VALUES
+(41, 'DEV-SIM-OUTSIDE_EXTRACT', 'Stand-in: the extract that the other workflow waits for'),
+(42, 'DEV-SIM-OUTSIDE_LOAD',    'Stand-in: loads once the extract, the order files and the business hours are all there'),
+(43, 'DEV-SIM-OUTSIDE_REPORT',  'Stand-in: reports on the load');
+INSERT INTO Jobs (MasterObject_id, JobKey, JobType, Description) VALUES
+(44, 'DEV-OUTSIDE_UPSTREAM', 'WORKFLOW', 'Sample workflow: the extract that DEV-OUTSIDE_SAMPLE waits for'),
+(45, 'DEV-OUTSIDE_SAMPLE',   'WORKFLOW', 'Sample workflow: waits for a job in another workflow, files with a minimum age, a time window, and an optional wait that times out');
+
+INSERT INTO JobSteps (id, Job_MasterObject_id, StepType_id, StepOrder, StepTitle, StepName)
+SELECT 38, 41, id, 1, 'Extract', 'Extract' FROM StepTypes WHERE Code = 'SIMULATE';
+INSERT INTO JobSteps (id, Job_MasterObject_id, StepType_id, StepOrder, StepTitle, StepName)
+SELECT 39, 42, id, 1, 'Load', 'Load' FROM StepTypes WHERE Code = 'SIMULATE';
+INSERT INTO JobSteps (id, Job_MasterObject_id, StepType_id, StepOrder, StepTitle, StepName)
+SELECT 40, 43, id, 1, 'Report', 'Report' FROM StepTypes WHERE Code = 'SIMULATE';
+
+INSERT INTO JobStepParameters (JobStep_id, ParameterName, ParameterValue) VALUES
+(38, 'Messages', 'Extracting for the month end'),
+(39, 'Messages', 'Loading the extract and the order files'),
+(40, 'Messages', 'Reporting on the load');
+
+INSERT INTO WorkflowItems (id, Workflow_MasterObject_id, ItemName, Job_MasterObject_id, JoinRule, ItemOrder) VALUES
+(23, 44, 'Extract', 41, 'ALL', 1),
+(24, 45, 'Load',    42, 'ALL', 1),
+(25, 45, 'Report',  43, 'ALL', 2);
+
+-- Kind JOB: inside the workflow. The rest wait for something outside it (docs/WORKFLOWS_PHASE5.md).
+INSERT INTO WorkflowPrerequisites (id, Item_id, TargetItem_id, Test, ReturnCodes, Kind, TargetName, Endpoint_MasterObject_id,
+                                   FilePattern, MinAgeSeconds, TimeCondition, WaitMode, WaitMinutes, WaitFrom, Required) VALUES
+(20, 24, 23,   'SUCCESS', NULL, 'OTHER_JOB', 'DEV-OUTSIDE_UPSTREAM.Extract', NULL, NULL, NULL, NULL, 'MINUTES', 60, 'OTHERS', 1),
+(21, 24, NULL, 'SUCCESS', NULL, 'ENDPOINT',  'BILLING_ORDERS_IN',            40,   NULL, 60,   NULL, 'DEFAULT', NULL, 'OTHERS', 1),
+(22, 24, NULL, 'SUCCESS', NULL, 'TIME',      'Business_hours',               NULL, NULL, NULL,
+ '%{Now.Time} BETWEEN ''06:00'' AND ''22:00''', 'DEFAULT', NULL, 'OTHERS', 1),
+(23, 25, 24,   'SUCCESS', NULL, 'JOB',       NULL,                           NULL, NULL, NULL, NULL, 'DEFAULT', NULL, 'OTHERS', 1),
+(24, 25, NULL, 'SUCCESS', NULL, 'TIME',      'Sunday',                       NULL, NULL, NULL,
+ '%{Now.Weekday} = ''Sunday''', 'MINUTES', 1, 'OTHERS', 0);

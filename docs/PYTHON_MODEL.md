@@ -269,6 +269,7 @@ classDiagram
         +int ItemOrder
         +string(20) DisabledHere
         +bool ReactionsOverridden
+        +string(10) OnUnmet
     }
     class WorkflowItemVariable {
         +int id
@@ -285,6 +286,34 @@ classDiagram
         +string(20) Test
         +string(100) ReturnCodes
         +text Condition
+        +string(12) Kind
+        +string(100) TargetName
+        +int TargetJob_MasterObject_id
+        +int LookBackHours
+        +bool OnlyAfterStart
+        +int Endpoint_MasterObject_id
+        +string(256) FilePattern
+        +int MinAgeSeconds
+        +text TimeCondition
+        +string(10) WaitMode
+        +int WaitMinutes
+        +string(5) WaitUntil
+        +string(10) WaitFrom
+        +int WaitFromPrerequisite_id
+        +bool Required
+    }
+    class WorkflowPrerequisiteCheck {
+        +int id
+        +int WorkflowRun_id
+        +string(1000) Path
+        +int Attempt
+        +string(12) Kind
+        +string(100) TargetName
+        +string(10) Result
+        +string(20) SeenStatus
+        +string(36) UsedRunID
+        +text Message
+        +datetime CheckedDateTime
     }
     class WorkflowRunItem {
         +int id
@@ -310,6 +339,7 @@ classDiagram
     Job "1" --> "*" JobStep : steps
     Job "1" --> "*" Reaction : reactions
     Job "1" --> "*" WorkflowItem : items
+    Job "1" --> "*" WorkflowPrerequisite : waiters
     JobRun "*" --> "0..1" Job : job
     JobRun "1" --> "*" Operation : operations
     JobStep "*" --> "0..1" StepType : step_type
@@ -329,7 +359,8 @@ classDiagram
     WorkflowItem "1" --> "*" Reaction : reactions
     WorkflowItem "1" --> "*" WorkflowPrerequisite : prerequisites
     WorkflowItem "1" --> "*" WorkflowItemVariable : variables
-    WorkflowPrerequisite "*" --> "0..1" WorkflowItem : target
+    WorkflowItem "1" --> "*" WorkflowPrerequisite : waiters
+    WorkflowPrerequisite "*" --> "0..1" Endpoint : endpoint
     WorkflowRunItem "*" --> "0..1" JobRun : child_run
 ```
 

@@ -62,6 +62,18 @@ SETTINGS: Dict[str, Setting] = {s.key: s for s in [
         labels=(("7", "A week"), ("14", "Two weeks"), ("30", "30 days"), ("90", "90 days"), ("365", "A year"),
                 ("FOREVER", "Never remove them")),
     ),
+    Setting(
+        "OutsideWaitHours", CHOICE,
+        default="24",
+        title="Default wait for outside prerequisites",
+        description="How long a job in a workflow waits for a prerequisite outside its workflow (a job in another "
+                    "workflow, files, a time) when the prerequisite sets no limit of its own, counted as the "
+                    "prerequisite says: by default, from when the job's other prerequisites have held. When "
+                    "it runs out, the job's choice decides: it does not run, or it fails.",
+        choices=("1", "2", "4", "8", "12", "24", "48", "72", "168"),
+        labels=(("1", "1 hour"), ("2", "2 hours"), ("4", "4 hours"), ("8", "8 hours"), ("12", "12 hours"),
+                ("24", "24 hours"), ("48", "2 days"), ("72", "3 days"), ("168", "A week")),
+    ),
 ]}
 
 

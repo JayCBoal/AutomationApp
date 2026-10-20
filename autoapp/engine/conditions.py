@@ -38,6 +38,21 @@ NULL_AWARE = {"IS", "ISNULL", "NOTNULL", "CASE", "COALESCE", "IFNULL", "IIF", "T
               "FORMAT", "CONCAT", "CONCAT_WS"}
 
 
+_WINDOW = re.compile(r"(%\{[^}]*\})\s+IN\s+WINDOW\s+('[^']*'|\"[^\"]*\")\s+TO\s+('[^']*'|\"[^\"]*\")", re.I)
+
+
+def expand_windows(text: str) -> str:
+    """
+    AutoApp's own `%{Now.Time} IN WINDOW '18:00' TO '06:00'` as plain comparisons: after the start AND
+    before the end, or, when the end is earlier than the start (the window spans midnight), OR.
+    """
+    def plain(match):
+        value, start, end = match.group(1), match.group(2), match.group(3)
+        spans_midnight = start[1:-1] > end[1:-1]
+        return f"({value} >= {start} {'OR' if spans_midnight else 'AND'} {value} <= {end})"
+    return _WINDOW.sub(plain, text)
+
+
 class Token:
     """One piece of a condition: kind is STRING, REF, NUMBER, WORD, OP or OTHER."""
     def __init__(self, kind: str, text: str, parts: Optional[list] = None):
@@ -77,6 +92,7 @@ def _quoted(text: str, start: int) -> Tuple[Token, int]:
 
 def tokens(text: str) -> List[Token]:
     """Cuts a condition into its pieces. Raises ValueError for unclosed quotes or placeholders."""
+    text = expand_windows(text)
     found, i = [], 0
     while i < len(text):
         start = i
@@ -326,4 +342,5 @@ def explain(text: str, values: Dict[str, Any]) -> Dict[str, Any]:
     The condition as a tree of its parts, each {text, join (AND, OR or None), result (True, False or
     None), parts}, worked out with the values given: what Explain shows, part by part.
     """
+    text = expand_windows(text)
     return _part(text, tokens(text), values)

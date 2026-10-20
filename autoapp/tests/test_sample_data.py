@@ -4,15 +4,17 @@ actually run. The seed is loaded into a database built from the models, its
 file locations are pointed at the test's temp folder, and the sample jobs are
 run with the real runner.
 """
+import os
 import subprocess
 import sys
+import time
 from datetime import date
 
 from sqlalchemy import text
 
 from app.catalog import sync_catalog
 from app.log_agent import run_log
-from app.models import Endpoint, Job, JobRun, StepType, Variable, WorkflowRunItem
+from app.models import Endpoint, Job, JobRun, StepType, Variable, WorkflowPrerequisiteCheck, WorkflowRunItem
 from conftest import AUTOAPP_DIR, subprocess_env
 from create_dev_db import create_sales_db, load_seed
 from engine.handlers import HANDLER_REGISTRY
@@ -228,3 +230,38 @@ def test_sample_step_type_is_the_one_the_catalog_knows(db):
     [step_type] = db.query(StepType).filter_by(HandlerClass="COPY_FILES").all()
     assert step_type.TypeName == "Copy Files"
     assert [d.ParamName for d in step_type.definitions][:2] == ["Source", "Dest"]
+
+
+def test_the_outside_sample_waits_for_the_other_workflow_the_files_and_the_window_and_gives_up_on_the_optional_wait(
+        db, db_url, tmp_path):
+    """DEV-OUTSIDE_SAMPLE (docs/WORKFLOWS_PHASE5.md): Load waits for three things outside; Report drops an optional one."""
+    load_seed(db)
+    for root in db.query(Variable).filter(Variable.VarName == "Root"):
+        root.VarValue = root.VarValue.replace("/tmp/autoapp_sample", str(tmp_path))
+    # The window is open whenever the test runs, and the optional wait for a Sunday gives up at once
+    always, never = "%{Now.Date} > ''2000-01-01''", "%{Now.Date} < ''2000-01-01''"
+    db.execute(text(f"UPDATE WorkflowPrerequisites SET TimeCondition = '{always}' WHERE TargetName = 'Business_hours'"))
+    db.execute(text(f"UPDATE WorkflowPrerequisites SET WaitMinutes = 0, TimeCondition = '{never}' WHERE TargetName = 'Sunday'"))
+    orders = tmp_path / "billing_app" / "orders_in"
+    orders.mkdir(parents=True)
+    (orders / "orders_001.csv").write_text("order,amount\n1,10\n")
+    os.utime(orders / "orders_001.csv", (time.time() - 600, time.time() - 600))      # left alone long enough
+    db.commit()
+
+    env = {**subprocess_env(db_url), "AUTOAPP_WORKFLOW_POLL_SECONDS": "0.2"}
+    for number, key in enumerate(("DEV-OUTSIDE_UPSTREAM", "DEV-OUTSIDE_SAMPLE"), start=1):
+        result = subprocess.run([sys.executable, "-m", "engine.runner", "--job-key", key, "--instance-id", f"300{number}",
+                                 "--spool-dir", str(tmp_path / "spool"), "--working-root", str(tmp_path / "work")],
+                                cwd=AUTOAPP_DIR, env=env, capture_output=True, text=True, timeout=180)
+        assert result.returncode == 0, result.stdout[-3000:]
+
+    db.expire_all()
+    upstream = db.query(JobRun).filter(JobRun.JobKey == "DEV-OUTSIDE_UPSTREAM").one()
+    run = db.query(JobRun).filter(JobRun.JobKey == "DEV-OUTSIDE_SAMPLE").one()
+    items = {i.ItemName: i.Status for i in db.query(WorkflowRunItem).filter_by(WorkflowRun_id=run.id)}
+    assert items == {"Load": "SUCCESS", "Report": "SUCCESS"}
+    found = {(c.Path, c.TargetName): (c.Result, c.UsedRunID) for c in
+             db.query(WorkflowPrerequisiteCheck).filter_by(WorkflowRun_id=run.id)}
+    assert found == {("Load", "DEV-OUTSIDE_UPSTREAM.Extract"): ("HOLDS", upstream.RunID),
+                     ("Load", "BILLING_ORDERS_IN"): ("HOLDS", None), ("Load", "Business_hours"): ("HOLDS", None),
+                     ("Report", "Sunday"): ("SKIPPED", None)}

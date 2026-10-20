@@ -406,6 +406,11 @@ class WorkflowItem(Base):
     DisabledHere = Column(String(20), nullable=True)
     # True: this use's own Reactions replace its job's, even when it has none
     ReactionsOverridden = Column(Boolean, nullable=False, default=False, server_default=false())
+    # When it cannot start (a prerequisite can never hold, or ran out of patience): NOT_RUN (it ends Not run,
+    # and what waits for it goes on from there) or FAIL (it ends Failed: PREREQUISITES_NOT_MET or TIMED_OUT)
+    OnUnmet = Column(String(10), nullable=False, default="NOT_RUN", server_default="NOT_RUN")
+
+    ON_UNMET = ("NOT_RUN", "FAIL")
 
     job = relationship("Job", foreign_keys=[Job_MasterObject_id])
     reactions = relationship("Reaction", foreign_keys="Reaction.Item_id", cascade="all, delete-orphan",
@@ -432,15 +437,28 @@ class WorkflowItemVariable(Base):
 
 class WorkflowPrerequisite(Base):
     """
-    What a workflow's item waits for before it starts: another of the workflow's items, and
-    how that one must have ended. Test is SUCCESS, FAILED, ENDED (any final status), RC
-    (one of ReturnCodes, e.g. "0-4") or RULE (named in the item's Custom rule, which decides).
-    Condition is unused: a Custom rule is on the item, as StartRule.
+    What a workflow's item waits for before it starts (docs/WORKFLOWS_PHASE5.md). Kind says what
+    it waits for: JOB (another of the workflow's items, TargetItem_id), OTHER_JOB (a job used in
+    another workflow, TargetItem_id there, or a whole workflow, TargetJob_MasterObject_id), ENDPOINT
+    (files at an endpoint) or TIME (a condition on %{Now...}). For the first two, Test is SUCCESS,
+    FAILED, ENDED (any final status), RC (one of ReturnCodes, e.g. "0-4") or RULE (named in the
+    item's Custom rule, which decides); an endpoint or a time has no test of its own. A Custom
+    rule is on the item, as StartRule; Condition is unused.
+
+    TargetName is what conditions call an outside target (MONTH_END.Extract, INBOUND_ORDERS).
+    Patience: WaitMode DEFAULT (the system setting), NONE (no limit), MINUTES (WaitMinutes) or UNTIL
+    (WaitUntil, a clock time); WaitFrom says when the minutes start. An optional prerequisite
+    (Required false) is dropped from the job's check when it runs out of patience.
     """
     __tablename__ = 'WorkflowPrerequisites'
 
     TESTS = ("SUCCESS", "FAILED", "ENDED", "RC")
     RULE = "RULE"
+    KINDS = ("JOB", "OTHER_JOB", "ENDPOINT", "TIME")
+    WAIT_MODES = ("DEFAULT", "NONE", "MINUTES", "UNTIL")
+    # When "up to N minutes" starts: after the job's other prerequisites held; after the first of them;
+    # after the one in WaitFromPrerequisite_id; from the start of the workflow run
+    WAIT_FROM = ("OTHERS", "FIRST", "CHOSEN", "RUN_START")
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     Item_id = Column(Integer, ForeignKey('WorkflowItems.id', ondelete='CASCADE'), nullable=False, index=True)
@@ -448,8 +466,55 @@ class WorkflowPrerequisite(Base):
     Test = Column(String(20), nullable=False, default="SUCCESS", server_default="SUCCESS")
     ReturnCodes = Column(String(100), nullable=True)
     Condition = Column(Text, nullable=True)
+    Kind = Column(String(12), nullable=False, default="JOB", server_default="JOB")
+    TargetName = Column(String(100), nullable=True)
+    # A whole workflow as the target (its final status); a workflow others wait for cannot be deleted
+    TargetJob_MasterObject_id = Column(Integer, ForeignKey('Jobs.MasterObject_id', ondelete='RESTRICT'), nullable=True)
+    # Which run of the other workflow counts: only one that ended within LookBackHours, and (OnlyAfterStart)
+    # only one started after this workflow's run started
+    LookBackHours = Column(Integer, nullable=True)
+    OnlyAfterStart = Column(Boolean, nullable=False, default=False, server_default=false())
+    # An endpoint: its files, the pattern (empty: the endpoint's own) and how long each must be unchanged
+    Endpoint_MasterObject_id = Column(Integer, ForeignKey('Endpoints.MasterObject_id', ondelete='RESTRICT'), nullable=True)
+    FilePattern = Column(String(256), nullable=True)
+    MinAgeSeconds = Column(Integer, nullable=True)
+    # A time: a condition over %{Now.Time}, %{Now.Date} and %{Now.Weekday}
+    TimeCondition = Column(Text, nullable=True)
+    WaitMode = Column(String(10), nullable=False, default="DEFAULT", server_default="DEFAULT")
+    WaitMinutes = Column(Integer, nullable=True)
+    WaitUntil = Column(String(5), nullable=True)
+    WaitFrom = Column(String(10), nullable=False, default="OTHERS", server_default="OTHERS")
+    WaitFromPrerequisite_id = Column(Integer, ForeignKey('WorkflowPrerequisites.id', ondelete='SET NULL'), nullable=True)
+    Required = Column(Boolean, nullable=False, default=True, server_default=true())
 
-    target = relationship("WorkflowItem", foreign_keys=[TargetItem_id])
+    # waiters: the prerequisites (in other workflows too) that wait for a use, or for a whole workflow
+    target = relationship("WorkflowItem", foreign_keys=[TargetItem_id], backref="waiters")
+    target_workflow = relationship("Job", foreign_keys=[TargetJob_MasterObject_id], backref="waiters")
+    endpoint = relationship("Endpoint", foreign_keys=[Endpoint_MasterObject_id])
+
+
+class WorkflowPrerequisiteCheck(Base):
+    """
+    What an outside prerequisite found in a workflow run, kept for Explain and the log: the run of
+    the other workflow it used, and the answer, once for each attempt of the job. Prerequisite and target are kept as text too, so it outlives the workflow
+    being changed.
+    """
+    __tablename__ = 'WorkflowPrerequisiteChecks'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    WorkflowRun_id = Column(Integer, ForeignKey('JobRuns.id', ondelete='CASCADE'), nullable=False, index=True)
+    Path = Column(String(1000), nullable=False)
+    Attempt = Column(Integer, nullable=False, default=1, server_default=text('1'))
+    Kind = Column(String(12), nullable=False)
+    TargetName = Column(String(100), nullable=True)
+    # WAITING (still), HOLDS, TIMED_OUT, SKIPPED (an optional one dropped) or NOT_NEEDED (the job started without it)
+    Result = Column(String(10), nullable=False)
+    # How what it waits for stood when last looked at: the other job's status, or SUCCESS (files there, time open)
+    # or WAITING (not yet); empty when there was no run to look at. Shown live on a run's diagram.
+    SeenStatus = Column(String(20), nullable=True)
+    UsedRunID = Column(String(36), nullable=True)
+    Message = Column(Text, nullable=True)
+    CheckedDateTime = Column(PreciseDateTime, nullable=False, default=lambda: utcnow())
 
 
 class Reaction(Base):

@@ -199,8 +199,8 @@ def test_a_custom_rule_is_saved_and_the_jobs_it_names_become_its_prerequisites(c
     assert response.status_code == 201, response.text
     report = response.json()["job"]["items"][2]
     assert (report["join"], report["rule"]) == ("CUSTOM", rule)
-    assert report["prerequisites"] == [{"target": "Load", "test": "RULE", "return_codes": None},
-                                       {"target": "Check", "test": "RULE", "return_codes": None}]
+    assert [(p["target"], p["test"], p["return_codes"]) for p in report["prerequisites"]] == [
+        ("Load", "RULE", None), ("Check", "RULE", None)]
 
 
 @pytest.mark.parametrize("rule, message", [

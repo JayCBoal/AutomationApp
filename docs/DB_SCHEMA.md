@@ -46,8 +46,7 @@ erDiagram
     Jobs |o--o{ Reactions : "Job_MasterObject_id"
     WorkflowItems |o--o{ Reactions : "Item_id"
     WorkflowItems ||--o{ WorkflowItemVariables : "Item_id"
-    WorkflowItems ||--o{ WorkflowPrerequisites : "Item_id"
-    WorkflowItems |o--o{ WorkflowPrerequisites : "TargetItem_id"
+    JobRuns ||--o{ WorkflowPrerequisiteChecks : "WorkflowRun_id"
     JobRuns ||--o{ WorkflowRunItems : "WorkflowRun_id"
     WorkflowItems |o--o{ WorkflowRunItems : "Item_id"
     JobRuns |o--o{ WorkflowRunItems : "ChildRun_id"
@@ -58,6 +57,11 @@ erDiagram
     Reactions ||--o{ ReactionActions : "Reaction_id"
     WorkflowItems |o--o{ ReactionActions : "TargetItem_id"
     Jobs |o--o{ ReactionActions : "TargetJob_MasterObject_id"
+    WorkflowItems ||--o{ WorkflowPrerequisites : "Item_id"
+    WorkflowItems |o--o{ WorkflowPrerequisites : "TargetItem_id"
+    Jobs |o--o{ WorkflowPrerequisites : "TargetJob_MasterObject_id"
+    Endpoints |o--o{ WorkflowPrerequisites : "Endpoint_MasterObject_id"
+    WorkflowPrerequisites |o--o{ WorkflowPrerequisites : "WaitFromPrerequisite_id"
     JobRuns ||--o{ ReactionEvents : "JobRun_id"
     JobRuns |o--o{ ReactionEvents : "WorkflowRun_id"
     ReactionActions |o--o{ ReactionEvents : "ReactionAction_id"
@@ -231,6 +235,7 @@ erDiagram
         int ItemOrder "required"
         string(20) DisabledHere
         bool ReactionsOverridden "required"
+        string(10) OnUnmet "required"
     }
     WorkflowItemVariables {
         int id PK
@@ -247,6 +252,34 @@ erDiagram
         string(20) Test "required"
         string(100) ReturnCodes
         text Condition
+        string(12) Kind "required"
+        string(100) TargetName
+        int TargetJob_MasterObject_id FK
+        int LookBackHours
+        bool OnlyAfterStart "required"
+        int Endpoint_MasterObject_id FK
+        string(256) FilePattern
+        int MinAgeSeconds
+        text TimeCondition
+        string(10) WaitMode "required"
+        int WaitMinutes
+        string(5) WaitUntil
+        string(10) WaitFrom "required"
+        int WaitFromPrerequisite_id FK
+        bool Required "required"
+    }
+    WorkflowPrerequisiteChecks {
+        int id PK
+        int WorkflowRun_id FK "required"
+        string(1000) Path "required"
+        int Attempt "required"
+        string(12) Kind "required"
+        string(100) TargetName
+        string(10) Result "required"
+        string(20) SeenStatus
+        string(36) UsedRunID
+        text Message
+        datetime CheckedDateTime "required"
     }
     Reactions {
         int id PK
@@ -347,14 +380,18 @@ erDiagram
     Jobs |o--o{ Reactions : "Job_MasterObject_id"
     WorkflowItems |o--o{ Reactions : "Item_id"
     WorkflowItems ||--o{ WorkflowItemVariables : "Item_id"
-    WorkflowItems ||--o{ WorkflowPrerequisites : "Item_id"
-    WorkflowItems |o--o{ WorkflowPrerequisites : "TargetItem_id"
+    JobRuns ||--o{ WorkflowPrerequisiteChecks : "WorkflowRun_id"
     JobRuns ||--o{ WorkflowRunItems : "WorkflowRun_id"
     WorkflowItems |o--o{ WorkflowRunItems : "Item_id"
     JobRuns |o--o{ WorkflowRunItems : "ChildRun_id"
     Reactions ||--o{ ReactionActions : "Reaction_id"
     WorkflowItems |o--o{ ReactionActions : "TargetItem_id"
     Jobs |o--o{ ReactionActions : "TargetJob_MasterObject_id"
+    WorkflowItems ||--o{ WorkflowPrerequisites : "Item_id"
+    WorkflowItems |o--o{ WorkflowPrerequisites : "TargetItem_id"
+    Jobs |o--o{ WorkflowPrerequisites : "TargetJob_MasterObject_id"
+    Endpoints |o--o{ WorkflowPrerequisites : "Endpoint_MasterObject_id"
+    WorkflowPrerequisites |o--o{ WorkflowPrerequisites : "WaitFromPrerequisite_id"
     JobRuns ||--o{ ReactionEvents : "JobRun_id"
     JobRuns |o--o{ ReactionEvents : "WorkflowRun_id"
     ReactionActions |o--o{ ReactionEvents : "ReactionAction_id"

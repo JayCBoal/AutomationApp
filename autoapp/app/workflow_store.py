@@ -24,17 +24,14 @@ from typing import Dict, List, Optional, Set
 
 from sqlalchemy.orm import Session
 
-from app import reaction_store
+from app import outside_store, reaction_store
+from app.workflow_errors import WorkflowError
 from app.models import Job, WorkflowItem, WorkflowItemVariable, WorkflowPrerequisite
-from app.schemas import PrerequisiteOut, PrerequisiteSave, WorkflowItemOut, WorkflowItemSave
+from app.schemas import PrerequisiteSave, WorkflowItemOut, WorkflowItemSave
 from engine import return_codes, workflow_conditions, workflow_vars
 
 TEST_WORDS = {"SUCCESS": "succeeded", "FAILED": "failed", "ENDED": "ended", "RC": "gave return codes",
               "RULE": "is named in its rule"}
-
-
-class WorkflowError(Exception):
-    """A workflow that cannot be saved as submitted; the message says why, for the person saving it."""
 
 
 def default_item_name(job_key: str) -> str:
@@ -48,8 +45,8 @@ def describe_items(job: Job) -> List[WorkflowItemOut]:
         WorkflowItemOut(
             id=item.id, name=item.ItemName, job_key=item.job.JobKey, job_type=item.job.JobType, join=item.JoinRule,
             rule=item.StartRule if item.JoinRule == "CUSTOM" else None,
-            prerequisites=[PrerequisiteOut(target=p.target.ItemName, test=p.Test, return_codes=p.ReturnCodes)
-                           for p in item.prerequisites if p.target is not None],
+            prerequisites=outside_store.describe_all(item.prerequisites), on_unmet=item.OnUnmet,
+            needed_by=outside_store.needed_by(item),
             disabled_here=item.DisabledHere, job_active=bool(item.job.IsActive),
             reactions_overridden=bool(item.ReactionsOverridden),
             reactions=reaction_store.describe(item.reactions) if item.ReactionsOverridden else [],
@@ -82,6 +79,9 @@ def _check_names(names: List[str]) -> None:
         if not WorkflowItem.NAME_PATTERN.match(name):
             raise WorkflowError(f"'{name}' cannot be the name of a job in a workflow. Use letters, digits, '_' and '-', "
                                 f"starting with a letter or digit.")
+        if name == "Now":
+            raise WorkflowError("'Now' cannot be the name of a job in a workflow: %{Now.Time} is the time of day. "
+                                "Give the job another name.")
         if name in seen:
             raise WorkflowError(f"Two jobs in the workflow are both named '{name}'. Give one of them another name.")
         seen.add(name)
@@ -110,11 +110,12 @@ def with_rules_applied(submitted: List[WorkflowItemSave], renamed: Dict[str, str
         if not rule:
             raise WorkflowError(f"'{name}' starts by a Custom rule, but the rule is empty. Write the rule, "
                                 f"or choose another Start rule.")
+        outside = [p for p in item.prerequisites if outside_store.is_outside(p)]
         try:
-            named = workflow_conditions.named_jobs(rule)
+            named = workflow_conditions.named_jobs(rule, [p.target for p in outside])
         except ValueError as e:
             raise WorkflowError(f"'{name}': its Custom rule: {e}")
-        result.append(item.model_copy(update={"rule": rule, "prerequisites": [
+        result.append(item.model_copy(update={"rule": rule, "prerequisites": outside + [
             PrerequisiteSave(target=target, test=WorkflowPrerequisite.RULE) for target in named]}))
     return result
 
@@ -123,7 +124,7 @@ def _check_rules(names: List[str], submitted: List[WorkflowItemSave]) -> None:
     for name, item in zip(names, submitted):
         if item.join != "CUSTOM":
             continue
-        problems, _ = workflow_conditions.check(item.rule, names)
+        problems, _ = workflow_conditions.check(item.rule, names, outside=outside_store.outside_names(item.prerequisites))
         if problems:
             raise WorkflowError(f"'{name}': its Custom rule: {problems[0]}")
 
@@ -132,7 +133,7 @@ def _check_prerequisites(names: List[str], submitted: List[WorkflowItemSave]) ->
     for name, item in zip(names, submitted):
         if item.join not in WorkflowItem.JOIN_RULES:
             raise WorkflowError(f"'{name}': its join must be ALL, ANY or CUSTOM, not '{item.join}'.")
-        for p in item.prerequisites:
+        for p in outside_store.inside(item.prerequisites):
             if item.join == "CUSTOM":
                 if p.target == name:
                     raise WorkflowError(f"'{name}': its Custom rule names '{name}' itself. A job cannot wait for itself.")
@@ -186,7 +187,7 @@ def _upstream(name: str, waits_for: Dict[str, List[str]]) -> Set[str]:
 
 def _check_uses(db: Session, workflow: Job, names: List[str], submitted: List[WorkflowItemSave]) -> None:
     """Disable here, and each use's own Reactions."""
-    waits_for = {name: [p.target for p in item.prerequisites] for name, item in zip(names, submitted)}
+    waits_for = {name: [p.target for p in outside_store.inside(item.prerequisites)] for name, item in zip(names, submitted)}
     for name, item in zip(names, submitted):
         if item.disabled_here not in (None, "") + WorkflowItem.DISABLED_HERE:
             raise WorkflowError(f"'{name}': Disable here must be STOP or PASS_THROUGH, not '{item.disabled_here}'.")
@@ -198,7 +199,8 @@ def _check_uses(db: Session, workflow: Job, names: List[str], submitted: List[Wo
 
 
 def _check_no_loops(names: List[str], submitted: List[WorkflowItemSave]) -> None:
-    loop = find_loop({name: [p.target for p in item.prerequisites] for name, item in zip(names, submitted)})
+    loop = find_loop({name: [p.target for p in outside_store.inside(item.prerequisites)]
+                      for name, item in zip(names, submitted)})
     if loop:
         chain = ", which waits for ".join(f"'{n}'" for n in loop)
         raise WorkflowError(f"The prerequisites go round in a loop: {chain}. None of them could ever start. "
@@ -253,13 +255,16 @@ def apply_items(db: Session, workflow: Job, submitted: List[WorkflowItemSave], c
     """
     names = _names(submitted)
     _check_names(names)
+    submitted = [s.model_copy(update={"prerequisites": outside_store.with_names(s.prerequisites, names)}) for s in submitted]
     submitted = with_rules_applied(submitted, renamed or {})
+    _check_outside(db, workflow, names, submitted)
     _check_prerequisites(names, submitted)
     _check_rules(names, submitted)
     _check_no_loops(names, submitted)
     jobs = _jobs_used(db, submitted, names)
     _check_not_itself(db, workflow, jobs)
     _check_uses(db, workflow, names, submitted)
+    outside_store.check_no_loops_between_workflows(db, workflow, names, submitted)
 
     current = {item.id: item for item in workflow.items}
     for s in submitted:
@@ -273,7 +278,7 @@ def apply_items(db: Session, workflow: Job, submitted: List[WorkflowItemSave], c
     db.flush()                          # every item has its id before prerequisites point at it
     by_name = {item.ItemName: item for item in workflow.items}
     for name, s in zip(names, submitted):
-        if _apply_prerequisites(by_name[name], s, by_name) and not creating and s.id is not None:
+        if _apply_prerequisites(db, by_name[name], s, by_name) and not creating and s.id is not None:
             changes.append(f"Changed what '{name}' waits for.")
         changed = _apply_use(db, by_name[name], s, by_name)
         if changed and not creating and s.id is not None:
@@ -287,8 +292,11 @@ def _apply_item_rows(workflow, submitted, names, jobs, current, creating, change
     kept: Set[int] = set()
     for position, (name, s) in enumerate(zip(names, submitted), start=1):
         job = jobs[name]
+        if s.on_unmet not in WorkflowItem.ON_UNMET:
+            raise WorkflowError(f"'{name}': when it cannot start it must be NOT_RUN or FAIL, not '{s.on_unmet}'.")
         if s.id is None:
-            workflow.items.append(WorkflowItem(ItemName=name, job=job, JoinRule=s.join, StartRule=s.rule, ItemOrder=position))
+            workflow.items.append(WorkflowItem(ItemName=name, job=job, JoinRule=s.join, StartRule=s.rule,
+                                               ItemOrder=position, OnUnmet=s.on_unmet))
             if not creating:
                 changes.append(f"Added '{name}' (job '{job.JobKey}').")
             continue
@@ -304,6 +312,9 @@ def _apply_item_rows(workflow, submitted, names, jobs, current, creating, change
                         else "starts by a Custom rule")
         elif s.join == "CUSTOM" and (item.StartRule or "") != s.rule:
             what.append(f"its Custom rule is now: {s.rule}")
+        if item.OnUnmet != s.on_unmet:
+            what.append("it fails when it cannot start" if s.on_unmet == "FAIL" else "it does not run when it cannot start")
+            item.OnUnmet = s.on_unmet
         item.ItemName, item.job, item.JoinRule, item.ItemOrder = name, job, s.join, position
         item.StartRule = s.rule
         if what:
@@ -314,20 +325,33 @@ def _apply_item_rows(workflow, submitted, names, jobs, current, creating, change
 def _remove_left_out(workflow: Job, current: dict, kept: Set[int], changes: List[str]) -> None:
     for item_id, item in current.items():
         if item_id not in kept:
+            waiting = outside_store.waiting_for_use(item)
+            if waiting:
+                raise WorkflowError(f"'{item.ItemName}' cannot be taken out: {', '.join(waiting)} "
+                                    f"wait{'s' if len(waiting) == 1 else ''} for it. Change what they wait for first.")
             changes.append(f"Removed '{item.ItemName}'.")
             workflow.items.remove(item)
 
 
-def _apply_prerequisites(item: WorkflowItem, submitted: WorkflowItemSave, by_name: Dict[str, WorkflowItem]) -> bool:
+def _check_outside(db: Session, workflow: Job, names: List[str], submitted: List[WorkflowItemSave]) -> None:
+    for name, item in zip(names, submitted):
+        outside_store.check(db, workflow, name, item.prerequisites, names, item.join == "CUSTOM")
+
+
+def _apply_prerequisites(db: Session, item: WorkflowItem, submitted: WorkflowItemSave,
+                         by_name: Dict[str, WorkflowItem]) -> bool:
     """Makes the item's prerequisites match those submitted. Returns whether they changed."""
-    wanted = [(p.target, p.test, return_codes.normal(p.return_codes) if p.test == "RC" else None)
-              for p in submitted.prerequisites]
-    have = [(p.target.ItemName if p.target else None, p.Test, p.ReturnCodes) for p in item.prerequisites]
-    if wanted == have:
+    wanted = outside_store.wanted(submitted.prerequisites, submitted.join == "CUSTOM")
+    have = outside_store.describe_all(item.prerequisites)
+    if [outside_store.signature(p) for p in wanted] == [outside_store.signature(p) for p in have]:
         return False
     item.prerequisites.clear()
-    for target, test, codes in wanted:
-        item.prerequisites.append(WorkflowPrerequisite(target=by_name[target], Test=test, ReturnCodes=codes))
+    rows = [outside_store.build_row(db, p, by_name) for p in wanted]
+    for row, p in zip(rows, wanted):
+        outside_store.point_at_target(db, row, p)
+    item.prerequisites.extend(rows)
+    db.flush()
+    outside_store.link_wait_from(rows, wanted)
     return True
 
 
@@ -410,6 +434,7 @@ def workflow_problems(db: Session, workflow: Job, warnings: Optional[List[str]] 
     if not workflow.items:
         problems.append(f"Workflow '{workflow.JobKey}' has no jobs in it yet. Add the jobs it should run.")
     problems += _variable_problems(db, workflow)
+    problems += _outside_problems(workflow, warnings)
     if warnings is None:
         return problems
     checked: Dict[int, List[str]] = {}
@@ -426,6 +451,20 @@ def workflow_problems(db: Session, workflow: Job, warnings: Optional[List[str]] 
                                 else job_problems(db, job, workflow=workflow_vars.for_check(db, workflow, item)))
         for problem in checked[item.id][:1]:     # the first is enough to say it would fail
             warnings.append(f"'{item.ItemName}' would fail: {problem}")
+    return problems
+
+
+def _outside_problems(workflow: Job, warnings: Optional[List[str]]) -> List[str]:
+    """What is wrong with the files a job waits for (they must be on this server); an unlimited wait is a warning."""
+    problems = []
+    for item in workflow.items:
+        for p in item.prerequisites:
+            if p.Kind == "ENDPOINT" and p.endpoint is not None and p.endpoint.site is not None:
+                problems.append(f"'{item.ItemName}' waits for files at the endpoint '{p.endpoint.Name}', which is on Site "
+                                f"'{p.endpoint.site.Name}'. Only files on this server can be waited for yet.")
+            if warnings is not None and p.Kind != "JOB" and p.WaitMode == "NONE":
+                warnings.append(f"'{item.ItemName}' waits for '{p.TargetName}' with no limit: if it never happens, "
+                                f"the workflow waits for ever.")
     return problems
 
 

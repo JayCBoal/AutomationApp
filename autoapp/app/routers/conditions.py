@@ -3,6 +3,7 @@ The condition box's helpers (docs/WORKFLOWS_PHASE4.md): checking a workflow cond
 typed, and Explain now, against one of the workflow's past runs.
 
     GET  /api/v1/conditions/outputs     what every job in a workflow offers to conditions
+    GET  /api/v1/conditions/outside-outputs   what files at an endpoint offer, and the time (Now)
     POST /api/v1/conditions/check       problems and warnings, and the jobs the condition names
     POST /api/v1/conditions/explain     the condition worked out with a past run's values, part by part
 
@@ -31,6 +32,9 @@ class ConditionCheckRequest(BaseModel):
     condition: str
     names: List[str] = Field(default_factory=list, description="The names of the jobs in the workflow, as on screen")
     workflow_key: Optional[str] = Field(None, description="The workflow, if saved, so its ${...} variables are looked up")
+    outside: Dict[str, str] = Field(default_factory=dict, description=(
+        "The job's own prerequisites outside the workflow, by the name conditions use for each: "
+        "OTHER_JOB, ENDPOINT or TIME"))
 
 
 class ConditionCheckResult(BaseModel):
@@ -57,6 +61,20 @@ def list_outputs():
             for name, (kind, words) in workflow_conditions.OUTPUTS.items()]
 
 
+class OutsideOutputsOut(BaseModel):
+    endpoint: List[OutputOut] = Field(..., description="What files at an endpoint offer: %{INBOUND.FileCount}")
+    now: List[OutputOut] = Field(..., description="The time: %{Now.Time}")
+
+
+@router.get("/outside-outputs", response_model=OutsideOutputsOut)
+def list_outside_outputs():
+    """What a prerequisite on files, and the time, offers to conditions. A job in another workflow offers /outputs."""
+    return OutsideOutputsOut(
+        endpoint=[OutputOut(name=name, data_type="NUMBER", description=words)
+                  for name, words in workflow_conditions.FILE_OUTPUTS.items()],
+        now=[OutputOut(name=name, data_type="STRING", description=words) for name, words in workflow_conditions.NOW_OUTPUTS.items()])
+
+
 def _variable(db: Session, workflow_key: Optional[str]):
     """How the workflow's ${...} are looked up, or None when it is not saved yet."""
     workflow = db.query(Job).filter(Job.JobKey == workflow_key).first() if workflow_key else None
@@ -73,9 +91,10 @@ def check_condition(request: ConditionCheckRequest, db: Session = Depends(get_db
     """A workflow condition as typed: what is wrong with it, what is worth knowing, and the jobs it names."""
     if not request.condition.strip():
         return ConditionCheckResult(problems=["The condition is empty."], warnings=[])
-    problems, warnings = workflow_conditions.check(request.condition, request.names, _variable(db, request.workflow_key))
+    problems, warnings = workflow_conditions.check(request.condition, request.names, _variable(db, request.workflow_key),
+                                                   request.outside)
     try:
-        named = workflow_conditions.named_jobs(request.condition)
+        named = workflow_conditions.named_jobs(request.condition, list(request.outside))
     except ValueError:
         named = []
     return ConditionCheckResult(problems=problems, warnings=warnings, named=named)

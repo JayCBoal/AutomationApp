@@ -12,16 +12,17 @@ import json
 import os
 import signal
 from datetime import date, datetime
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import case, exists, func
 from sqlalchemy.orm import Session, aliased
 
 from app.database import get_db
 from app.log_agent import log_note, run_log
-from app.models import Audit, ConditionCheck, JobRun, Operation, ReactionEvent, WorkflowRunItem, utcnow
+from app.models import (Audit, ConditionCheck, JobRun, Operation, ReactionEvent, WorkflowPrerequisiteCheck,
+                        WorkflowRunItem, utcnow)
 from engine import conditions, log_files
 
 MAX_RESULTS = 500
@@ -188,6 +189,22 @@ class RunItemOut(BaseModel):
     status_before_override: Optional[str] = None
     file_count: Optional[int] = None
     bytes: Optional[int] = None
+    waiting_for: Optional[str] = Field(None, description=(
+        "While it waits for something outside its workflow: what, and until when"))
+
+
+class OutsideWaitOut(BaseModel):
+    """What one prerequisite outside the workflow found for a job, for one attempt of it."""
+    time: datetime
+    path: str
+    attempt: int
+    kind: str
+    target: Optional[str] = None
+    result: str = Field(..., description="WAITING, HOLDS, TIMED_OUT, SKIPPED or NOT_NEEDED")
+    used_run_id: Optional[str] = Field(None, description="The run of the other workflow it used")
+    seen_status: Optional[str] = Field(None, description=(
+        "How what it waits for stood when last looked at: the other job's status, or SUCCESS or WAITING"))
+    message: Optional[str] = None
 
 
 class ReactionEventOut(BaseModel):
@@ -218,6 +235,7 @@ class RunDetail(RunOut):
     kill_requested: bool = False
     reactions: List[ReactionEventOut] = []
     conditions: List[ConditionCheckOut] = []
+    outside_waits: List[OutsideWaitOut] = []
 
 
 @router.get("/api/v1/runs/{run_id}", response_model=RunDetail)
@@ -237,7 +255,7 @@ def get_run(run_id: str, db: Session = Depends(get_db)):
                      log=run_log(run), log_note=log_note(run),
                      items=_run_items(db, run), cancel_requested=run.CancelRequestedDateTime is not None,
                      kill_requested=run.KillRequestedDateTime is not None, reactions=_reaction_events(db, run),
-                     conditions=_condition_checks(db, run))
+                     conditions=_condition_checks(db, run), outside_waits=_outside_waits(db, run))
 
 
 def _reaction_events(db: Session, run: JobRun) -> List[ReactionEventOut]:
@@ -267,9 +285,30 @@ def _condition_checks(db: Session, run: JobRun) -> List[ConditionCheckOut]:
     return found
 
 
+def _outside_waits(db: Session, run: JobRun) -> List[OutsideWaitOut]:
+    """What each prerequisite outside the workflow found, for each attempt of each job, in the order it was first looked at."""
+    rows = db.query(WorkflowPrerequisiteCheck).filter(WorkflowPrerequisiteCheck.WorkflowRun_id == run.id)
+    return [OutsideWaitOut(time=c.CheckedDateTime, path=c.Path, attempt=c.Attempt, kind=c.Kind, target=c.TargetName,
+                           result=c.Result, used_run_id=c.UsedRunID, seen_status=c.SeenStatus, message=c.Message)
+            for c in rows.order_by(WorkflowPrerequisiteCheck.id)]
+
+
+def _waiting_for(db: Session, run: JobRun) -> Dict[str, str]:
+    """For each job of the run still waiting for something outside its workflow, in words."""
+    rows = (db.query(WorkflowPrerequisiteCheck).filter(WorkflowPrerequisiteCheck.WorkflowRun_id == run.id,
+                                                       WorkflowPrerequisiteCheck.Result == "WAITING")
+            .order_by(WorkflowPrerequisiteCheck.id))
+    found: Dict[str, List[str]] = {}
+    for c in rows:
+        found.setdefault(c.Path, []).append(c.Message or "")
+    return {path: " ".join(messages) for path, messages in found.items()}
+
+
 def _run_items(db: Session, run: JobRun) -> List[RunItemOut]:
     rows = db.query(WorkflowRunItem).filter(WorkflowRunItem.WorkflowRun_id == run.id).order_by(WorkflowRunItem.ItemOrder)
+    waiting = _waiting_for(db, run) if run.Status == "RUNNING" else {}
     return [RunItemOut(name=r.ItemName, path=r.Path, job_key=r.JobKey, status=r.Status, reason=r.Reason,
+                       waiting_for=waiting.get(r.Path) if r.Status in ("PENDING", "WAITING") else None,
                        return_code=r.ReturnCode, attempt=r.Attempt, run_id=r.child_run.RunID if r.child_run else None,
                        started=r.StartedDateTime, ended=r.EndedDateTime,
                        status_before_override=r.StatusBeforeOverride,

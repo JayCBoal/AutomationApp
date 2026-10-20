@@ -93,6 +93,19 @@
                             <a x-show="runItem.run_id" :href="logLink(runItem.run_id)">Its log</a>
                             <button type="button" class="secondary danger kill-item" x-show="runItem.status === 'RUNNING'"
                                     @click="killItem(runItem)">Kill</button>
+                            <div class="muted small run-waiting" x-show="runItem.waiting_for" x-text="runItem.waiting_for"></div>
+                            <div class="run-outside small" x-show="outsideFor(runItem.path).length">
+                                <div class="muted">What it waited for outside:</div>
+                                <ul class="cond-tree">
+                                    <template x-for="(w, i) in outsideFor(runItem.path)" :key="i">
+                                        <li :class="{ 'answer-true': w.result === 'HOLDS', 'answer-false': ['TIMED_OUT'].includes(w.result) }">
+                                            <span class="cond-answer" x-text="{ WAITING: 'waiting:', HOLDS: 'held:', TIMED_OUT: 'ran out of patience:', SKIPPED: 'optional, given up:', NOT_NEEDED: 'not needed:' }[w.result]"></span>
+                                            <span x-text="w.message"></span>
+                                            <a x-show="w.used_run_id" :href="logLink(w.used_run_id)">the run it used</a>
+                                        </li>
+                                    </template>
+                                </ul>
+                            </div>
                             <ul class="reaction-events small" x-show="eventsFor(runItem.path).length">
                                 <template x-for="e in eventsFor(runItem.path)"><li x-text="e.message"></li></template>
                             </ul>
@@ -128,6 +141,7 @@
                         <span class="muted small" x-text="'job ' + item.job_key"></span>
                         <a x-show="item.run_id" :href="logLink(item.run_id)">Log</a>
                         <button type="button" class="link small kill-item" x-show="item.status === 'RUNNING'" @click="killItem(item)">Kill</button>
+                        <span class="muted small run-waiting" x-show="item.waiting_for" x-text="item.waiting_for"></span>
                         <template x-for="(check, i) in checksFor(item.path)" :key="i">
                             <span class="muted small run-rule-words" :title="check.condition"
                                   x-text="'Custom rule ' + (check.result === 'TRUE' ? 'held' : 'did not hold')"></span>
@@ -203,6 +217,10 @@
                         <button type="button" id="zoom-fit" title="Fit to the window" :class="{ on: zoom === 'fit' }" @click="setZoom(0)">Fit</button>
                         <button type="button" id="zoom-in" title="Larger" @click="setZoom(1)">+</button>
                     </span>
+                    <label class="small" x-show="view === 'diagram'" title="Jobs and workflows elsewhere, and the jobs elsewhere that wait for a job here. Off: small icons in the header of the box they apply to">
+                        <input type="checkbox" id="show-external" x-model="showExternal" @change="rememberExternal()"> Show external references</label>
+                    <label class="small" x-show="view === 'diagram'" title="Files and times, which run nothing. Off: small icons in the header of the box they apply to">
+                        <input type="checkbox" id="show-conditions" x-model="showConditions" @change="rememberExternal()"> Show non-executable dependencies</label>
                     <input type="search" id="find" x-model="find" placeholder="Find a job" aria-label="Find a job in this workflow">
                     <span class="muted small" id="find-count" x-show="find.trim()"
                           x-text="found.length ? found.length + ' found' : 'No job here has a name containing that'"></span>
@@ -241,6 +259,19 @@
                                         <span class="tag disabled-here" x-show="item.disabled_here" x-text="disabledHereWords(item)"></span>
                                     </div>
                                     <div class="wf-needs muted small" x-text="needs(item)"></div>
+                                    <ul class="wf-outside-words muted small" x-show="item.outside.length">
+                                        <template x-for="o in item.outside" :key="o.uid">
+                                            <li><span class="tag outside" x-text="{ OTHER_JOB: 'Other workflow', ENDPOINT: 'Files', TIME: 'Time' }[o.kind]"></span>
+                                                <span x-text="outsideWords(item, o) + '. ' + patienceWords(o)"></span></li>
+                                        </template>
+                                    </ul>
+                                    <div class="wf-needed-by muted small" x-show="item.needed_by.length">
+                                        <span class="tag outside">Needed by</span>
+                                        <template x-for="(by, n) in item.needed_by" :key="n">
+                                            <span><a :href="'workflow.html?key=' + encodeURIComponent(by.workflow)" x-text="by.job + ' in ' + by.workflow"></a><span x-show="n < item.needed_by.length - 1">, </span></span>
+                                        </template>
+                                    </div>
+                                    <div class="muted small" x-show="item.on_unmet === 'FAIL'">If it can't start, it fails.</div>
                                     <div class="wf-use-variables muted small" x-show="item.variables.length"
                                          x-text="'Sets here: ' + item.variables.map(v => v.name).join(', ')"></div>
                                     <ul class="wf-reactions muted small" x-show="reactionsShown(item).length">
@@ -301,11 +332,117 @@
                                         <li><button type="button" class="link small add-prerequisite" @click="addPrerequisite(item)"
                                                     :disabled="form.items.length < 2">+ Wait for another job</button></li>
                                     </ul>
+                                    <ul class="wf-outside-list">
+                                        <template x-for="(o, oIndex) in item.outside" :key="o.uid">
+                                            <li class="wf-outside-row" :data-outside-uid="o.uid" :data-kind="o.kind">
+                                                <div class="wf-row">
+                                                    <label title="What this job waits for outside its workflow">Waits for
+                                                        <select class="outside-kind" x-model="o.kind" @change="outsideKindChanged(o)">
+                                                            <option value="OTHER_JOB">a job in another workflow</option>
+                                                            <option value="ENDPOINT">files</option>
+                                                            <option value="TIME">a time</option>
+                                                        </select></label>
+                                                    <label title="What conditions call it. Left empty, it is made from what it is">Called
+                                                        <input type="text" class="outside-name" x-model="o.name" maxlength="100"
+                                                               :placeholder="outsideName(item, o)"
+                                                               @focus="nameBefore = outsideName(item, o)"
+                                                               @change="renamedOutside(item, nameBefore, outsideName(item, o))"></label>
+                                                    <button type="button" class="link small remove-outside" @click="removeOutside(item, oIndex)"
+                                                            title="Stop waiting for this">Remove</button>
+                                                </div>
+                                                <div class="wf-row" x-show="o.kind === 'OTHER_JOB'" x-effect="o.kind === 'OTHER_JOB' && loadJobDetail(o.workflow)">
+                                                    <label>Workflow
+                                                        <input type="text" class="outside-workflow" list="workflow-keys" x-model="o.workflow"
+                                                               autocomplete="off" placeholder="Type to find a workflow"></label>
+                                                    <label>Job in it
+                                                        <select class="outside-job" x-model="o.job">
+                                                            <option value="">the workflow as a whole</option>
+                                                            <template x-for="name in workflowJobs(o.workflow)" :key="name">
+                                                                <option :value="name" x-text="name" :selected="name === o.job"></option>
+                                                            </template>
+                                                        </select></label>
+                                                    <label x-show="item.join !== 'CUSTOM'">Outcome
+                                                        <select class="outside-test" x-model="o.test">
+                                                            <option value="SUCCESS">succeeded</option>
+                                                            <option value="FAILED">failed</option>
+                                                            <option value="ENDED">ended, whatever happened</option>
+                                                            <option value="RC">gave return codes</option>
+                                                        </select></label>
+                                                    <input type="text" class="outside-codes" x-show="item.join !== 'CUSTOM' && o.test === 'RC'"
+                                                           x-model="o.return_codes" placeholder="0, 4 or 0-4" maxlength="100" style="max-width: 140px">
+                                                    <p class="muted small" style="flex-basis: 100%; margin: 0">Its run that counts is the one going now, else the
+                                                        latest that ended. To rule out a stale one:</p>
+                                                    <label>only a run that ended within
+                                                        <input type="number" min="1" class="outside-look-back" x-model="o.look_back_hours"
+                                                               style="max-width: 80px" placeholder="any time"> hours</label>
+                                                    <label><input type="checkbox" class="outside-after-start" x-model="o.only_after_start">
+                                                        only a run started after this one did</label>
+                                                </div>
+                                                <div class="wf-row" x-show="o.kind === 'ENDPOINT'">
+                                                    <label>Endpoint
+                                                        <input type="text" class="outside-endpoint" list="lookup-endpoints" x-model="o.endpoint"
+                                                               autocomplete="off" placeholder="Type to find an endpoint"></label>
+                                                    <label>Files
+                                                        <input type="text" class="outside-pattern" x-model="o.file_pattern" maxlength="256"
+                                                               placeholder="The endpoint's own pattern"></label>
+                                                    <label title="Every matching file must have been left alone this long, so a file still being written does not count">Each left alone for
+                                                        <input type="number" min="0" class="outside-min-age" x-model="o.min_age_seconds"
+                                                               style="max-width: 90px" placeholder="0"> seconds</label>
+                                                    <p class="muted small" style="flex-basis: 100%; margin: 0">It holds when at least one file matches and
+                                                        every matching file is old enough. Only files on this server. For a count or a size, use a Custom rule over
+                                                        <code x-text="'%{' + outsideName(item, o) + '.FileCount}'"></code>.</p>
+                                                </div>
+                                                <div x-show="o.kind === 'TIME'">
+                                                    <div data-condition-box data-model="o.time_condition" data-context="timeContext()"></div>
+                                                    <p class="muted small">It waits until this is true. For a window across midnight, write
+                                                        <code>%{Now.Time} IN WINDOW '18:00' TO '06:00'</code>. Server time.</p>
+                                                </div>
+                                                <div class="wf-row wf-patience">
+                                                    <label>Waits
+                                                        <select class="outside-wait-mode" x-model="o.wait_mode">
+                                                            <option value="DEFAULT">up to the default wait (Settings)</option>
+                                                            <option value="MINUTES">up to a number of minutes</option>
+                                                            <option value="UNTIL">until a time</option>
+                                                            <option value="NONE">with no limit</option>
+                                                        </select></label>
+                                                    <input type="number" min="1" class="outside-wait-minutes" x-show="o.wait_mode === 'MINUTES'"
+                                                           x-model="o.wait_minutes" style="max-width: 90px" aria-label="Minutes">
+                                                    <input type="time" class="outside-wait-until" x-show="o.wait_mode === 'UNTIL'"
+                                                           x-model="o.wait_until" aria-label="Until">
+                                                    <label x-show="['DEFAULT', 'MINUTES'].includes(o.wait_mode)">counted from when
+                                                        <select class="outside-wait-from" x-model="o.wait_from">
+                                                            <option value="OTHERS">the job's other prerequisites have held</option>
+                                                            <option value="FIRST">the first of them has held</option>
+                                                            <option value="CHOSEN">one I choose has held</option>
+                                                            <option value="RUN_START">the workflow run started</option>
+                                                        </select></label>
+                                                    <select class="outside-wait-chosen" x-show="o.wait_from === 'CHOSEN' && ['DEFAULT', 'MINUTES'].includes(o.wait_mode)"
+                                                            x-model.number="o.wait_from_uid" aria-label="Which prerequisite">
+                                                        <option value="">(choose)</option>
+                                                        <template x-for="c in waitChoices(item, o)" :key="c.uid">
+                                                            <option :value="c.uid" x-text="c.label" :selected="c.uid === o.wait_from_uid"></option>
+                                                        </template>
+                                                    </select>
+                                                    <label title="Optional: after its limit the job goes on without it. Required: the job can't start">
+                                                        <input type="checkbox" class="outside-required" x-model="o.required"> Required</label>
+                                                </div>
+                                                <p class="message warning small outside-no-limit" x-show="o.wait_mode === 'NONE' && o.required">With no limit,
+                                                    the job waits for ever if this never happens.</p>
+                                                <p class="message error small outside-optional-limit" x-show="o.wait_mode === 'NONE' && !o.required">An optional
+                                                    prerequisite is given up after its limit, so it needs one.</p>
+                                            </li>
+                                        </template>
+                                        <li class="wf-add-outside">
+                                            <button type="button" class="link small add-outside-job" @click="addOutside(item, 'OTHER_JOB')">+ Wait for a job in another workflow</button>
+                                            <button type="button" class="link small add-outside-files" @click="addOutside(item, 'ENDPOINT')">+ Wait for files</button>
+                                            <button type="button" class="link small add-outside-time" @click="addOutside(item, 'TIME')">+ Wait for a time</button>
+                                        </li>
+                                    </ul>
                                     <label class="wf-join" title="When this job starts">Start rule
                                         <select class="item-join" x-model="item.join" @change="joinChanged(item)">
-                                            <option value="ALL" :disabled="item.join !== 'CUSTOM' && item.prerequisites.length < 2"
+                                            <option value="ALL" :disabled="item.join !== 'CUSTOM' && waitCount(item) < 2"
                                                     title="All and Any matter once it waits for two jobs or more">When all prerequisites are satisfied</option>
-                                            <option value="ANY" :disabled="item.join !== 'CUSTOM' && item.prerequisites.length < 2"
+                                            <option value="ANY" :disabled="item.join !== 'CUSTOM' && waitCount(item) < 2"
                                                     title="All and Any matter once it waits for two jobs or more">When any prerequisite is satisfied</option>
                                             <option value="CUSTOM" title="A rule of your own, written as a condition over other jobs' outputs and variables">Custom rule</option>
                                         </select></label>
@@ -313,6 +450,11 @@
                                         <p class="muted small">It waits for the jobs the rule names, and starts as soon as the rule is true.</p>
                                         <div data-condition-box data-model="item.rule" data-context="ruleContext(item)"></div>
                                     </div>
+                                    <label class="wf-join" title="What happens when a prerequisite can never hold, or a required one has run out of patience">If it can't start
+                                        <select class="item-on-unmet" x-model="item.on_unmet">
+                                            <option value="NOT_RUN">it does not run (Not run), and what waits for it goes on from there</option>
+                                            <option value="FAIL">it fails (Failed)</option>
+                                        </select></label>
                                     </fieldset>
                                     <fieldset class="wf-item-reactions">
                                         <legend>Reactions</legend>

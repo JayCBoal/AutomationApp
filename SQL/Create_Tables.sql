@@ -16,10 +16,11 @@ DROP TABLE IF EXISTS Processes;
 DROP TABLE IF EXISTS Sources;
 DROP TABLE IF EXISTS Deliveries;
 DROP TABLE IF EXISTS ReactionEvents;
+DROP TABLE IF EXISTS WorkflowPrerequisites;
 DROP TABLE IF EXISTS ReactionActions;
 DROP TABLE IF EXISTS Operations;
 DROP TABLE IF EXISTS WorkflowRunItems;
-DROP TABLE IF EXISTS WorkflowPrerequisites;
+DROP TABLE IF EXISTS WorkflowPrerequisiteChecks;
 DROP TABLE IF EXISTS WorkflowItemVariables;
 DROP TABLE IF EXISTS Reactions;
 DROP TABLE IF EXISTS JobStepParameters;
@@ -276,6 +277,7 @@ CREATE TABLE `WorkflowItems` (
 	`ItemOrder` INTEGER NOT NULL DEFAULT 1, 
 	`DisabledHere` VARCHAR(20), 
 	`ReactionsOverridden` BOOL NOT NULL DEFAULT false, 
+	`OnUnmet` VARCHAR(10) NOT NULL DEFAULT 'NOT_RUN', 
 	PRIMARY KEY (id), 
 	CONSTRAINT uq_workflow_item_name UNIQUE (`Workflow_MasterObject_id`, `ItemName`), 
 	FOREIGN KEY(`Workflow_MasterObject_id`) REFERENCES `Jobs` (`MasterObject_id`) ON DELETE CASCADE, 
@@ -356,19 +358,23 @@ CREATE TABLE `WorkflowItemVariables` (
 
 CREATE INDEX `ix_WorkflowItemVariables_Item_id` ON `WorkflowItemVariables` (`Item_id`);
 
-CREATE TABLE `WorkflowPrerequisites` (
+CREATE TABLE `WorkflowPrerequisiteChecks` (
 	id INTEGER NOT NULL AUTO_INCREMENT, 
-	`Item_id` INTEGER NOT NULL, 
-	`TargetItem_id` INTEGER, 
-	`Test` VARCHAR(20) NOT NULL DEFAULT 'SUCCESS', 
-	`ReturnCodes` VARCHAR(100), 
-	`Condition` TEXT, 
+	`WorkflowRun_id` INTEGER NOT NULL, 
+	`Path` VARCHAR(1000) NOT NULL, 
+	`Attempt` INTEGER NOT NULL DEFAULT 1, 
+	`Kind` VARCHAR(12) NOT NULL, 
+	`TargetName` VARCHAR(100), 
+	`Result` VARCHAR(10) NOT NULL, 
+	`SeenStatus` VARCHAR(20), 
+	`UsedRunID` VARCHAR(36), 
+	`Message` TEXT, 
+	`CheckedDateTime` DATETIME(6) NOT NULL, 
 	PRIMARY KEY (id), 
-	FOREIGN KEY(`Item_id`) REFERENCES `WorkflowItems` (id) ON DELETE CASCADE, 
-	FOREIGN KEY(`TargetItem_id`) REFERENCES `WorkflowItems` (id) ON DELETE CASCADE
+	FOREIGN KEY(`WorkflowRun_id`) REFERENCES `JobRuns` (id) ON DELETE CASCADE
 )ENGINE=InnoDB CHARSET=utf8mb4 COLLATE utf8mb4_bin;
 
-CREATE INDEX `ix_WorkflowPrerequisites_Item_id` ON `WorkflowPrerequisites` (`Item_id`);
+CREATE INDEX `ix_WorkflowPrerequisiteChecks_WorkflowRun_id` ON `WorkflowPrerequisiteChecks` (`WorkflowRun_id`);
 
 CREATE TABLE `WorkflowRunItems` (
 	id INTEGER NOT NULL AUTO_INCREMENT, 
@@ -449,6 +455,38 @@ CREATE TABLE `ReactionActions` (
 )ENGINE=InnoDB CHARSET=utf8mb4 COLLATE utf8mb4_bin;
 
 CREATE INDEX `ix_ReactionActions_Reaction_id` ON `ReactionActions` (`Reaction_id`);
+
+CREATE TABLE `WorkflowPrerequisites` (
+	id INTEGER NOT NULL AUTO_INCREMENT, 
+	`Item_id` INTEGER NOT NULL, 
+	`TargetItem_id` INTEGER, 
+	`Test` VARCHAR(20) NOT NULL DEFAULT 'SUCCESS', 
+	`ReturnCodes` VARCHAR(100), 
+	`Condition` TEXT, 
+	`Kind` VARCHAR(12) NOT NULL DEFAULT 'JOB', 
+	`TargetName` VARCHAR(100), 
+	`TargetJob_MasterObject_id` INTEGER, 
+	`LookBackHours` INTEGER, 
+	`OnlyAfterStart` BOOL NOT NULL DEFAULT false, 
+	`Endpoint_MasterObject_id` INTEGER, 
+	`FilePattern` VARCHAR(256), 
+	`MinAgeSeconds` INTEGER, 
+	`TimeCondition` TEXT, 
+	`WaitMode` VARCHAR(10) NOT NULL DEFAULT 'DEFAULT', 
+	`WaitMinutes` INTEGER, 
+	`WaitUntil` VARCHAR(5), 
+	`WaitFrom` VARCHAR(10) NOT NULL DEFAULT 'OTHERS', 
+	`WaitFromPrerequisite_id` INTEGER, 
+	`Required` BOOL NOT NULL DEFAULT true, 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(`Item_id`) REFERENCES `WorkflowItems` (id) ON DELETE CASCADE, 
+	FOREIGN KEY(`TargetItem_id`) REFERENCES `WorkflowItems` (id) ON DELETE CASCADE, 
+	FOREIGN KEY(`TargetJob_MasterObject_id`) REFERENCES `Jobs` (`MasterObject_id`) ON DELETE RESTRICT, 
+	FOREIGN KEY(`Endpoint_MasterObject_id`) REFERENCES `Endpoints` (`MasterObject_id`) ON DELETE RESTRICT, 
+	FOREIGN KEY(`WaitFromPrerequisite_id`) REFERENCES `WorkflowPrerequisites` (id) ON DELETE SET NULL
+)ENGINE=InnoDB CHARSET=utf8mb4 COLLATE utf8mb4_bin;
+
+CREATE INDEX `ix_WorkflowPrerequisites_Item_id` ON `WorkflowPrerequisites` (`Item_id`);
 
 CREATE TABLE `ReactionEvents` (
 	id INTEGER NOT NULL AUTO_INCREMENT, 

@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session, object_session
 
 from app.models import Audit, Job, JobRun, JobStep, JobStepParameter, StepType, Variable, utcnow
 from app.schemas import JobDetail, JobSave, JobStepOut, JobStepSave, VariableOut
-from app import reaction_store, workflow_store
+from app import outside_store, reaction_store, workflow_store
 from engine import return_codes, step_tree
 from engine.handlers import HANDLER_REGISTRY
 from engine.handlers.flow import BRANCH_NAMES, BRANCHES, structure_problems, top_level_problems
@@ -474,6 +474,11 @@ def delete_job(db: Session, job_key: str, who: str) -> None:
         raise JobStoreError(f"Job '{job_key}' is used by the workflow{'s' if len(using) > 1 else ''} "
                             f"{', '.join(repr(k) for k in using)}, so it cannot be deleted. Take it out of "
                             f"{'them' if len(using) > 1 else 'it'} first.", status=409)
+    waiting = outside_store.waiting_for_workflow(db, job) if job.JobType == "WORKFLOW" else []
+    if waiting:
+        raise JobStoreError(f"Workflow '{job_key}' cannot be deleted: {', '.join(waiting)} "
+                            f"wait{'s' if len(waiting) == 1 else ''} for it or for a job in it. Change what they wait for first.",
+                            status=409)
     starters = reaction_store.started_by(db, job)
     if starters:
         raise JobStoreError(f"Workflow '{job_key}' is started by Reactions of {', '.join(starters)}, so it cannot be "

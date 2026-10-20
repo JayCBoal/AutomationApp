@@ -23,7 +23,7 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app import tag_store
+from app import outside_store, tag_store
 from app.job_store import JobStoreError, apply_variables
 from app.models import (
     Application, Audit, Endpoint, Entity, JobRun, JobStep, JobStepParameter, MasterObject, Scheduler, Site, Tag, utcnow
@@ -183,7 +183,8 @@ def used_by(db: Session, kind: Kind, obj) -> List[Dict[str, str]]:
             .distinct().all()
         )
         from app.models import Job
-        keys = sorted({db.get(Job, job_id).JobKey for (job_id,) in rows}, key=str.lower)
+        keys = sorted({db.get(Job, job_id).JobKey for (job_id,) in rows}
+                      | set(outside_store.waiting_for_endpoint(db, obj)), key=str.lower)
         return [{"kind": "jobs", "name": key} for key in keys]
     if kind.key in ("applications", "sites"):
         column = Endpoint.Application_MasterObject_id if kind.key == "applications" else Endpoint.Site_MasterObject_id

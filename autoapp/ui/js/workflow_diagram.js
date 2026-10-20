@@ -9,8 +9,12 @@
  *     diagram.items:  [{ id, name, sub, kind ("JOB" or "WORKFLOW"), disabled (words, or null),
  *                        join ("ALL" or "ANY"), status (a run's state, or null), statusText,
  *                        disabledHere ("STOP", "PASS_THROUGH" or null), reactions (words, or null),
- *                        rule (its Custom rule, or null), changed (true: changed since it was last saved) }]
- *     diagram.lines:  [{ id, from, to, test, codes }]       "to" waits for "from"; test RULE: named in its Custom rule
+ *                        rule (its Custom rule, or null), changed (true: changed since it was last saved),
+ *                        outside (null; or "JOB", "FILES", "TIME" or "NEEDED": a dashed box outside the workflow, see below),
+ *                        href (outside: the page a click opens), owner (outside: the id of the box a click selects instead) }]
+ *     diagram.lines:  [{ id, from, to, test, codes, words }]   "to" waits for "from"; test RULE: named in its Custom rule;
+ *                     FILES, TIME: an outside box of files or a time; NEEDED: "to" is a job elsewhere that waits for "from".
+ *                     words, if given, is what pointing at the line says
  *     diagram.reruns: [{ from, to, words }]   Rerun from... Reactions: "from" reruns from "to", drawn back
  *                     upstream as a dash-dot arc after the layout, so elkjs never sees a loop
  *     diagram.direction ("RIGHT" or "DOWN"), zoom (a number, or "fit"), find (text),
@@ -18,8 +22,9 @@
  *     handlers.select(kind, id), handlers.connect(fromId, toId), handlers.remove(lineId) (the x on a line, while editing)
  * draw() resolves to the zoom it used, so the page can show it after Fit.
  *
- * autoapp/ui/mockup_workflow.html draws the whole design, with what later phases add (frames,
- * outside dependencies, Reactions); this file draws what workflows can hold today.
+ * Outside dependencies (docs/WORKFLOWS_PHASE5.md) are dashed boxes at the edges: what a job waits for outside
+ * (a job or workflow elsewhere, files, a time) on the way in, and the jobs elsewhere that wait for it ("Needed by")
+ * on the way out. autoapp/ui/mockup_workflow.html draws the whole design, with what later phases add.
  */
 const WorkflowDiagram = (() => {
     const SVG = "http://www.w3.org/2000/svg";
@@ -28,7 +33,9 @@ const WorkflowDiagram = (() => {
     const NAME_MAX = 190, SUB_MAX = 230, PAD = 8, LINE = 16, ICON = 14, SUB_LINE = 14, MIN_WIDTH = 120;
     const ARROW_LENGTH = 7 * 0.9;   // an arrowhead's length, in line widths (its marker is 7 wide; the tip is at 9 of 10)
     const DRAG_START = 5;           // pixels the pointer moves before a press on a box becomes a drag
-    const TESTS = ["SUCCESS", "FAILED", "ENDED", "RC", "RULE"];
+    const EXTERNAL = "EXTERNAL";
+    const EXTERNAL_FONT = "700 10px system-ui, -apple-system, 'Segoe UI', Roboto, 'DejaVu Sans', sans-serif";
+    const TESTS = ["SUCCESS", "FAILED", "ENDED", "RC", "RULE", "FILES", "TIME", "NEEDED"];
     const elk = new ELK();
     const measurer = document.createElement("canvas").getContext("2d");
 
@@ -62,6 +69,9 @@ const WorkflowDiagram = (() => {
             ENDED: { color: css("--text"), dash: null, words: "ended, whatever happened" },
             RC: { color: css("--wf-rc"), dash: null, words: "gave return codes" },
             RULE: { color: css("--muted"), dash: "2 3", words: "ended, or enough is known for its Custom rule" },
+            FILES: { color: css("--accent"), dash: "8 3", words: "have arrived and are old enough" },
+            TIME: { color: css("--accent"), dash: "2 3", words: "is true" },
+            NEEDED: { color: css("--muted"), dash: "8 3", words: "has done what is waited for" },
         };
         return styles[test] || { color: css("--muted"), dash: null, words: test.toLowerCase() };
     }
@@ -72,6 +82,7 @@ const WorkflowDiagram = (() => {
 
     /** What pointing at a line says: "Transform waits until Extract_US succeeded". */
     function lineWords(line, names) {
+        if (line.words) return line.words;
         if (line.test === "RULE") return `${names.get(line.to)}'s Custom rule names ${names.get(line.from)}. Point at the {x} on ${names.get(line.to)} to read the rule`;
         const what = line.test === "RC" ? `gave return codes ${line.codes || "(none given yet)"}` : lineStyle(line.test).words;
         return `${names.get(line.to)} waits until ${names.get(line.from)} ${what}`;
@@ -107,6 +118,11 @@ const WorkflowDiagram = (() => {
         if (item.disabledHere === "PASS_THROUGH") list.push(["pass", "Disabled here to pass through: it counts as succeeded without running"]);
         if (item.changed) list.push(["changed", "Changed since it was last saved: Save keeps the change, Cancel drops it"]);
         if (item.reactions) list.push(["reactions", item.reactions]);
+        if (item.outside === "FILES") list.push(["files", "Files at an endpoint, on this server"]);
+        if (item.outside === "TIME") list.push([item.calendar ? "calendar" : "clock", "A condition on the time"]);
+        if (item.outside === "JOB") list.push(["workflow", "A job, or a whole workflow, outside this one"]);
+        if (item.outside === "NEEDED") list.push(["workflow", "A job in another workflow, which waits for this job"]);
+        list.push(...(item.externalMarks || []));        // external references folded into the box, when their boxes are hidden
         if (item.rule !== null && item.rule !== undefined) list.push(["rule", `Starts when its Custom rule holds: ${item.rule || "(not written yet)"}`]);
         return list;
     }
@@ -121,10 +137,12 @@ const WorkflowDiagram = (() => {
         const icons = markers(item);
         const sub = subLine(item);
         const subLines = sub ? wrapName(sub, SUB_MAX).length : 0;
-        const width = Math.max(MIN_WIDTH, ...lines.map(l => textWidth(l, NAME_FONT)), icons.length * (ICON + 4),
+        const external = item.outside ? tag(item.outside) : null;
+        const width = Math.max(MIN_WIDTH, ...lines.map(l => textWidth(l, NAME_FONT)),
+                               icons.length * (ICON + 4) + (external ? textWidth(external, EXTERNAL_FONT) + 4 : 0),
                                sub ? Math.min(textWidth(sub, SMALL_FONT), SUB_MAX) : 0);
         const height = PAD + (icons.length ? ICON + 4 : 0) + lines.length * LINE + subLines * SUB_LINE + PAD;
-        return { lines, icons, sub, width: Math.ceil(width + 2 * PAD), height: Math.ceil(height) };
+        return { lines, icons, sub, external, width: Math.ceil(width + 2 * PAD), height: Math.ceil(height) };
     }
 
     // ---------- The graph elkjs lays out ----------
@@ -177,6 +195,20 @@ const WorkflowDiagram = (() => {
             svg("path", { d: "M2.5 11.5l1-3.5 6.5-6.5 2.5 2.5-6.5 6.5z M8.5 3l2.5 2.5", ...stroke }, g);
         } else if (name === "rule") {               // {x}: a test on values (docs/WORKFLOWS.md)
             svg("text", { x: 7, y: 11, "text-anchor": "middle", fill: "currentColor", style: `font: ${SMALL_FONT}; font-weight: 700` }, g).textContent = "{x}";
+        } else if (name === "clock") {
+            svg("circle", { cx: 7, cy: 7, r: 5.5, ...stroke }, g);
+            svg("path", { d: "M7 4v3.2l2.2 1.4", ...stroke }, g);
+        } else if (name === "calendar") {
+            svg("rect", { x: 1.5, y: 2.5, width: 11, height: 10, rx: 1.5, ...stroke }, g);
+            svg("path", { d: "M1.5 5.5h11M4.5 1.2v2.6M9.5 1.2v2.6", ...stroke }, g);
+        } else if (name === "needed") {             // an arrow leaving a box: something elsewhere waits for this job
+            svg("rect", { x: 1, y: 2.5, width: 7, height: 9, rx: 1, ...stroke }, g);
+            svg("path", { d: "M8 7h5M10.8 4.5 13.3 7l-2.5 2.5", ...stroke }, g);
+        } else if (name === "files") {
+            svg("path", { d: "M1.5 3.5h4l1.2 1.5h5.8v6.5h-11z", ...stroke }, g);
+        } else if (name === "lock") {
+            svg("rect", { x: 2.5, y: 6, width: 9, height: 6.5, rx: 1, ...stroke }, g);
+            svg("path", { d: "M4.5 6V4.2a2.5 2.5 0 0 1 5 0V6", ...stroke }, g);
         } else if (name === "reactions") {          // a circling arrow: what happens after it ends
             svg("path", { d: "M11.5 7a4.5 4.5 0 1 1-1.4-3.3", ...stroke }, g);
             svg("path", { d: "M10.6 1.2v2.9H7.7", ...stroke }, g);
@@ -208,7 +240,11 @@ const WorkflowDiagram = (() => {
     // ---------- Boxes ----------
 
     /** How a box looks: plain in the editor; in a run, the colours and patterns of its state. */
-    function boxLook(status, prefix) {
+    /** Jobs and workflows elsewhere are amber; files and times, which run nothing, are blue. */
+    const tint = kind => (kind === "FILES" || kind === "TIME" ? "--accent" : "--warning");
+    const tag = kind => ({ FILES: "FILES", TIME: "TIME" }[kind] || EXTERNAL);
+
+    function boxLook(status, prefix, external = false) {
         const base = { fill: css("--panel-raised"), stroke: css("--border"), width: 1, dash: null, muted: false };
         const looks = {
             SUCCESS: { fill: css("--success"), fillOpacity: 0.2, stroke: css("--success"), width: 2 },
@@ -220,7 +256,7 @@ const WorkflowDiagram = (() => {
             BYPASSED: { stroke: css("--muted"), dash: "5 3", muted: true, through: true },
             SKIPPED: { fill: `url(#${prefix}p-skipped)`, stroke: css("--muted"), muted: true },
         };
-        return { ...base, ...(looks[status] || {}) };
+        return { ...base, ...(looks[status] || {}), ...(external && !status ? { fill: css(tint(external)), fillOpacity: 0.16, stroke: css(tint(external)) } : {}) };
     }
 
     /** The box's outline and fill, at (x, y) and the size given. */
@@ -240,9 +276,12 @@ const WorkflowDiagram = (() => {
     }
 
     function drawBox(layer, item, at, model, diagram, prefix) {
-        const g = svg("g", { class: "wf-box", "data-id": item.id, "data-name": item.name, "data-status": item.status || null,
-                             "data-disabled-here": item.disabledHere || null, cursor: "pointer" }, layer);
-        const look = boxLook(lookOf(item), prefix);
+        const g = svg("g", { class: "wf-box" + (item.outside ? " wf-outside" : ""), "data-id": item.id, "data-name": item.name,
+                             "data-status": item.status || null, "data-disabled-here": item.disabledHere || null,
+                             "data-outside": item.outside || null, "data-href": item.href || null, "data-owner": item.owner || null,
+                             cursor: "pointer" }, layer);
+        const look = boxLook(lookOf(item), prefix, item.outside || false);
+        if (item.outside) look.dash = "5 3";         // dashed: not part of this workflow
         drawShape(g, look, at.x, at.y, at.width, at.height, 6);
         if (matchesFind(item, diagram.find)) svg("rect", { class: "wf-found", x: at.x - 4, y: at.y - 4, width: at.width + 8, height: at.height + 8, rx: 9,
                                                             fill: "none", stroke: css("--accent"), "stroke-width": 2.5 }, g);
@@ -258,6 +297,9 @@ const WorkflowDiagram = (() => {
         let y = at.y + PAD;
         if (model.icons.length) {
             model.icons.forEach(([name, words], i) => icon(g, name, at.x + PAD + i * (ICON + 4), y, css("--muted"), words));
+            if (model.external) {
+                svg("text", { x: at.x + PAD + model.icons.length * (ICON + 4), y: y + 11, fill: look.stroke, style: `font: ${EXTERNAL_FONT}; letter-spacing: 0.5px` }, g).textContent = model.external;
+            }
             y += ICON + 4;
         }
         for (const line of model.lines) {
@@ -420,7 +462,7 @@ const WorkflowDiagram = (() => {
         let press = null;           // { id, x, y, line }: a press on a box that may become a drag
         root.addEventListener("pointerdown", event => {
             const box = event.target.closest(".wf-box");
-            if (!box || !editing || event.button !== 0) return;
+            if (!box || !editing || event.button !== 0 || box.classList.contains("wf-outside")) return;
             press = { id: box.dataset.id, x: event.clientX, y: event.clientY, line: null };
         });
         root.addEventListener("pointermove", event => {
@@ -461,6 +503,8 @@ const WorkflowDiagram = (() => {
         if (line && event.target.closest(".wf-line-remove")) return handlers.remove(line.dataset.line);
         const box = event.target.closest(".wf-box");
         if (line) handlers.select("line", line.dataset.line);
+        else if (box && box.dataset.href && handlers.open) handlers.open(box.dataset.href);
+        else if (box && box.dataset.owner) handlers.select("item", box.dataset.owner);
         else if (box) handlers.select("item", box.dataset.id);
         else handlers.select(null, null);
     }
@@ -508,7 +552,10 @@ const WorkflowDiagram = (() => {
             div.append(sample, Object.assign(document.createElement("span"), { textContent: words }));
             element.append(div);
         };
-        TESTS.forEach((test, i) => row(keySample("line", test, `key-l${i}-`), `Line: waits until the job before it ${lineStyle(test).words}`));
+        TESTS.slice(0, 5).forEach((test, i) => row(keySample("line", test, `key-l${i}-`), `Line: waits until the job before it ${lineStyle(test).words}`));
+        row(keySample("line", "FILES", "key-l5-"), "Line from files: the job waits until they have arrived and are old enough");
+        row(keySample("line", "TIME", "key-l6-"), "Line from a time: the job waits until the condition on the time is true");
+        row(keySample("line", "NEEDED", "key-l7-"), "Line to a job elsewhere: it waits for this job");
         const states = { PENDING: "Not started yet", WAITING: "Waiting on a prerequisite", RUNNING: "Running", SUCCESS: "Succeeded",
                          FAILED: "Failed", NOT_RUN: "Not run: its prerequisites can't be met, or the run was cancelled",
                          DISABLED: "Disabled (also: disabled here, to stop)", BYPASSED: "Bypassed: disabled here to pass through",
@@ -520,6 +567,15 @@ const WorkflowDiagram = (() => {
                       "marker-end": "url(#key-r-a-RERUN)" }, rerun);
         row(rerun, "↺ Rerun from...: a Reaction that runs an earlier job, and those between, again");
         row(keySample("icon", "workflow", "key-i1-"), "A workflow, used as one job");
+        const outsideBox = svg("svg", { width: 70, height: 22, "aria-hidden": "true" });
+        drawShape(outsideBox, { ...boxLook(null, "key-o-", "JOB"), dash: "5 3" }, 4, 3, 62, 16, 4);
+        const nonJobBox = svg("svg", { width: 70, height: 22, "aria-hidden": "true" });
+        drawShape(nonJobBox, { ...boxLook(null, "key-n-", "FILES"), dash: "5 3" }, 4, 3, 62, 16, 4);
+        row(outsideBox, "Shaded, dashed box marked EXTERNAL (or, with the toolbar choices off, a small icon in the header of the box it applies to; point at it to read it): outside this workflow. On the left, what a job waits for there (a job elsewhere, files, a time); on the right, jobs elsewhere that wait for it. Click one to open it");
+        row(nonJobBox, "Shaded blue, marked FILES or TIME: not a job. Something a job waits for that runs nothing (files, the time)");
+        row(keySample("icon", "needed", "key-i9-"), "Another workflow's job waits for this job (shown as an icon when external references are hidden)");
+        row(keySample("icon", "files", "key-i7-"), "Files at an endpoint: they count once each has been left alone long enough");
+        row(keySample("icon", "clock", "key-i8-"), "A condition on the time (a clock or, for a date or weekday, a calendar)");
         row(keySample("icon", "disabled", "key-i2-"), "Its job is disabled, or it is disabled here");
         row(keySample("icon", "pass", "key-i3-"), "Disabled here to pass through: counts as succeeded without running");
         row(keySample("icon", "reactions", "key-i4-"), "Has Reactions: what happens after it ends");

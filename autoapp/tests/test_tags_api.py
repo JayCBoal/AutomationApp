@@ -272,9 +272,10 @@ def test_a_conflict_the_job_uses_stops_it(client, world):
 # --- Settings -------------------------------------------------------------------------------------
 
 def test_the_settings_are_listed_with_their_defaults(client, world):
-    precedence, retention = ok(client.get("/api/v1/settings"))
+    precedence, retention, outside_wait = ok(client.get("/api/v1/settings"))
 
     assert (retention["key"], retention["kind"], retention["value"]) == ("LogRetentionDays", "CHOICE", "30")
+    assert (outside_wait["key"], outside_wait["kind"], outside_wait["value"]) == ("OutsideWaitHours", "CHOICE", "24")
     assert precedence["key"] == "VariablePrecedence"
     assert precedence["value"] == precedence["default"] == ["ENV", "SYS", "ENTITY", "APP", "ENDPOINT", "TAG",
                                                                  "WORKFLOW", "JOB", "USE"]

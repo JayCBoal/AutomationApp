@@ -2,7 +2,7 @@
 
 The fifth phase of [WORKFLOWS.md](WORKFLOWS.md) ("Implementation in phases"): **a job can wait for things outside its workflow, and you can see every one of them.** It answers shortcoming 4 ([PROJECT_GOALS.md](PROJECT_GOALS.md) goal 2): in RunMyJobs a Wait Event in one chain depending on a Raise Event in another is invisible, so nobody can see what a job is really waiting for.
 
-Status: **all ten proposals agreed with the owner 2026-10-19 (decisions D99 to D105). Not yet committed; nothing is built.** Phase 4's workflow variables (branch `workflows-phase4-variables`) are still in final testing; build Phase 5 on a new branch from main once they are merged.
+Status: **built (2026-10-19), on branch `workflows-phase5`; awaiting the owner's review.** All ten proposals were agreed with the owner 2026-10-19 (decisions D99 to D105); what was settled while building is D106 to D115.
 
 ## Starting point
 
@@ -60,4 +60,16 @@ Designed, not built (decisions D16 to D20, D80): patience on each prerequisite a
 
 ## Decided while building
 
-(Empty until the build starts.)
+- **D106** an outside prerequisite is never "impossible": a failed job elsewhere is waited out, and patience ends the wait.
+- **D107** `%{Now.Time}` is `HH:MM` (minutes), local time; `BETWEEN` and `IN WINDOW` include both ends.
+- **D108** one that holds is looked at again every pass; one that ran out of patience stays so for that attempt.
+- **D109** in a Custom rule, a required one that ran out of patience ends the job; an optional one gives unknown values.
+- **D110** `OnUnmet` covers both causes; the Reason says which (`PREREQUISITES_NOT_MET`, `TIMED_OUT`).
+- **D111** the loop check between workflows is between jobs; a whole workflow waits for all its jobs.
+- **D112** what each one found is kept per attempt (`WorkflowPrerequisiteChecks`), and shown on the run.
+- **D113** outside names for conditions, with dots allowed; `Now` is reserved.
+- **D114** nothing others wait for can be removed from under them; files must be on this server.
+- **D115** outside things are shaded (amber for jobs and workflows elsewhere, tagged EXTERNAL; blue for files and times, tagged FILES or TIME), and two toolbar options hide each group as header icons: *Show external references* (on by default) and *Show non-executable dependencies* (off by default). The mockup page was not updated.
+- The sample is `DEV-OUTSIDE_UPSTREAM` and `DEV-OUTSIDE_SAMPLE` (two workflows, in the seed's section 9); `autoapp_dev` has the new schema (`SQL/migrate_outside_dependencies.py`) but not the sample.
+- **Not built, as planned:** Hold for an operator; remote endpoints; Check Files' own `MinAgeSeconds` and `WaitMinutes` (only the shared age test, `engine/file_age.py`); a loop across workflows (TO-DO 9); time-based Reactions.
+- **Left for a later look (TO-DO):** a workflow that others wait for as a whole shows no "Needed by" on its own page.

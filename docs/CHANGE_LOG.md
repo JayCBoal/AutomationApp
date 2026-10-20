@@ -6,6 +6,22 @@ Notable structural, schema and design changes to AutoApp, newest first. Line-by-
 
 ## 2026-10-19
 
+### Workflows, Phase 5: outside dependencies
+
+Plan: [WORKFLOWS_PHASE5.md](WORKFLOWS_PHASE5.md). Decisions D99 to D115 in [WORKFLOW_DECISIONS.md](WORKFLOW_DECISIONS.md) (D16 to D20 and D80 are now built).
+
+- **Schema:** a prerequisite has a kind (`JOB`, `OTHER_JOB`, `ENDPOINT`, `TIME`) and, for the outside ones, the target, patience (`WaitMode`, `WaitMinutes`, `WaitUntil`, `WaitFrom`, `Required`) and limits; a job has `OnUnmet`; `WorkflowPrerequisiteChecks` keeps what each outside prerequisite found, for each attempt. `SQL/migrate_outside_dependencies.py` brings a Phase 4 database up to date, keeping its data. Back up first.
+- **Added (waiting):** a job can wait for a job, or a whole workflow, elsewhere (its current or latest run, with optional limits: ended within N hours, started after this run did), for files at an endpoint on this server (at least one matches, each left alone for a minimum age), and for the time (`%{Now.Time}`, `%{Now.Date}`, `%{Now.Weekday}`; `IN WINDOW '18:00' TO '06:00'` for a window across midnight).
+- **Added (patience):** each of them waits the system default (24 hours; Settings: *Default wait for outside prerequisites*), a number of minutes, until a time, or with no limit (which warns), counted from when the job's other prerequisites held, the first of them, a chosen one, or the start of the run. *Required* ones make the job Not run (or Failed, as the job's new *If it can't start* says, Reason `TIMED_OUT`); *optional* ones are given up after their limit and the job goes on without them.
+- **Added (conditions):** a Custom rule can name the outside things the job waits for (`%{MONTH_END.Extract.Status}`, `%{INBOUND_ORDERS.FileCount}`) and the time; the condition box offers them, and the builder shows `BETWEEN` and windows (marking "next day").
+- **Added (seeing them):** dashed boxes at the edges of the diagram for what a job waits for outside (job, files, clock or calendar) and, on the other side, the jobs elsewhere that wait for it (*Needed by*); a click opens that workflow; the Outline says the same in words. A run shows what each job is waiting for and until when, and afterwards what it found: the run it used and whether it held, ran out of patience or was given up (`GET /api/v1/runs/{id}` gains `outside_waits` and each item's `waiting_for`).
+- **Added (checks):** saving refuses an unknown workflow, job, endpoint or empty time condition, a clash of names, a limitless optional wait, a loop between workflows (the message names the path), taking out a job others wait for, and deleting a workflow or endpoint others wait for. The pre-run check fails for files on another Site and warns of waits with no limit.
+- **Added (diagram options):** external things are shaded and tagged (amber **EXTERNAL** for jobs and workflows elsewhere, blue **FILES** or **TIME** for what runs nothing). The toolbar's *Show external references* (on) and *Show non-executable dependencies* (off) fold each group into icons in the header of the boxes they apply to; both are remembered in the browser (D115).
+- **Added (sample):** `DEV-OUTSIDE_UPSTREAM` and `DEV-OUTSIDE_SAMPLE` (seed section 9).
+- **Changed (API):** a workflow job's prerequisites in `/api/v1/jobs` gain `kind` and the fields above (additive); `/api/v1/conditions/check` takes `outside`; new `/api/v1/conditions/outside-outputs`.
+- **Not built:** Hold for an operator; remote endpoints; Check Files' own minimum age (only the shared test, `engine/file_age.py`).
+
+
 ### Workflows, Phase 4 (the rest): workflow variables
 
 Plan: [WORKFLOWS_PHASE4.md](WORKFLOWS_PHASE4.md), "The rest of Phase 4". Decisions D91 and D92 in [WORKFLOW_DECISIONS.md](WORKFLOW_DECISIONS.md) (they replace D53's switch on each workflow).

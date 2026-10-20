@@ -3,7 +3,7 @@
 Every decision behind how AutoApp's workflows work, in one place, each with **why**: the problem it solves or the trap it avoids. Before changing one, read its why: it may name the trouble the change would bring back.
 
 - **Status:** *Built* (and when), *Designed* (agreed, not built yet; the phase that builds it), *Replaced* (kept, pointing to what replaced it, so the history stays), *Moved out* (taken out of the workflow track, and where it went).
-- **Source:** where the decision was first written down, with the detail: [WORKFLOWS.md](WORKFLOWS.md) (the design record) and the phase plans ([1](WORKFLOWS_PHASE1.md), [2](WORKFLOWS_PHASE2.md), [3](WORKFLOWS_PHASE3.md), [4](WORKFLOWS_PHASE4.md)).
+- **Source:** where the decision was first written down, with the detail: [WORKFLOWS.md](WORKFLOWS.md) (the design record) and the phase plans ([1](WORKFLOWS_PHASE1.md), [2](WORKFLOWS_PHASE2.md), [3](WORKFLOWS_PHASE3.md), [4](WORKFLOWS_PHASE4.md), [5](WORKFLOWS_PHASE5.md)).
 - Where no reason was recorded at the time, the entry says **Reason not recorded**, rather than one being made up afterwards. Those are worth confirming with the owner.
 - New decisions are added here as they are made, with their reason; numbers are never reused.
 
@@ -81,24 +81,24 @@ Compiled 2026-10-18, from the design record and Phases 1 to 4.
 
 **D16. Patience on each prerequisite, the consequence on the job.** Each prerequisite can wait with no limit (the default inside a workflow), up to N minutes, or until a time, and be required or optional; the job says what "can't start" means: Not run (default), Fail (`PREREQUISITES_NOT_MET` or `TIMED_OUT`), or Hold.
 - *Why:* patience belongs to each thing waited for (the file has until 02:00, the other workflow until 03:00); the consequence belongs to the job, which has one fate however it failed to start. A time-based Reaction ("not started by 03:00") sits beside this as a side effect, not deciding the job's fate.
-- *Status:* Designed (Phase 5, with outside dependencies; the owner confirmed 2026-10-18 it stays there). Hold depends on D58. *Source:* WORKFLOWS.md, "Prerequisites that aren't satisfied".
+- *Status:* Built (Phase 5, 2026-10-19), except Hold for an operator, which depends on D58. Patience and what "can't start" means are D99 to D101 and D110. *Source:* WORKFLOWS.md, "Prerequisites that aren't satisfied".
 
 **D17. A prerequisite's target can be outside the workflow** (a job in another workflow, an endpoint, a time window), defined on the prerequisite; conditions may name only the workflow's own jobs and the targets of the job's own prerequisites.
 - *Why:* every outside reference is then a prerequisite, and every prerequisite can be drawn: nothing a job waits for is hidden (shortcoming 4, RunMyJobs' invisible Wait Events).
-- *Status:* Designed (Phase 5). *Source:* WORKFLOWS.md, "Where prerequisites live, and outside targets".
+- *Status:* Built (Phase 5, 2026-10-19; the names conditions use for them are D113). *Source:* WORKFLOWS.md, "Where prerequisites live, and outside targets".
 
 **D18. Another workflow's job counts by its current or latest run**: the run executing now, else the most recent completed; optional limits against a stale success.
 - *Why:* "today's run" breaks workflows that cross midnight; yesterday's success must not satisfy a wait while today's run is going. This is ActiveBatch's "Exact active", under a name that says what it means.
-- *Status:* Designed (Phase 5). *Source:* WORKFLOWS.md, "Which run of another workflow counts".
+- *Status:* Built (Phase 5, 2026-10-19). *Source:* WORKFLOWS.md, "Which run of another workflow counts".
 
 **D19. An endpoint as a target**, with a minimum age (every file unchanged for N seconds), sharing code with Check Files' minimum age.
 - *Why:* a job must not start on a file still arriving; one check of modified times is simpler than the "Stable" first proposed, and is the same concept as in Check Files.
 - *Considered:* a `Stable` test.
-- *Status:* Designed (Phase 5). *Source:* WORKFLOWS.md, "Topic 3's other targets".
+- *Status:* Built (Phase 5, 2026-10-19): the age test is one shared function (`engine/file_age.py`); Check Files' own `MinAgeSeconds` parameter is still a TO-DO item. *Source:* WORKFLOWS.md, "Topic 3's other targets".
 
 **D20. Time windows as a built-in value**, `%{Now.Time}`, `%{Now.Date}`, `%{Now.Weekday}`; as a prerequisite, it waits until the window opens.
 - *Why:* "not before 02:00" is a condition like any other, in the same language, rather than a separate kind of object.
-- *Status:* Designed (Phase 5; confirmed 2026-10-18). *Source:* WORKFLOWS.md, "Topic 3's other targets".
+- *Status:* Built (Phase 5, 2026-10-19; the details are D107). *Source:* WORKFLOWS.md, "Topic 3's other targets".
 
 **D21. Starting a workflow: by hand, from its page** (or by a scheduler, by key, like any job).
 - *Why:* how workflows are initiated is not what AutoApp demonstrates; scheduling may come later.
@@ -106,34 +106,79 @@ Compiled 2026-10-18, from the design record and Phases 1 to 4.
 
 **D99. When an outside prerequisite's "up to N minutes" starts is a choice on the prerequisite:** (1) after the job's other prerequisites have held (the default); (2) after the first of them holds; (3) after a chosen prerequisite holds; (4) from the start of the workflow run. "Until a time" is a clock time and needs none.
 - *Why:* counting from the workflow's start alone would time out a job sitting behind a long upstream job; the right start differs by case, and the four are the natural anchors (all, first, a chosen one, the run). The owner, 2026-10-19, made the third "a chosen prerequisite" rather than the fourth option proposed ("after a chosen job ends"), as it fits the others and reads better.
-- *Status:* Designed (Phase 5). *Source:* WORKFLOWS_PHASE5.md, proposal 2; refines D16.
+- *Status:* Built (Phase 5, 2026-10-19). *Source:* WORKFLOWS_PHASE5.md, proposal 2; refines D16.
 
 **D100. An outside prerequisite waits at most 24 hours by default**, a system setting ("Default wait for outside prerequisites"), shown on each prerequisite as "Default (24 h)"; "No limit" is a deliberate choice, and saving a prerequisite with none warns.
 - *Why:* AutoApp has no daily cycle to end a stale wait (Control-M's New Day Process does), so an unlimited wait could hang forever; a limit that is visible and editable is not hidden magic.
 - *Considered:* no limit by default (the owner was not sure an indefinite wait is better than an arbitrary default).
-- *Status:* Designed (Phase 5). *Source:* WORKFLOWS_PHASE5.md, proposal 3; the owner, 2026-10-19.
+- *Status:* Built (Phase 5, 2026-10-19). *Source:* WORKFLOWS_PHASE5.md, proposal 3; the owner, 2026-10-19.
 
 **D101. An optional prerequisite is waited for up to its limit, then dropped from the job's check; the job's other prerequisites still decide.** It needs a limit (without one it would be the same as required). If nothing else is left, the job starts. In a Custom rule, its outputs are unknown (`NULL`).
 - *Why:* the owner's reading: "wait N minutes, then run without it if the others are satisfied". Counting it as *held* instead (the first proposal) would start a job with the Start rule Any at once when the optional wait timed out, even if none of its other prerequisites held.
 - *Considered:* counting a timed-out optional prerequisite as held.
-- *Status:* Designed (Phase 5). *Source:* WORKFLOWS_PHASE5.md, proposal 4; the owner, 2026-10-19.
+- *Status:* Built (Phase 5, 2026-10-19). *Source:* WORKFLOWS_PHASE5.md, proposal 4; the owner, 2026-10-19.
 
 **D102. A prerequisite's target can also be a whole workflow** (its final status), not only a job in it.
 - *Why:* "wait for the nightly load" is the common wish, and sub-workflows (structural ones) could not work otherwise. Cheap, because a workflow is a kind of job (D3) and its run is a job run.
-- *Status:* Designed (Phase 5). *Source:* WORKFLOWS_PHASE5.md, proposal 9; the owner, 2026-10-19.
+- *Status:* Built (Phase 5, 2026-10-19). *Source:* WORKFLOWS_PHASE5.md, proposal 9; the owner, 2026-10-19.
 
 **D103. A time window that spans midnight is written `%{Now.Time} IN WINDOW '18:00' TO '06:00'`**: after the start, or before the end when the end is earlier. It is AutoApp's own syntax, translated to plain comparisons before the condition is worked out; the builder shows it in words.
 - *Why:* `BETWEEN` cannot wrap past midnight and the `OR` form is easy to get wrong (a `23:59` end leaves a gap). A mainframe scheduler's times past 24 hours (`99:00` for 4d3h) made users do the arithmetic.
 - *Considered:* the `OR` form alone (still works); times beyond 24:00.
-- *Status:* Designed (Phase 5). *Source:* WORKFLOWS_PHASE5.md, proposal 6; the owner, 2026-10-19.
+- *Status:* Built (Phase 5, 2026-10-19). *Source:* WORKFLOWS_PHASE5.md, proposal 6; the owner, 2026-10-19.
 
 **D104. Prerequisites may not form a cycle, within a workflow or between workflows**; the message points to Rerun from… (D39). A cross-workflow loop (a Rerun-workflow Reaction with a limit) is a TO-DO item.
 - *Why:* neither job of a prerequisite cycle can ever make its first start, so no exit could fire (D39).
-- *Status:* Designed (Phase 5). *Source:* WORKFLOWS_PHASE5.md, proposal 7; the owner, 2026-10-19.
+- *Status:* Built (Phase 5, 2026-10-19). *Source:* WORKFLOWS_PHASE5.md, proposal 7; the owner, 2026-10-19.
 
 **D105. An endpoint prerequisite checks the files where the endpoint says; no queue or agent field yet.** If agents or queues come, the endpoint reference gains a "checked on" field, as ActiveBatch's file constraint names a queue.
 - *Why:* AutoApp has neither queues nor agents; the owner thought ActiveBatch's way worked well, so the place for it is kept free.
-- *Status:* Designed (Phase 5, local endpoints only). *Source:* WORKFLOWS_PHASE5.md, proposal 10; the owner, 2026-10-19.
+- *Status:* Built (Phase 5, 2026-10-19; local endpoints only: files on another Site make the pre-run check fail). *Source:* WORKFLOWS_PHASE5.md, proposal 10; the owner, 2026-10-19.
+
+**D106. A prerequisite outside the workflow is never "impossible": a job elsewhere that failed is waited out, not given up on.**
+- *Why:* inside a workflow a job's final status settles the matter (D15); elsewhere the other workflow may run again, and the run that counts is its current or latest (D18). Patience (D16, D99, D100) is what ends the wait, so a stale failure cannot hang a job for ever, and a late success is not missed.
+- *Considered:* treating a failed job elsewhere as Never, as inside. It would make the job Not run at once, before the other workflow's rerun could help.
+- *Status:* Built (Phase 5, 2026-10-19). *Source:* WORKFLOWS_PHASE5.md, "Decided while building".
+
+**D107. `%{Now.Time}` is the time of day as `HH:MM` (24 hours), `%{Now.Date}` as `2026-10-19` and `%{Now.Weekday}` as `Monday`, all the server's local time; `BETWEEN` and `IN WINDOW` include both ends.**
+- *Why:* minute resolution is what `BETWEEN '06:00' AND '18:00'` means to anyone; seconds would leave 18:00:30 outside a window that "ends at 18:00". Other times in AutoApp are local too.
+- *Status:* Built (Phase 5, 2026-10-19). *Source:* WORKFLOWS_PHASE5.md, "Decided while building".
+
+**D108. A prerequisite that holds is looked at again every pass; one that has run out of patience stays so for that attempt of the job.**
+- *Why:* a time window must be able to close again, and a file can be taken away, so "held once" is not "holds". But a timeout that could flip back would let a job start after it had been declared Not run. A rerun of the job starts the patience afresh.
+- *Considered:* keeping a prerequisite held once it has held, as inside a workflow (a job's final status does not change).
+- *Status:* Built (Phase 5, 2026-10-19). *Source:* WORKFLOWS_PHASE5.md, "Decided while building".
+
+**D109. In a Custom rule, a required outside prerequisite that runs out of patience ends the job whatever the rule says; an optional one makes its values unknown.**
+- *Why:* "required" means the job cannot start without it (D16), which a rule like `A OR B` must not undo by accident. Unknown values are how an optional prerequisite is dropped (D101).
+- *Status:* Built (Phase 5, 2026-10-19). *Source:* WORKFLOWS_PHASE5.md, "Decided while building".
+
+**D110. A job that cannot start ends Not run or Failed, as the job says (`OnUnmet`), with the Reason `PREREQUISITES_NOT_MET` (a prerequisite inside the workflow can never hold) or `TIMED_OUT` (a required one outside ran out of patience).**
+- *Why:* the two causes are different to whoever reads the run, and the consequence belongs to the job whatever the cause (D16). Hold for an operator is not offered (D58, not built).
+- *Status:* Built (Phase 5, 2026-10-19). *Source:* WORKFLOWS_PHASE5.md, "Decided while building".
+
+**D111. The check for loops between workflows is made between jobs, with a whole workflow counting as waiting for all its jobs.**
+- *Why:* two workflows can wait for each other without a loop (A's first job waits for B's first, B's second waits for A's second); refusing every pair would forbid ordinary hand-offs. The message names the path of jobs.
+- *Status:* Built (Phase 5, 2026-10-19). *Source:* WORKFLOWS_PHASE5.md, "Decided while building".
+
+**D112. What each outside prerequisite found is kept for every attempt of the job** (`WorkflowPrerequisiteChecks`): waiting, held, ran out of patience, given up (optional) or not needed (the job started without it), the run of the other workflow used, how it stood when last looked at, and a message. A run's page shows it live, and the job log says it too.
+- *Why:* shortcoming 4 is about not being able to see what a job is really waiting for; the answer has to be there afterwards as well. It reads the database, never the operations log (the telemetry principle).
+- *Status:* Built (Phase 5, 2026-10-19). *Source:* WORKFLOWS_PHASE5.md, "Decided while building".
+
+**D113. Something outside gets a name that conditions use** (`MONTH_END.Extract`, `INBOUND_ORDERS`, `Time`): made from what it is, editable, unique among the job's own prerequisites, never the name of a job in the workflow, and never `Now`. A name may hold dots, so `%{MONTH_END.Extract.Status}` is read against the names known first.
+- *Why:* D17 lets a Custom rule name the targets of the job's own prerequisites; a name that was a job's key would clash, and dots keep the workflow and job visible in the name.
+- *Status:* Built (Phase 5, 2026-10-19). *Source:* WORKFLOWS_PHASE5.md, "Decided while building".
+
+**D114. Nothing that others wait for can be removed from under them**: a job other workflows wait for cannot be taken out of its workflow, a workflow they wait for cannot be deleted, an endpoint a workflow waits for cannot be deleted (each message names who waits). Files must be on this server: a prerequisite on an endpoint at a Site makes the pre-run check fail.
+- *Why:* decision 8 of the plan: the foreign key would otherwise cascade and silently drop the prerequisite, and the job would start without what it waited for. Remote endpoints wait for the SFTP step type (D105).
+- *Status:* Built (Phase 5, 2026-10-19). *Source:* WORKFLOWS_PHASE5.md, "Decided while building".
+
+**D115. Outside things are shaded and tagged so they cannot be mistaken for jobs of the workflow, and each of the two groups can be hidden.**
+- Jobs and workflows elsewhere, and the jobs elsewhere that wait for a job here ("Needed by"), are dashed boxes with a flat amber tint, tagged **EXTERNAL** beside the icon in the upper-left corner. Files and times, which run nothing, are dashed boxes with a flat blue tint, tagged **FILES** or **TIME**. The tint is one flat colour, dark in the dark theme and light in the light one, so the words keep their contrast.
+- Two options in the diagram toolbar, remembered in the browser: **Show external references** (on by default) and **Show non-executable dependencies** (off by default). A group switched off is not drawn as boxes and lines: each thing becomes a small icon in the header of the box it applies to, with its wording on pointing at it. They apply to a run's diagram too.
+- *Why:* the owner, 2026-10-19, on seeing the first version: it was not obvious that the box was outside the workflow (the plan's boxes were dashed but otherwise looked like jobs, and drifted from the mockup, which draws them unfilled); hatching was hard on the eyes and hurt the contrast; a complex workflow would be extremely cluttered by a box for every file and time, so those are off by default, while jobs elsewhere are what shortcoming 4 is about and stay on.
+- *Considered:* hatched shading (rejected for contrast); one switch for everything (rejected: the owner wants the two groups apart); showing the boxes only on selection.
+- *Status:* Built (Phase 5, 2026-10-19), refining D80. The mockup page (D88) still draws the first look. *Source:* WORKFLOWS_PHASE5.md, "Decided while building".
 
 ## Running
 
@@ -414,7 +459,7 @@ Compiled 2026-10-18, from the design record and Phases 1 to 4.
 
 **D80. Every kind of dependency is visible**: outside ones as dashed boxes at the edges, both ways (what this waits for; what waits for this, "Needed by"); ones without a source as icons (clock, calendar, `{x}`).
 - *Why:* shortcoming 4: a Wait Event in one RunMyJobs chain depending on a Raise Event in another is invisible.
-- *Status:* `{x}` Built (Phase 4); the rest Designed (Phase 5). *Source:* WORKFLOWS.md.
+- *Status:* Built (`{x}` in Phase 4; the rest in Phase 5, 2026-10-19). A workflow waited for as a whole is not drawn on the diagram of the workflow waited for: its page lists no "Needed by" for it (a TO-DO item). How they look, and hiding them, is D115. *Source:* WORKFLOWS.md.
 
 **D81. Layout engine: elkjs**, vendored; AutoApp draws the SVG.
 - *Why:* free (Eclipse Public License 2.0, no obligation unless its code is changed and distributed); handles nested frames, which embedded workflows need. The owner cares about the UX, provided nothing needs a paid licence.

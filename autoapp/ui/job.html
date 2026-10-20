@@ -39,7 +39,7 @@
         <a class="button secondary" id="run-job-button" x-show="job && !editing"
            :href="job ? 'run.html?' + new URLSearchParams({ key: job.job_key }) : '#'">Run</a>
         <button type="button" class="secondary" id="edit-button" x-show="form && !editing" @click="edit()">Edit</button>
-        <button type="button" class="secondary danger" id="delete-button" x-show="editing && job" :disabled="busy"
+        <button type="button" class="secondary danger" id="delete-button" x-show="editing && job && !job.owner" :disabled="busy"
                 @click="remove()">Delete job</button>
         <button type="button" class="secondary" id="cancel-button" x-show="editing" :disabled="busy" @click="cancel()">Cancel</button>
         <button type="button" class="primary" id="submit-button" x-show="editing" :disabled="busy || !changed"
@@ -59,10 +59,15 @@
                 <div class="detail-grid">
                     <label for="job-key">Job key <span class="required" title="Required">*</span></label>
                     <div>
-                        <input id="job-key" type="text" x-model="form.job_key" :disabled="!editing" maxlength="320"
+                        <input id="job-key" type="text" x-model="form.job_key" :disabled="!editing || Boolean(job && job.owner)" maxlength="320"
                                placeholder="For example DEV-LEGAL-COLLECT">
-                        <span class="muted small" x-show="editing">The job's name, which the scheduler passes to run it.
+                        <span class="muted small" x-show="editing && !(job && job.owner)">The job's name, which the scheduler passes to run it.
                             Letters, digits, hyphens, underscores and full stops.</span>
+                        <span class="message embedded-banner" id="embedded-banner" x-show="job && job.owner">
+                            Embedded in the workflow
+                            <a :href="'workflow.html?key=' + encodeURIComponent(job ? job.owner : '')" x-text="job ? job.owner : ''"></a>:
+                            it belongs to it, is not in the lists, and is deleted with its item there. Its key follows the names in that
+                            workflow until it has run, so it is renamed there, not here.</span>
                     </div>
 
                     <label for="job-description">Description</label>

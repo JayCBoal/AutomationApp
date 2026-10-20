@@ -191,6 +191,12 @@ class RunItemOut(BaseModel):
     bytes: Optional[int] = None
     waiting_for: Optional[str] = Field(None, description=(
         "While it waits for something outside its workflow: what, and until when"))
+    frame_run_id: Optional[str] = Field(None, description="A frame (a workflow run inside this one): the run of it")
+    inside: List["RunItemOut"] = Field(default_factory=list, description=(
+        "A frame: the jobs inside it, as its own run has them, to any depth"))
+
+
+RunItemOut.model_rebuild()
 
 
 class OutsideWaitOut(BaseModel):
@@ -307,13 +313,27 @@ def _waiting_for(db: Session, run: JobRun) -> Dict[str, str]:
 def _run_items(db: Session, run: JobRun) -> List[RunItemOut]:
     rows = db.query(WorkflowRunItem).filter(WorkflowRunItem.WorkflowRun_id == run.id).order_by(WorkflowRunItem.ItemOrder)
     waiting = _waiting_for(db, run) if run.Status == "RUNNING" else {}
-    return [RunItemOut(name=r.ItemName, path=r.Path, job_key=r.JobKey, status=r.Status, reason=r.Reason,
-                       waiting_for=waiting.get(r.Path) if r.Status in ("PENDING", "WAITING") else None,
-                       return_code=r.ReturnCode, attempt=r.Attempt, run_id=r.child_run.RunID if r.child_run else None,
-                       started=r.StartedDateTime, ended=r.EndedDateTime,
-                       status_before_override=r.StatusBeforeOverride,
-                       file_count=r.child_run.FileCount if r.child_run else None,
-                       bytes=r.child_run.Bytes if r.child_run else None) for r in rows]
+    frames = _frame_runs(db, run)
+    out = []
+    for r in rows:
+        frame = frames.get(r.Path)
+        out.append(RunItemOut(name=r.ItemName, path=r.Path, job_key=r.JobKey, status=r.Status, reason=r.Reason,
+                              waiting_for=waiting.get(r.Path) if r.Status in ("PENDING", "WAITING") else None,
+                              return_code=r.ReturnCode, attempt=r.Attempt, run_id=r.child_run.RunID if r.child_run else None,
+                              started=r.StartedDateTime, ended=r.EndedDateTime,
+                              status_before_override=r.StatusBeforeOverride,
+                              file_count=r.child_run.FileCount if r.child_run else None,
+                              bytes=r.child_run.Bytes if r.child_run else None,
+                              frame_run_id=frame.RunID if frame else None,
+                              inside=_run_items(db, frame) if frame else []))
+    return out
+
+
+def _frame_runs(db: Session, run: JobRun) -> Dict[str, JobRun]:
+    """The workflow runs started by this run's items, by the item's path: the latest attempt of each."""
+    rows = (db.query(JobRun).filter(JobRun.ParentRun_id == run.id, JobRun.JobType == "WORKFLOW")
+            .order_by(JobRun.id))
+    return {r.WorkflowPath: r for r in rows if r.WorkflowPath}
 
 
 @router.post("/api/v1/runs/{run_id}/cancel", response_model=RunDetail)

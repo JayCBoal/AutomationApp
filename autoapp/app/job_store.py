@@ -97,6 +97,8 @@ def describe_job(job: Job) -> JobDetail:
         succeeds_when=job.SucceedsWhen, return_code_from=job.ReturnCodeFrom,
         used_in=workflow_store.workflows_using(db, job) if db is not None else [],
         reactions=reaction_store.describe(job.reactions),
+        owner=job.owner.JobKey if job.owner is not None else None,
+        needed_by=outside_store.workflow_needed_by(job) if job.JobType == "WORKFLOW" else [],
     )
 
 
@@ -369,6 +371,21 @@ def save_job(db: Session, payload: JobSave, existing_key: Optional[str], who: st
     return job, changes
 
 
+def _check_embedded_edit(job: Job, payload: JobSave) -> None:
+    """
+    An embedded job made of steps can be edited on its own page, which saves just that job. Its key follows the names
+    above it, so it cannot be renamed there, and a workflow embedded in another is edited from the workflow it is in
+    (one Save covers the tree).
+    """
+    where = f"the workflow '{job.owner.JobKey}'"
+    if job.JobType == "WORKFLOW":
+        raise JobStoreError(f"'{job.JobKey}' is embedded in {where} and belongs to it. Change it from that workflow's page.",
+                            status=409)
+    if payload.job_key.strip() != job.JobKey:
+        raise JobStoreError(f"'{job.JobKey}' is embedded in {where}, and its key follows the names there. To rename it, "
+                            f"rename its item in that workflow.", status=409)
+
+
 def _check_rename(db: Session, old_key: str, payload: JobSave) -> None:
     job = db.query(Job).filter(Job.JobKey == old_key).first()
     if job is None:
@@ -386,11 +403,13 @@ def _move_folder(db: Session, old_key: str, new_key: str) -> bool:
         raise JobStoreError(str(e), status=e.status)
 
 
-def apply_job(db: Session, payload: JobSave, existing_key: Optional[str], who: str) -> tuple:
+def apply_job(db: Session, payload: JobSave, existing_key: Optional[str], who: str,
+              owner: Optional[Job] = None, tree=None) -> tuple:
     """
     Makes the changes a save would make, in the current transaction, without
     committing or recording them. save_job commits them; a preview looks at the
-    result and rolls it back.
+    result and rolls it back. owner and tree are given when the job is embedded in a
+    workflow, by workflow_store while it saves that workflow: the job belongs to it.
     """
     creating = existing_key is None
     if creating:
@@ -399,6 +418,10 @@ def apply_job(db: Session, payload: JobSave, existing_key: Optional[str], who: s
         job = db.query(Job).filter(Job.JobKey == existing_key).first()
         if not job:
             raise JobStoreError(f"No job with JobKey '{existing_key}' exists.", status=404)
+        if job.Owner_MasterObject_id is not None and owner is None:
+            _check_embedded_edit(job, payload)
+    if (owner is not None or (not creating and job.Owner_MasterObject_id is not None)) and payload.tags:
+        raise JobStoreError("An embedded job carries no tags of its own: tag the workflow it belongs to.")
 
     new_key = payload.job_key.strip()
     if (creating or new_key != job.JobKey) and db.query(Job.MasterObject_id).filter(Job.JobKey == new_key).first():
@@ -414,7 +437,8 @@ def apply_job(db: Session, payload: JobSave, existing_key: Optional[str], who: s
     try:
         if creating:
             job = Job(JobKey=new_key, JobType=job_type, Description=payload.description, IsActive=payload.active,
-                      SuccessReturnCodes=success_codes, CreatedBy=who)
+                      SuccessReturnCodes=success_codes, CreatedBy=who,
+                      Owner_MasterObject_id=owner.MasterObject_id if owner is not None else None)
             db.add(job)
             db.flush()
             changes.append(f"Created {'workflow' if job_type == 'WORKFLOW' else 'job'} '{new_key}'.")
@@ -437,7 +461,7 @@ def apply_job(db: Session, payload: JobSave, existing_key: Optional[str], who: s
     if job_type == "WORKFLOW":
         try:
             renamed = {} if creating else workflow_store.renames(job, payload.items)
-            changes += workflow_store.apply_items(db, job, payload.items, creating, renamed)
+            changes += workflow_store.apply_items(db, job, payload.items, creating, renamed, who=who, tree=tree)
             changes += workflow_store.apply_completion(job, payload.succeeds_when, payload.return_code_from,
                                                        creating, renamed)
         except workflow_store.WorkflowError as e:
@@ -497,6 +521,9 @@ def delete_job(db: Session, job_key: str, who: str) -> None:
     job = db.query(Job).filter(Job.JobKey == job_key).first()
     if not job:
         raise JobStoreError(f"No job with JobKey '{job_key}' exists.", status=404)
+    if job.Owner_MasterObject_id is not None:
+        raise JobStoreError(f"'{job_key}' is embedded in the workflow '{job.owner.JobKey}' and belongs to it. Take its "
+                            f"item out of that workflow to delete it.", status=409)
     using = workflow_store.workflows_using(db, job)
     if using:
         raise JobStoreError(f"Job '{job_key}' is used by the workflow{'s' if len(using) > 1 else ''} "
@@ -518,5 +545,7 @@ def delete_job(db: Session, job_key: str, who: str) -> None:
             f"Disable it instead: its history then keeps its link to the job.", status=409)
 
     _audit(db, None, "JOB_DELETED", who, {"job_key": job_key, "changes": [f"Deleted job '{job_key}'."]})
+    if job.JobType == "WORKFLOW":
+        workflow_store.delete_embedded_inside(db, job)
     db.delete(job)
     db.commit()

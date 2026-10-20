@@ -6,6 +6,23 @@ Notable structural, schema and design changes to AutoApp, newest first. Line-by-
 
 ## 2026-10-19
 
+### Workflows, Phase 6: embedded and shared workflows (frames)
+
+Plan: [WORKFLOWS_PHASE6.md](WORKFLOWS_PHASE6.md). Decisions D116 to D135 in [WORKFLOW_DECISIONS.md](WORKFLOW_DECISIONS.md) (D7 and D91 are now built). The rename warning below was its step 0.
+
+- **Schema:** none. The owner column of a job and the run items' path were already there; an embedded job's key is made from names (`MONTH_END.Transform.Enrich`) and follows renames until the job has run.
+- **Added (embedding):** a workflow can hold jobs and workflows of its own, to any depth, saved together in one Save: *+ New job here*, *+ New workflow here* and *+ Use an existing job here* in the editor, at the top and inside any frame. An embedded job belongs to its workflow: it is not in the lists or the search pages, is deleted with its item or its workflow, and its page says which workflow it belongs to. A check anywhere in the tree that fails saves nothing.
+- **Added (frames on the diagram):** an embedded workflow is drawn as a frame around its jobs, folded to one box (▾ ▸ or a double-click) with a summary, with lines across frame borders. In a run each frame shows its state and what is inside it ("2 running, 1 failed"), and the Outline nests. A workflow of its own that is used as a job is one box that opens inline, read only (a lock on each job; a click opens its page).
+- **Added (waiting across frames):** a job inside a frame can wait for any job in the same tree, in this run and never an earlier one; a wait whose job ended otherwise ends at once as not run. The frame as a whole waits like any item and gates everything inside. A loop through frames is refused, naming the path.
+- **Added (conditions and variables):** `%{Transform.Enrich.Status}` reads a job inside a frame; a workflow's variables reach every job inside its frames, the nearest workflow winning, then a use's own.
+- **Added (Find):** looks through the workflow, its frames and every workflow of its own it uses, to any depth, showing the path of each match and opening the way to it.
+- **Added (Make shared, Use an embedded copy):** an embedded job or workflow can be given a key of its own and listed (keeping its key keeps its working folder), and a shared one can be copied into the workflow so a use can differ. Both audited; secret values are copied without going through a page.
+- **Added (Needed by):** a workflow's page lists the jobs elsewhere that wait for it as a whole, or for a job in it (TO-DO 11).
+- **API:** `embedded` on a workflow item (an embedded job or workflow, saved with the workflow), `POST /api/v1/jobs/{key}/make-shared`, `POST /api/v1/jobs/{workflow}/items/{item}/embedded-copy`, `owner` and `needed_by` on a job, `inside` and `frame_run_id` on the items of a run. Nothing changes for callers that do not send them.
+- **Sample:** `DEV-FRAMES_SAMPLE` (seed section 10, also loaded into `autoapp_dev`).
+- **Measured:** a tree ten levels deep with thirty frames ran in about 11 seconds.
+- **Not done:** the arrowhead a little way into a folded frame; editing a frame's own Reactions and completion rules on the page (they are kept as saved); a line dragged between frames before the workflow is saved; the mockup was not updated. See WORKFLOWS_PHASE6.md.
+
 ### Renaming a job: a warning that says what it leaves behind (Workflows Phase 6, step 0)
 
 Decision D116 in [WORKFLOW_DECISIONS.md](WORKFLOW_DECISIONS.md). Working folders stay named by the job's key.

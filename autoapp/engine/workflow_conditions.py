@@ -120,7 +120,7 @@ def reference_problem(ref: str, names: Sequence[str],
     outside: the targets outside the workflow that the job's own prerequisites give names, as {name: kind}.
     """
     outside = outside or {}
-    name, output = split_ref(ref, list(outside))
+    name, output = split_ref(ref, list(outside) + [n for n in names if "." in n])
     if name == "Now":
         if output not in NOW_OUTPUTS:
             return f"{ref}: the time has {', '.join(NOW_OUTPUTS)}, as %{{Now.Time}}.", None
@@ -129,6 +129,8 @@ def reference_problem(ref: str, names: Sequence[str],
         return _outside_problem(ref, name, output, outside[name])
     if name not in names:
         return f"{ref}: no job in this workflow is named {name}.", None
+    if output and "." in output and output.split(".")[0] not in OUTPUTS:
+        return f"{ref}: nothing inside '{name}' is named '{output.split('.')[0]}'. Only jobs embedded in a workflow can be reached by a path.", None
     if not output:
         return f"{ref} is a job, not a value: write %{{{name}.Succeeded}}, %{{{name}.Status}} or another of its outputs.", None
     if output not in OUTPUTS:

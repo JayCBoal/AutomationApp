@@ -265,3 +265,33 @@ def test_the_outside_sample_waits_for_the_other_workflow_the_files_and_the_windo
     assert found == {("Load", "DEV-OUTSIDE_UPSTREAM.Extract"): ("HOLDS", upstream.RunID),
                      ("Load", "BILLING_ORDERS_IN"): ("HOLDS", None), ("Load", "Business_hours"): ("HOLDS", None),
                      ("Report", "Sunday"): ("SKIPPED", None)}
+
+
+def test_the_frames_sample_runs_its_frames_in_order_and_reads_inside_them_by_path(db, db_url, tmp_path):
+    """DEV-FRAMES_SAMPLE (docs/WORKFLOWS_PHASE6.md): Extract, then Transform (Enrich after FX_rates too), Report by path."""
+    load_seed(db)
+    for root in db.query(Variable).filter(Variable.VarName == "Root"):
+        root.VarValue = root.VarValue.replace("/tmp/autoapp_sample", str(tmp_path))
+    db.commit()
+    assert db.query(Job).filter(Job.JobKey == "DEV-FRAMES_SAMPLE.Transform.Enrich").one().owner.JobKey == "DEV-FRAMES_SAMPLE.Transform"
+
+    env = {**subprocess_env(db_url), "AUTOAPP_WORKFLOW_POLL_SECONDS": "0.2"}
+    result = subprocess.run([sys.executable, "-m", "engine.runner", "--job-key", "DEV-FRAMES_SAMPLE", "--instance-id", "4001",
+                             "--spool-dir", str(tmp_path / "spool"), "--working-root", str(tmp_path / "work")],
+                            cwd=AUTOAPP_DIR, env=env, capture_output=True, text=True, timeout=180)
+    assert result.returncode == 0, result.stdout[-3000:]
+
+    db.expire_all()
+    run = db.query(JobRun).filter(JobRun.JobKey == "DEV-FRAMES_SAMPLE").one()
+    top = {i.ItemName: i for i in db.query(WorkflowRunItem).filter_by(WorkflowRun_id=run.id)}
+    assert {name: i.Status for name, i in top.items()} == {"FX_rates": "SUCCESS", "Extract": "SUCCESS", "Transform": "SUCCESS",
+                                                           "Reporting": "SUCCESS", "Report": "SUCCESS"}
+    transform = db.query(JobRun).filter(JobRun.JobKey == "DEV-FRAMES_SAMPLE.Transform").one()
+    inner = {i.ItemName: i for i in db.query(WorkflowRunItem).filter_by(WorkflowRun_id=transform.id)}
+    assert inner["Enrich"].StartedDateTime >= top["FX_rates"].EndedDateTime           # Enrich waited for FX_rates
+    assert inner["Load"].StartedDateTime >= inner["Enrich"].EndedDateTime
+    assert top["Report"].StartedDateTime >= inner["Enrich"].EndedDateTime             # Report's rule read Enrich by its path
+    log = "\n".join(run_log(db.query(JobRun).filter(JobRun.RunID == inner["Load"].child_run.RunID).one()))
+    assert "Loading for US" in log                                                    # Load's own REGION wins over the frame's
+    enrich_log = "\n".join(run_log(db.query(JobRun).filter(JobRun.RunID == inner["Enrich"].child_run.RunID).one()))
+    assert "Enriching for EU" in enrich_log

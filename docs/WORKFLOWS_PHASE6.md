@@ -2,7 +2,7 @@
 
 The sixth phase of [WORKFLOWS.md](WORKFLOWS.md) ("Implementation in phases"): **a workflow can hold jobs and workflows of its own, drawn as frames, and reach into them.** It answers shortcoming 6 ([PROJECT_GOALS.md](PROJECT_GOALS.md) goal 2): in RunMyJobs a structural sub-chain is a separate object everyone can see, list and reuse by accident, and there is no way to say "all of these, then those" without chain steps.
 
-Status: **PLAN AGREED 2026-10-19 in a planning session (recorded as D116 to D128 in WORKFLOW_DECISIONS.md; nothing built).** Phase 5 was still being tested in another session. The owner answered the four open questions on 2026-10-19 (proposals 2, 5, 8, 10 and 11), and agreed the rest as written. Decisions are D116 to D128 in the register.
+Status: **BUILT 2026-10-20 (steps 0 to 7; see "What was built, and where it differs" at the end).** The plan was agreed 2026-10-19 in a planning session (D116 to D128 in WORKFLOW_DECISIONS.md); building added D129 to D135. The owner answered the four open questions on 2026-10-19 (proposals 2, 5, 8, 10 and 11), and agreed the rest as written.
 
 ## Starting point
 
@@ -90,3 +90,24 @@ Answered 2026-10-19: working folders stay named by the key, with a rename warnin
 - **Phase 5's resolver** looks for the other workflow's current or latest run. Inside one top-level run, an inner job's "outside the frame" target must be *this* run's, never "the latest": get this wrong and a re-run silently waits on yesterday's result. A test for it comes first.
 - **Many runner processes.** A workflow run is one process polling the database (D105), and every frame is a workflow run. A deep, wide tree means many processes at once. A test with a tree about ten levels deep and dozens of frames measures the load and the time to start; if it is too slow, fixing the engine (not a warning) is part of this phase.
 - **Keys that follow renames** touch many jobs at once when an owner is renamed; the rename of a workflow with embedded content is done in one transaction with the audit entries.
+
+## What was built, and where it differs
+
+Built 2026-10-20, steps 0 to 7, each with tests on both databases (see CHANGE_LOG.md for the behaviour).
+
+- **Step 0, the rename warning:** as planned (D116). Moving the folder is refused when one with the new name exists.
+- **Step 1, the model:** no new columns and no migration. The owner column and the run items' `Path` were enough; embedded keys are made from names (D117). `autoapp_dev` got the new sample (below) and nothing else.
+- **Step 2, the store:** one Save covers the whole tree: every embedded job is made first, then every prerequisite is wired, so a job in one frame can wait for one in another. Checks (names, rules, paths in conditions, loops through frames) run over the tree; a failed check anywhere saves nothing. Taking out an item deletes what is embedded in it, and is refused while a job in another tree waits for it. Make shared and Use an embedded copy are server actions (secret values come across without passing through a page).
+- **Step 3, the engine:** a frame is a child workflow run, as a shared workflow is. A job in a frame can wait for a job anywhere in the same tree, in this run only (D122: the test for it came first). Paths work in conditions (`%{Transform.Enrich.Status}`), variables reach what is inside, and Kill, Disable here, failure and "Kill the workflow" behave as on any item, the last for the frame only.
+- **Step 4, the pages:** the editor has *+ New job here*, *+ New workflow here*, *+ Use an existing job here* at the top and inside any frame, *Make shared…* and *Use an embedded copy*, and shows embedded items indented in the Outline. A workflow others wait for as a whole shows who on its page (TO-DO 11).
+- **Step 5, the diagram:** frames around their jobs to any depth (elkjs, nested layout), folded and opened by the arrow or a double-click, with lines across frame borders and into a folded frame; a run draws the frames with the state of what is inside ("2 running, 1 failed"); a workflow of its own is one box that opens inline, read only.
+- **Step 6, deep Find:** through frames and workflows of their own, with the path of each match, "n matches inside" on a folded frame or box, and a result that opens the way.
+- **Step 7, sample, docs and tests:** `DEV-FRAMES_SAMPLE` (seed section 10, and loaded into `autoapp_dev`).
+
+Differences from the plan, each in the register:
+
+- An embedded job made of steps is edited on its own page, not inside the workflow's form (D129).
+- Variables are fixed as each frame starts, not all at the top (D134); a frame Disabled here leaves no records for its inside (D135).
+- A wait inside the same tree ends at once when its target ended otherwise (D130); one on a frame that never started waits out its patience.
+- **Not done:** the arrowhead that goes "a little way in" to a folded frame (the line ends on the box); a frame's own Reactions and completion rules are kept as they are but not edited on the page (the job's own Reactions and Succeeds when stay as saved); dragging a line from a job in one frame to a job in another works only once the workflow has been saved, since the wait names the other frame by its key; what a job inside a frame waited for outside is not shown in the pane of a run; the mockup (`ui/mockup_workflow.html`) was not compared with the result and updated.
+- **Measured:** a tree ten levels deep with thirty frames (a runner process for each) ran in about 11 seconds with the runners polling every 0.2 s (the default is 1 s), so depth needed no change to the engine.

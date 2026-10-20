@@ -8,12 +8,13 @@ from sqlalchemy import case, func
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app import rename_store, tag_store
+from app import embed_store, rename_store, tag_store
+from app.workflow_errors import WorkflowError
 from app.job_store import JobStoreError, apply_job, delete_job, describe_job, inherited_variables, save_job
 from app.models import Job, JobRun, JobStep, JobStepParameter, Operation, Variable
 from app.schemas import (
     FieldPreview, JobCheckResult, JobDetail, JobInitRequest, JobInitResponse, JobPreview, JobSave, JobSaveResult,
-    JobStepPayloadSchema, JobSummary, LastRun, RenameFacts
+    JobStepPayloadSchema, JobSummary, LastRun, MakeShared, RenameFacts
 )
 from engine.step_catalog import ENDPOINT_SUFFIX
 from engine.handlers import get_handler
@@ -338,6 +339,40 @@ def rename_facts(job_key: str, db: Session = Depends(get_db)):
     if not job:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"No job with JobKey '{job_key}' exists.")
     return rename_store.rename_facts(db, job)
+
+
+@router.post("/{job_key}/make-shared", response_model=JobSaveResult)
+def make_shared(job_key: str, payload: MakeShared, db: Session = Depends(get_db)):
+    """Frees an embedded job (or workflow, with what is embedded in it) from its workflow, under a key of your choosing."""
+    job = db.query(Job).filter(Job.JobKey == job_key).first()
+    if not job:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"No job with JobKey '{job_key}' exists.")
+    try:
+        embed_store.make_shared(db, job, payload.job_key, payload.move_working_folder, EDITOR_NAME)
+        db.commit()
+    except WorkflowError as e:
+        db.rollback()
+        raise HTTPException(status_code=409, detail=str(e))
+    db.refresh(job)
+    return JobSaveResult(job=describe_job(job), valid=not job_problems(db, job), problems=job_problems(db, job),
+                         changes=[f"Made '{job.JobKey}' a job of its own."])
+
+
+@router.post("/{job_key}/items/{item_name}/embedded-copy", response_model=JobSaveResult)
+def embedded_copy(job_key: str, item_name: str, db: Session = Depends(get_db)):
+    """Makes the item run an embedded copy of the shared job it runs now, for when this use needs to differ."""
+    workflow = db.query(Job).filter(Job.JobKey == job_key, Job.JobType == "WORKFLOW").first()
+    if not workflow:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"No workflow with JobKey '{job_key}' exists.")
+    try:
+        copy = embed_store.embed_copy(db, workflow, item_name, EDITOR_NAME)
+        db.commit()
+    except WorkflowError as e:
+        db.rollback()
+        raise HTTPException(status_code=422, detail=str(e))
+    db.refresh(workflow)
+    return JobSaveResult(job=describe_job(workflow), valid=not job_problems(db, workflow), problems=job_problems(db, workflow),
+                         changes=[f"'{item_name}' now runs an embedded copy, '{copy.JobKey}'."])
 
 
 @router.delete("/{job_key}", status_code=status.HTTP_204_NO_CONTENT)

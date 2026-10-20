@@ -228,6 +228,8 @@ class WorkflowItemOut(BaseModel):
         "When it cannot start (a prerequisite can never hold, or ran out of patience): NOT_RUN or FAIL"))
     needed_by: List["NeededByOut"] = Field(default_factory=list, description=(
         "Jobs in other workflows that wait for this one"))
+    embedded: bool = Field(False, description="The job it runs is embedded in this workflow, and belongs to it")
+    contents: Optional["JobDetail"] = Field(None, description="With embedded: the embedded job as the page edits it")
 
 
 class JobDetail(BaseModel):
@@ -253,6 +255,9 @@ class JobDetail(BaseModel):
         "A workflow's completion rule: it ends with this job's return code. Empty: 0 if it succeeded, 1 if not"))
     used_in: List[str] = Field(default_factory=list, description="The workflows that use it, in name order")
     reactions: List[ReactionIO] = Field(default_factory=list, description="What happens after it ends, in order")
+    owner: Optional[str] = Field(None, description="The workflow this job is embedded in; empty for a job of its own")
+    needed_by: List[NeededByOut] = Field(default_factory=list, description=(
+        "A workflow: the jobs in other workflows that wait for it as a whole, or for a job in it"))
 
 
 class PrerequisiteSave(BaseModel):
@@ -282,7 +287,10 @@ class WorkflowItemSave(BaseModel):
     id: Optional[int] = Field(None, description="The item's id when changing an existing one; leave out for a new one")
     name: Optional[str] = Field(None, max_length=100, description=(
         "Its name in the workflow: letters, digits, '_' and '-'. Left out, it is made from the job key"))
-    job_key: str = Field(..., max_length=320, description="The job it runs")
+    job_key: str = Field("", max_length=320, description="The job it runs. Left out for an embedded one")
+    embedded: Optional["EmbeddedJobSave"] = Field(None, description=(
+        "The job or workflow this item runs, embedded in the workflow: it belongs to it, is hidden from the lists and "
+        "is saved with it. Its key is made from the owner's and the item's name"))
     join: str = Field("ALL", description="ALL, ANY or CUSTOM")
     rule: Optional[str] = Field(None, description=(
         "With CUSTOM: a condition over %{Name.Output} and ${...}; the jobs it names become its prerequisites"))
@@ -334,6 +342,12 @@ class JobSave(BaseModel):
         "this server's disk"))
 
 
+class MakeShared(BaseModel):
+    """Frees an embedded job from the workflow it belongs to."""
+    job_key: str = Field(..., max_length=320, description="Its key as a job of its own; its present key keeps it as it is")
+    move_working_folder: bool = Field(False, description="With a different key: move the working folder to the new key's name")
+
+
 class RenameFacts(BaseModel):
     """What renaming a job would leave behind, for the warning shown before a rename."""
     run_count: int
@@ -341,6 +355,11 @@ class RenameFacts(BaseModel):
     working_folder: Optional[str] = Field(None, description="The working folder on this server's disk, if it exists")
     can_move_folder: bool = Field(..., description="The folder can be moved with the job")
     needs_warning: bool = Field(..., description="The job has run history or a working folder")
+
+
+class EmbeddedJobSave(JobSave):
+    """A job or workflow embedded in a workflow, as its item sends it: a job with no key of its own to give."""
+    job_key: str = Field("", max_length=320)
 
 
 class JobSaveResult(BaseModel):
@@ -528,4 +547,7 @@ class FileTrace(BaseModel):
 
 
 JobStepOut.model_rebuild()
+WorkflowItemSave.model_rebuild()
+WorkflowItemOut.model_rebuild()
+JobDetail.model_rebuild()
 JobStepSave.model_rebuild()

@@ -221,6 +221,9 @@ class Job(MasterObject):
     # A workflow's items, in outline order
     items = relationship("WorkflowItem", foreign_keys="WorkflowItem.Workflow_MasterObject_id", backref="workflow",
                          cascade="all, delete-orphan", passive_deletes=True, order_by="WorkflowItem.ItemOrder")
+    # An embedded job's workflow (Phase 6); the jobs and workflows embedded in a workflow are its `embedded`
+    owner = relationship("Job", remote_side="Job.MasterObject_id", foreign_keys=[Owner_MasterObject_id],
+                         backref=backref("embedded", passive_deletes=True))
 
     __mapper_args__ = {
         'polymorphic_identity': 'JOB',

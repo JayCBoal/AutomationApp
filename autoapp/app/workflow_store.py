@@ -15,6 +15,11 @@ Rules:
   - A Custom rule (join CUSTOM; docs/WORKFLOWS_PHASE4.md) is a condition over the jobs it names,
     which become its prerequisites (test RULE), so nothing else has to read the rule to see
     what waits for what. A rule may name no job at all, and test only variables.
+  - A job or workflow can be embedded (docs/WORKFLOWS_PHASE6.md): the item carries the job itself, which belongs to the
+    workflow (its Owner), is hidden from the lists and is saved, and deleted, with it. Its key is made from the
+    owner's key and the item's name, and follows renames until the job has run (D117). One Save covers the whole
+    tree: every embedded job is made first, then every prerequisite is wired, since a job in one frame can wait for
+    a job in another. A condition reaches inside a frame by a path, %{Transform.Enrich.Status}.
   - Renaming a job renames it in the rules that name it, and in the completion rules.
   - Completion rules: Succeeds when (a condition over any of its jobs) and Return code from (one
     of its jobs, by name). Empty means the default.
@@ -22,13 +27,13 @@ Rules:
 import re
 from typing import Dict, List, Optional, Set
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, object_session
 
 from app import outside_store, reaction_store
 from app.workflow_errors import WorkflowError
-from app.models import Job, WorkflowItem, WorkflowItemVariable, WorkflowPrerequisite
+from app.models import Job, JobRun, WorkflowItem, WorkflowItemVariable, WorkflowPrerequisite
 from app.schemas import PrerequisiteSave, WorkflowItemOut, WorkflowItemSave
-from engine import return_codes, workflow_conditions, workflow_vars
+from engine import frames, return_codes, workflow_conditions, workflow_vars
 
 TEST_WORDS = {"SUCCESS": "succeeded", "FAILED": "failed", "ENDED": "ended", "RC": "gave return codes",
               "RULE": "is named in its rule"}
@@ -51,9 +56,18 @@ def describe_items(job: Job) -> List[WorkflowItemOut]:
             reactions_overridden=bool(item.ReactionsOverridden),
             reactions=reaction_store.describe(item.reactions) if item.ReactionsOverridden else [],
             job_reactions=reaction_store.describe(item.job.reactions),
-            variables=_describe_variables(item.variables))
+            variables=_describe_variables(item.variables),
+            embedded=frames.is_embedded_in(item.job, job), contents=_contents(job, item))
         for item in job.items
     ]
+
+
+def _contents(workflow: Job, item: WorkflowItem):
+    """An embedded job as the page edits it, inside its item; nothing for a job of its own."""
+    if not frames.is_embedded_in(item.job, workflow):
+        return None
+    from app.job_store import describe_job
+    return describe_job(item.job)
 
 
 def _describe_variables(variables):
@@ -207,13 +221,20 @@ def _check_no_loops(names: List[str], submitted: List[WorkflowItemSave]) -> None
                             "To run jobs again, a Rerun from… Reaction will repeat them, up to a limit (not built yet).")
 
 
-def _jobs_used(db: Session, submitted: List[WorkflowItemSave], names: List[str]) -> Dict[str, Job]:
+def _jobs_used(db: Session, workflow: Job, submitted: List[WorkflowItemSave], names: List[str],
+               embedded: Dict[str, Job]) -> Dict[str, Job]:
     jobs = {}
     for name, item in zip(names, submitted):
+        if name in embedded:
+            jobs[name] = embedded[name]
+            continue
         key = item.job_key.strip()
         job = db.query(Job).filter(Job.JobKey == key).first()
         if not job:
             raise WorkflowError(f"'{name}' runs the job '{key}', which does not exist.")
+        if job.Owner_MasterObject_id is not None and job.Owner_MasterObject_id != workflow.MasterObject_id:
+            raise WorkflowError(f"'{name}' runs '{key}', which is embedded in the workflow '{job.owner.JobKey}' and "
+                                f"belongs to it. Make it shared there first, or use an embedded copy.")
         jobs[name] = job
     return jobs
 
@@ -247,24 +268,42 @@ def _check_not_itself(db: Session, workflow: Job, jobs: Dict[str, Job]) -> None:
 
 # ---------- Saving ----------
 
+class Tree:
+    """
+    What one Save of a workflow covers: the workflow and everything embedded in it. Each workflow's
+    prerequisites are wired once every job of the tree exists, so a job can wait for one in another frame.
+    """
+    def __init__(self):
+        self.path: List[str] = []                       # the item names from the top down to the workflow being saved
+        self.wiring: List[tuple] = []                   # (where, function that wires one workflow and returns what changed)
+        self.removed: List[Job] = []                    # embedded jobs no item uses any more, deleted at the end
+        self.workflows = 0
+
+    def here(self) -> str:
+        return ".".join(self.path)
+
+
 def apply_items(db: Session, workflow: Job, submitted: List[WorkflowItemSave], creating: bool,
-                renamed: Optional[Dict[str, str]] = None) -> List[str]:
+                renamed: Optional[Dict[str, str]] = None, who: str = "", tree: Optional[Tree] = None) -> List[str]:
     """
     Makes the workflow's items and prerequisites match those submitted. renamed: the jobs this save
-    renames (renames()), carried into the Custom rules. Returns what changed, in words.
+    renames (renames()), carried into the Custom rules. tree: given for a workflow embedded in the one
+    being saved, which leaves its wiring to the top. Returns what changed, in words.
     """
+    top = tree is None
+    tree = tree or Tree()
+    tree.workflows += 1
     names = _names(submitted)
     _check_names(names)
+    embedded, changes = _apply_embedded(db, workflow, names, submitted, creating, who, tree)
     submitted = [s.model_copy(update={"prerequisites": outside_store.with_names(s.prerequisites, names)}) for s in submitted]
     submitted = with_rules_applied(submitted, renamed or {})
-    _check_outside(db, workflow, names, submitted)
+    jobs = _jobs_used(db, workflow, submitted, names, embedded)
     _check_prerequisites(names, submitted)
-    _check_rules(names, submitted)
+    _check_rules(names + frames.inner_paths(jobs, workflow), submitted)
     _check_no_loops(names, submitted)
-    jobs = _jobs_used(db, submitted, names)
     _check_not_itself(db, workflow, jobs)
     _check_uses(db, workflow, names, submitted)
-    outside_store.check_no_loops_between_workflows(db, workflow, names, submitted)
 
     current = {item.id: item for item in workflow.items}
     for s in submitted:
@@ -272,10 +311,32 @@ def apply_items(db: Session, workflow: Job, submitted: List[WorkflowItemSave], c
             raise WorkflowError(f"Item id {s.id} does not belong to workflow '{workflow.JobKey}'.")
     submitted_ids = [s.id for s in submitted if s.id is not None]
     old_order = [item.id for item in sorted(current.values(), key=lambda i: i.ItemOrder) if item.id in submitted_ids]
-    changes: List[str] = []
-    kept = _apply_item_rows(workflow, submitted, names, jobs, current, creating, changes)
-    _remove_left_out(workflow, current, kept, changes)
+    kept = _apply_item_rows(db, workflow, submitted, names, jobs, current, creating, changes, tree)
+    _remove_left_out(db, workflow, current, kept, changes, tree)
     db.flush()                          # every item has its id before prerequisites point at it
+    tree.wiring.append((tree.here(), lambda: _wire(db, workflow, names, submitted, creating, old_order, submitted_ids)))
+    return changes + (wire_tree(db, workflow, tree) if top else [])
+
+
+def wire_tree(db: Session, workflow: Job, tree: Tree) -> List[str]:
+    """Wires every workflow of the tree, then deletes the embedded jobs nothing uses, and checks for loops across frames."""
+    changes: List[str] = []
+    for where, wire in tree.wiring:
+        changes += [f"In '{where}': {line}" if where else line for line in wire()]
+    db.flush()
+    for job in tree.removed:
+        delete_embedded(db, job)
+    if tree.workflows > 1:
+        outside_store.check_tree_loops(db, workflow)
+    return changes
+
+
+def _wire(db: Session, workflow: Job, names: List[str], submitted: List[WorkflowItemSave], creating: bool,
+          old_order: List[int], submitted_ids: List[int]) -> List[str]:
+    """The prerequisites, Disable here and Reactions of the workflow's items, once every job of the tree exists."""
+    changes: List[str] = []
+    _check_outside(db, workflow, names, submitted)
+    outside_store.check_no_loops_between_workflows(db, workflow, names, submitted)
     by_name = {item.ItemName: item for item in workflow.items}
     for name, s in zip(names, submitted):
         if _apply_prerequisites(db, by_name[name], s, by_name) and not creating and s.id is not None:
@@ -288,7 +349,104 @@ def apply_items(db: Session, workflow: Job, submitted: List[WorkflowItemSave], c
     return changes
 
 
-def _apply_item_rows(workflow, submitted, names, jobs, current, creating, changes) -> Set[int]:
+# ---------- Embedded jobs and workflows ----------
+
+def embedded_key(db: Session, workflow: Job, name: str, existing: Optional[Job]) -> str:
+    """
+    The key of the job embedded as `name`: the owner's key, a dot, the name. It follows renames of the item and of
+    its owners until the job has run, since its working folder holds files by then (D117).
+    """
+    if existing is not None and _has_run(db, existing):
+        return existing.JobKey
+    key = f"{workflow.JobKey}.{name}"
+    if len(key) > 320:
+        raise WorkflowError(f"'{name}' would get a key of {len(key)} characters ({key[:30]}...), and 320 is the most. "
+                            f"Shorten its name, or the name of a workflow above it.")
+    return key
+
+
+def _has_run(db: Session, job: Job) -> bool:
+    return db.query(JobRun.id).filter((JobRun.Job_MasterObject_id == job.MasterObject_id) | (JobRun.JobKey == job.JobKey)).first() is not None
+
+
+def _apply_embedded(db: Session, workflow: Job, names: List[str], submitted: List[WorkflowItemSave], creating: bool,
+                    who: str, tree: Tree) -> tuple:
+    """Makes or changes each embedded job the items carry, and keeps the keys of the others in step with the names."""
+    from app.job_store import JobStoreError, apply_job
+    current = {item.id: item for item in workflow.items}
+    jobs: Dict[str, Job] = {}
+    changes: List[str] = []
+    for name, s in zip(names, submitted):
+        item = current.get(s.id)
+        have = item.job if item is not None and frames.is_embedded_in(item.job, workflow) else None
+        if s.embedded is None:
+            if have is not None:
+                rekey(db, workflow, name, have)
+                jobs[name] = have
+            continue
+        payload = s.embedded.model_copy(update={"job_key": embedded_key(db, workflow, name, have)})
+        tree.path.append(name)
+        try:
+            job, said = apply_job(db, payload, have.JobKey if have else None, who, owner=workflow, tree=tree)
+        except JobStoreError as e:
+            raise WorkflowError(f"'{name}': {e}")
+        finally:
+            tree.path.pop()
+        jobs[name] = job
+        if have is None and not creating:
+            changes.append(f"Added '{name}' (embedded {'workflow' if job.JobType == 'WORKFLOW' else 'job'}).")
+        elif not creating:
+            changes += [f"In '{name}': {line}" for line in said if not line.startswith("Renamed from")]
+    return jobs, changes
+
+
+def rekey(db: Session, workflow: Job, name: str, job: Job) -> None:
+    """An embedded job nobody resaved: its key follows the names above it, and so do those of the jobs embedded in it."""
+    key = embedded_key(db, workflow, name, job)
+    if key != job.JobKey:
+        if db.query(Job.MasterObject_id).filter(Job.JobKey == key).first():
+            raise WorkflowError(f"'{name}' would get the key '{key}', which another job already has.")
+        job.JobKey = key
+    for item in job.items:
+        if frames.is_embedded_in(item.job, job):
+            rekey(db, job, item.ItemName, item.job)
+
+
+def delete_embedded(db: Session, job: Job) -> None:
+    """Deletes an embedded job, and everything embedded in it."""
+    for waiter in [p for target in [job] + list(job.items) for p in target.waiters if not _inside(p.item.workflow, job)]:
+        db.delete(waiter)
+    inner = [item.job for item in job.items if frames.is_embedded_in(item.job, job)]
+    job.items.clear()
+    db.flush()
+    for child in inner:
+        delete_embedded(db, child)
+    db.delete(job)
+    db.flush()
+
+
+def delete_embedded_inside(db: Session, workflow: Job) -> None:
+    """Deletes what is embedded in a workflow that is itself being deleted."""
+    for item in list(workflow.items):
+        if frames.is_embedded_in(item.job, workflow):
+            _check_nothing_waits_for(item.job)
+    inner = [item.job for item in workflow.items if frames.is_embedded_in(item.job, workflow)]
+    workflow.items.clear()
+    db.flush()
+    for frame in inner:
+        delete_embedded(db, frame)
+
+
+def _inside(workflow: Job, frame: Job) -> bool:
+    """Whether a workflow is the frame or embedded, at any depth, in it."""
+    while workflow is not None:
+        if workflow is frame:
+            return True
+        workflow = workflow.owner
+    return False
+
+
+def _apply_item_rows(db, workflow, submitted, names, jobs, current, creating, changes, tree) -> Set[int]:
     kept: Set[int] = set()
     for position, (name, s) in enumerate(zip(names, submitted), start=1):
         job = jobs[name]
@@ -302,6 +460,8 @@ def _apply_item_rows(workflow, submitted, names, jobs, current, creating, change
             continue
         item = current[s.id]
         kept.add(item.id)
+        if frames.is_embedded_in(item.job, workflow) and item.Job_MasterObject_id != job.MasterObject_id:
+            tree.removed.append(item.job)           # the item now runs something else: what was embedded goes
         what = []
         if item.ItemName != name:
             what.append(f"renamed from '{item.ItemName}'")
@@ -322,7 +482,7 @@ def _apply_item_rows(workflow, submitted, names, jobs, current, creating, change
     return kept
 
 
-def _remove_left_out(workflow: Job, current: dict, kept: Set[int], changes: List[str]) -> None:
+def _remove_left_out(db: Session, workflow: Job, current: dict, kept: Set[int], changes: List[str], tree: Tree) -> None:
     for item_id, item in current.items():
         if item_id not in kept:
             waiting = outside_store.waiting_for_use(item)
@@ -330,7 +490,21 @@ def _remove_left_out(workflow: Job, current: dict, kept: Set[int], changes: List
                 raise WorkflowError(f"'{item.ItemName}' cannot be taken out: {', '.join(waiting)} "
                                     f"wait{'s' if len(waiting) == 1 else ''} for it. Change what they wait for first.")
             changes.append(f"Removed '{item.ItemName}'.")
+            embedded = item.job if frames.is_embedded_in(item.job, workflow) else None
+            if embedded is not None:
+                _check_nothing_waits_for(embedded)
             workflow.items.remove(item)
+            if embedded is not None:
+                db.flush()
+                delete_embedded(db, embedded)
+
+
+def _check_nothing_waits_for(frame: Job) -> None:
+    """Refuses to take out a frame that a job in another tree waits for, or a job inside it."""
+    waiting = outside_store.waiting_for_workflow(object_session(frame), frame)
+    if waiting:
+        raise WorkflowError(f"'{frame.JobKey}' cannot be taken out: {', '.join(waiting)} wait for it or for a job in it. "
+                            f"Change what they wait for first.")
 
 
 def _check_outside(db: Session, workflow: Job, names: List[str], submitted: List[WorkflowItemSave]) -> None:

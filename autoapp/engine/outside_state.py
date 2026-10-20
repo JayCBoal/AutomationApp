@@ -14,7 +14,7 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy.orm import Session
 
 from engine import conditions, outside, workflow_conditions
-from engine.prerequisites import HOLDS, SKIPPED_OPTIONAL, TIMED_OUT, WAIT, prerequisite_state
+from engine.prerequisites import FINAL, HOLDS, NEVER, SKIPPED_OPTIONAL, TIMED_OUT, WAIT, prerequisite_state
 
 
 @dataclass
@@ -59,6 +59,7 @@ class Outside:
     deadline: Optional[float] = None    # time.time() when its patience ends, once that is known
     unlimited: bool = False
     check: Any = None                   # the WorkflowPrerequisiteCheck row kept for this attempt
+    tree_run_id: Optional[int] = None   # set when the target is in the same tree: look only in this run of it (D122)
 
     def blank_values(self) -> Dict[str, Any]:
         """Every value it offers to conditions, unknown."""
@@ -85,13 +86,18 @@ class Outside:
 
     def _look_at_job(self, ctx: Context) -> None:
         after = ctx.run_started if self.only_after_start else None
-        if self.target_item_id is not None:
+        if self.tree_run_id is not None:
+            found = (outside.find_job_in_tree(ctx.db, self.target_item_id, self.tree_run_id)
+                     if self.target_item_id is not None
+                     else outside.find_workflow_in_tree(ctx.db, self.target_workflow_id, self.tree_run_id))
+        elif self.target_item_id is not None:
             found = outside.find_job(ctx.db, self.target_item_id, self.look_back_hours, after, ctx.utc_now)
         else:
             found = outside.find_workflow(ctx.db, self.target_workflow_id, self.look_back_hours, after, ctx.utc_now)
         self.holding, self.values, self.run_id, self.seen = False, self.blank_values(), None, None
         if found is None:
-            self.words = f"No run of '{self.name}' counts yet."
+            self.words = (f"'{self.name}' has not started in this run." if self.tree_run_id is not None
+                          else f"No run of '{self.name}' counts yet.")
             return
         self.run_id, self.seen = found.run_id, found.status
         self.values = workflow_conditions.item_values(self.name, found.status, found.code, found.reason,
@@ -124,11 +130,14 @@ class Outside:
         or SKIPPED (optional). Once it has timed out or been skipped it stays so for this attempt.
         held: when each prerequisite of the job first held (by id); others: the ids of the job's other prerequisites.
         """
-        if self.state in (TIMED_OUT, SKIPPED_OPTIONAL):
+        if self.state in (TIMED_OUT, SKIPPED_OPTIONAL, NEVER):
             return self.state
         if self.holding:
             self.state = HOLDS
             return HOLDS
+        if self.tree_run_id is not None and self.seen in FINAL:
+            self.state = NEVER              # it ended in this run, not as wanted, and will not change
+            return NEVER
         self.deadline = self.patience_ends(ctx, held, others, run_start_ts)
         if self.deadline is not None and ctx.ts_now >= self.deadline:
             self.state = TIMED_OUT if self.required else SKIPPED_OPTIONAL

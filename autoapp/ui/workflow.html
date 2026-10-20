@@ -134,12 +134,13 @@
                 </aside>
             </div>
             <ul class="wf-outline" id="run-items" x-show="view === 'outline'">
-                <template x-for="item in run.items" :key="item.path">
-                    <li class="wf-row" :data-name="item.name">
+                <template x-for="item in runFlat" :key="item.path">
+                    <li class="wf-row" :data-name="item.name" :data-path="item.path" :style="{ marginLeft: (item.depth * 22) + 'px' }">
                         <span class="wf-state" :class="item.status" x-text="stateWords(item)"></span>
                         <span class="wf-name" x-text="item.name"></span>
-                        <span class="muted small" x-text="'job ' + item.job_key"></span>
-                        <a x-show="item.run_id" :href="logLink(item.run_id)">Log</a>
+                        <span class="muted small" x-text="(item.frame_run_id ? 'workflow ' : 'job ') + item.job_key"></span>
+                        <span class="muted small run-inside" x-show="item.frame_run_id" x-text="insideWords(item)"></span>
+                        <a x-show="item.run_id || item.frame_run_id" :href="logLink(item.run_id || item.frame_run_id)">Log</a>
                         <button type="button" class="link small kill-item" x-show="item.status === 'RUNNING'" @click="killItem(item)">Kill</button>
                         <span class="muted small run-waiting" x-show="item.waiting_for" x-text="item.waiting_for"></span>
                         <template x-for="(check, i) in checksFor(item.path)" :key="i">
@@ -174,6 +175,13 @@
                     <textarea id="workflow-description" rows="2" x-model="form.description" :disabled="!editing"></textarea>
                     <label for="workflow-enabled">Enabled</label>
                     <div><input id="workflow-enabled" type="checkbox" x-model="form.active" :disabled="!editing"></div>
+                    <span class="label" x-show="job && job.needed_by && job.needed_by.length">Needed by</span>
+                    <div id="workflow-needed-by" x-show="job && job.needed_by && job.needed_by.length">
+                        <template x-for="(by, n) in job ? job.needed_by : []" :key="n">
+                            <span><a :href="'workflow.html?key=' + encodeURIComponent(by.workflow)" x-text="by.job + ' in ' + by.workflow"></a><span x-show="n < job.needed_by.length - 1">, </span></span>
+                        </template>
+                        <span class="muted small">wait for this workflow, or for a job in it</span>
+                    </div>
                     <span class="label">Would it run?</span>
                     <div id="runnability">
                         <span class="ready-text" x-show="check && check.valid">Ready to run</span>
@@ -221,13 +229,15 @@
                         <input type="checkbox" id="show-external" x-model="showExternal" @change="rememberExternal()"> Show external references</label>
                     <label class="small" x-show="view === 'diagram'" title="Files and times, which run nothing. Off: small icons in the header of the box they apply to">
                         <input type="checkbox" id="show-conditions" x-model="showConditions" @change="rememberExternal()"> Show non-executable dependencies</label>
-                    <input type="search" id="find" x-model="find" placeholder="Find a job" aria-label="Find a job in this workflow">
+                    <input type="search" id="find" x-model="find" placeholder="Find a job" aria-label="Find a job in this workflow, in its frames and in the workflows it uses"
+                           x-effect="loadFindDetails(find)">
                     <span class="muted small" id="find-count" x-show="find.trim()"
-                          x-text="found.length ? found.length + ' found' : 'No job here has a name containing that'"></span>
+                          x-text="foundAll.length ? foundAll.length + ' found' : 'No job here has a name containing that'"></span>
                 </div>
-                <ul class="wf-results" id="find-results" x-show="found.length">
-                    <template x-for="item in found" :key="item.uid">
-                        <li><button type="button" @click="view === 'diagram' ? showFound(item) : null" x-text="nameOf(item.uid)"></button></li>
+                <ul class="wf-results" id="find-results" x-show="foundAll.length">
+                    <template x-for="entry in foundAll" :key="entry.id">
+                        <li><button type="button" @click="view === 'diagram' ? showFound(entry) : null" x-text="entry.label"
+                                    :title="entry.uid ? 'Show matches: opens the way to it' : 'Inside a workflow of its own: opens it inline, read only'"></button></li>
                     </template>
                 </ul>
                 <p class="muted small wf-hint" x-show="view === 'diagram' && !sideShown"
@@ -245,15 +255,20 @@
                             title="Hide this pane; select a box to show it again">Hide Job pane ×</button>
                 </div>
                 <ul class="wf-outline" id="outline">
-                    <template x-for="(item, index) in form.items" :key="item.uid">
+                    <template x-for="item in outlineItems" :key="item.uid">
                         <li class="wf-item" :data-name="nameOf(item.uid)" x-show="isShown(item)"
-                            :class="{ found: view === 'outline' && found.includes(item) }">
+                            :class="{ found: view === 'outline' && found.includes(item), 'wf-frame-item': item.embedded && item.jobType === 'WORKFLOW' }"
+                            :style="view === 'outline' ? { marginLeft: (depthOf(item) * 22) + 'px' } : null"
+                            :data-depth="depthOf(item)">
                             <!-- Locked: the outline in words -->
                             <template x-if="!editing">
                                 <div>
                                     <div class="wf-row">
                                         <span class="wf-name" x-text="nameOf(item.uid)"></span>
-                                        <a class="small" :href="jobLink(item)" x-text="'job ' + item.job_key"></a>
+                                        <a class="small" :href="jobLink(item)" x-show="!(item.embedded && item.jobType === 'WORKFLOW')"
+                                           x-text="(item.embedded ? 'embedded job ' : 'job ') + item.job_key"></a>
+                                        <span class="small muted" x-show="item.embedded && item.jobType === 'WORKFLOW'"
+                                              x-text="'frame ' + item.job_key + ' (its jobs are indented below it)'"></span>
                                         <span class="tag" x-show="item.join === 'ANY'" title="Starts when any one of its prerequisites holds">Any</span>
                                         <span class="tag" x-show="item.join === 'CUSTOM'" title="Starts when its Custom rule holds">Custom rule</span>
                                         <span class="tag disabled-here" x-show="item.disabled_here" x-text="disabledHereWords(item)"></span>
@@ -285,17 +300,21 @@
                             <template x-if="editing">
                                 <div class="wf-edit">
                                     <div class="wf-row">
-                                        <button type="button" class="tool" title="Up" @click="moveItem(index, -1)" :disabled="index === 0">▲</button>
-                                        <button type="button" class="tool" title="Down" @click="moveItem(index, 1)"
-                                                :disabled="index === form.items.length - 1">▼</button>
-                                        <label>Job <input type="text" class="item-job" list="job-keys" x-model="item.job_key"
-                                                          @focus="nameBefore = nameOf(item.uid)" @change="renamed(nameBefore, nameOf(item.uid))"
+                                        <button type="button" class="tool" title="Up" @click="moveItem(item, -1)" :disabled="isFirst(item)">▲</button>
+                                        <button type="button" class="tool" title="Down" @click="moveItem(item, 1)"
+                                                :disabled="isLast(item)">▼</button>
+                                        <label x-show="!item.embedded">Job <input type="text" class="item-job" list="job-keys" x-model="item.job_key"
+                                                          @focus="nameBefore = nameOf(item.uid)" @change="renamed(nameBefore, nameOf(item.uid), item)"
                                                           placeholder="Type to find a job" autocomplete="off"></label>
-                                        <a class="small open-job" target="_blank" rel="noopener" :href="jobLink(item)" x-show="knownJob(item)"
+                                        <span class="small embedded-note" x-show="item.embedded"
+                                              :title="'It belongs to this workflow, is not in the lists, and goes when the item goes. Its key follows the names above it until it has run.'"
+                                              x-text="(item.jobType === 'WORKFLOW' ? 'Embedded workflow ' : 'Embedded job ') + (item.job_key || '(its key is made when you save)')"></span>
+                                        <a class="small open-job" target="_blank" rel="noopener" :href="jobLink(item)"
+                                           x-show="knownJob(item) && !(item.embedded && item.jobType === 'WORKFLOW')"
                                            title="Opens the job in a new tab. Saving it there does not touch this workflow.">Open job ↗</a>
                                         <label>Named <input type="text" class="item-name" x-model="item.name" maxlength="100"
-                                                            @focus="nameBefore = nameOf(item.uid)" @change="renamed(nameBefore, nameOf(item.uid))"
-                                                            :placeholder="placeholder(item)"></label>
+                                                            @focus="nameBefore = nameOf(item.uid)" @change="renamed(nameBefore, nameOf(item.uid), item)"
+                                                            :placeholder="item.embedded ? 'Name it' : placeholder(item)"></label>
                                         <label class="wf-disabled-here" title="Only in this workflow: the job itself stays as it is">Here it
                                             <select class="item-disabled-here" x-model="item.disabled_here">
                                                 <option value="">runs</option>
@@ -330,7 +349,7 @@
                                         </template>
                                         <li x-show="!item.prerequisites.length" class="muted small">Starts when the workflow starts</li>
                                         <li><button type="button" class="link small add-prerequisite" @click="addPrerequisite(item)"
-                                                    :disabled="form.items.length < 2">+ Wait for another job</button></li>
+                                                    :disabled="others(item).length < 1">+ Wait for another job</button></li>
                                     </ul>
                                     <ul class="wf-outside-list">
                                         <template x-for="(o, oIndex) in item.outside" :key="o.uid">
@@ -505,8 +524,38 @@
                     </div>
                                         <button type="button" class="link small add-use-variable" @click="addVariable(item.variables)">+ Add a variable here</button>
                                     </fieldset>
-                                    <button type="button" class="link small remove-item" @click="removeItem(index)"
-                                            title="Take this job out of the workflow">Remove this job</button>
+                                    <template x-if="item.embedded">
+                                    <fieldset class="wf-embedded">
+                                        <legend x-text="item.jobType === 'WORKFLOW' ? 'This workflow (a frame)' : 'This job'"></legend>
+                                        <label>Description <input type="text" class="embedded-description" x-model="item.inner.description"></label>
+                                        <label><input type="checkbox" class="embedded-active" x-model="item.inner.active"> Enabled</label>
+                                        <p class="muted small" x-show="item.jobType === 'STEPS' && !item.id">Save the workflow first, then open this job to give it steps.</p>
+                                        <div x-show="item.jobType === 'WORKFLOW'" class="wf-frame-tools">
+                                            <p class="muted small">Its jobs are indented below it. What it carries reaches every job inside it.</p>
+                                            <button type="button" class="link small add-inside-existing" @click="addItem(item.uid, 'existing')">+ Use an existing job here</button>
+                                            <button type="button" class="link small add-inside-job" @click="addItem(item.uid, 'job')">+ New job here</button>
+                                            <button type="button" class="link small add-inside-workflow" @click="addItem(item.uid, 'workflow')">+ New workflow here</button>
+                                            <h4 class="small">Variables of this workflow</h4>
+                                            <template x-for="(variable, vIndex) in item.inner ? item.inner.variables : []" :key="variable.uid">
+                                                <div class="wf-row" :data-variable="variable.uid">
+                                                    <input type="text" class="variable-name" x-model="variable.name" maxlength="100" placeholder="For example Region" aria-label="Variable name">
+                                                    <input :type="variable.secret ? 'password' : 'text'" class="variable-value" x-model="variable.value" aria-label="Variable value" autocomplete="off"
+                                                           :placeholder="variable.secret && variable.savedSecret ? 'Set. Type a new value to replace it.' : ''">
+                                                    <label class="small"><input type="checkbox" class="variable-secret" x-model="variable.secret"> Secret</label>
+                                                    <button type="button" class="link small remove-variable" @click="removeVariable(item.inner.variables, vIndex)">Remove</button>
+                                                </div>
+                                            </template>
+                                            <button type="button" class="link small add-frame-variable" @click="addVariable(item.inner.variables)">+ Add a variable to this workflow</button>
+                                        </div>
+                                    </fieldset>
+                                    </template>
+                                    <button type="button" class="link small make-shared" x-show="item.embedded && item.id" @click="makeShared(item)"
+                                            title="Give it a key of its own and list it, so other workflows can use it">Make shared…</button>
+                                    <button type="button" class="link small embed-copy" x-show="!item.embedded && item.id && knownJob(item)" @click="embedCopy(item)"
+                                            title="Run a copy of this job that belongs to this workflow, so this use can differ. Later changes to the original do not reach it">Use an embedded copy</button>
+                                    <button type="button" class="link small remove-item" @click="removeItem(item)"
+                                            :title="item.embedded ? 'Take this out of the workflow. It is deleted with everything in it' : 'Take this job out of the workflow'"
+                                            x-text="item.embedded ? 'Remove this and delete it' : 'Remove this job'"></button>
                                 </div>
                             </template>
                             <!-- Its steps, read only, and where each ${Name} in them gets its value here -->
@@ -515,7 +564,7 @@
                                 <summary>Steps of this job</summary>
                                 <p class="muted small">Read only. <a class="open-job-steps" target="_blank" rel="noopener" :href="jobLink(item)">Open the job in a new tab</a>
                                     to change it. Saving it there does not touch this workflow; reload this page to see the change.</p>
-                                <p class="muted small" x-show="isWorkflowJob(item)">This job is itself a workflow: open it to see its jobs.</p>
+                                <p class="muted small" x-show="isWorkflowJob(item) && !item.embedded">This job is itself a workflow: open it to see its jobs.</p>
                                 <ol class="wf-step-list">
                                     <template x-for="row in stepRows(item)" :key="row.key">
                                         <li :style="{ paddingLeft: (row.depth * 16) + 'px' }" :class="{ muted: !row.active }">
@@ -546,7 +595,13 @@
                 </ul>
                 </div>
                 </div>
-                <button type="button" class="secondary" id="add-job" x-show="editing" @click="addItem()">+ Add a job</button>
+                <span x-show="editing">
+                    <button type="button" class="secondary" id="add-job" @click="addItem()">+ Add a job</button>
+                    <button type="button" class="secondary" id="add-new-job" @click="addItem(null, 'job')"
+                            title="A job that belongs to this workflow and is not in the lists">+ New job here</button>
+                    <button type="button" class="secondary" id="add-new-workflow" @click="addItem(null, 'workflow')"
+                            title="A workflow that belongs to this one, drawn as a frame around its jobs">+ New workflow here</button>
+                </span>
                 <details class="wf-key" x-show="view === 'diagram'">
                     <summary>Key</summary>
                     <div class="wf-legend" id="key" x-effect="drawKey($el)"></div>

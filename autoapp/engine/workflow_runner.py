@@ -48,6 +48,8 @@ from sqlalchemy.orm import Session
 
 from app.models import (ConditionCheck, Job, JobRun, ReactionEvent, WorkflowPrerequisite, WorkflowPrerequisiteCheck,
                         WorkflowRunItem, utcnow)
+from engine import frames
+from engine.frames import tree_top
 from engine import conditions, job_log, log_files, outside, settings, workflow_conditions, workflow_vars
 from engine.outside_state import Context, Outside
 from engine.prerequisites import FINAL, HOLDS, NEVER, TIMED_OUT, WAIT, SKIPPED_OPTIONAL, prerequisite_state
@@ -105,6 +107,7 @@ class Planned:
     held: Dict[int, float] = field(default_factory=dict)    # when each prerequisite first held, by id: patience counts from these
     on_unmet: str = "NOT_RUN"       # what happens when it can't start: NOT_RUN or FAIL
     attempt_waited: int = -1        # the attempt the waiting message was last said for
+    job: Optional[Job] = None       # the job it runs
 
 
 # ---------- Whether a job may start ----------
@@ -181,6 +184,8 @@ def why_never(planned: Planned, by_name: Dict[str, Planned]) -> str:
             continue
         need = NEEDS[test] + (f" {codes}" if test == "RC" else "")
         reasons.append(f"it waits for '{target}' to {need}, and '{target}' {outcome_words(row)}")
+    reasons += [f"it waits for '{o.name}' in this run, and {o.words[:1].lower() + o.words[1:].rstrip('.')}"
+                for o in planned.outside if o.state == NEVER]
     return "; ".join(reasons)
 
 
@@ -211,6 +216,8 @@ class WorkflowRunner:
         self.own: Optional[OwnReactions] = None     # its own Reactions, when it runs on its own
         self.variables: Dict[str, Any] = {}         # the ${...} its conditions use, fixed at the start
         self.record_start_ts = time.time()          # when the run started, for the patience that counts from it
+        self._tree_run_cache: Optional[JobRun] = None
+        self.frames_read: List[str] = []            # the frames whose insides a condition reads, by path
 
     def run(self) -> int:
         """Runs the workflow to the end. Returns the exit code for whoever started it: 0 if it succeeded, else 1."""
@@ -310,7 +317,7 @@ class WorkflowRunner:
     def _conclude_by_rule(self) -> int:
         """Succeeds when, worked out now that every job has ended. A kill or cancel is still its Reason."""
         rule = self.workflow.SucceedsWhen
-        values = run_values(self.by_name, self.variables)
+        values = self._values()
         try:
             answer = bool(conditions.decide(rule, values))
         except ValueError as e:
@@ -357,9 +364,10 @@ class WorkflowRunner:
                                       active=bool(item.job.IsActive), disabled_here=item.DisabledHere,
                                       job_type=item.job.JobType, rules=read_rules(item.job, item),
                                       rule=item.StartRule if item.JoinRule == "CUSTOM" else None,
-                                      inside_ids=[p.id for p in inside], on_unmet=item.OnUnmet,
+                                      inside_ids=[p.id for p in inside], on_unmet=item.OnUnmet, job=item.job,
                                       outside=[self._outside(p) for p in item.prerequisites if p.Kind != "JOB"]))
         self.by_name = {p.name: p for p in self.items}
+        self.frames_read = self._frames_read()
         self.variables = self._fixed_variables()
         self._fix_workflow_variables()
         job_log.detail(f"{_count(self.items, 'job')}: " + ", ".join(p.name for p in self.items))
@@ -379,8 +387,26 @@ class WorkflowRunner:
                     wait_from_id=prerequisite.WaitFromPrerequisite_id)
         if prerequisite.Kind == "ENDPOINT":
             o.pattern = self._files_pattern(prerequisite)
+        elif prerequisite.Kind == "OTHER_JOB" and self._in_my_tree(prerequisite):
+            o.tree_run_id = self._tree_run().id
         o.values = o.blank_values()
         return o
+
+    def _tree_run(self) -> JobRun:
+        """The run of the top of this workflow's tree that it belongs to: its own, unless it is embedded."""
+        if self._tree_run_cache is None:
+            run, job = self.record, self.workflow
+            while job.Owner_MasterObject_id is not None and run.ParentRun_id is not None:
+                run = self.db.query(JobRun).filter(JobRun.id == run.ParentRun_id).one()
+                job = job.owner
+            self._tree_run_cache = run
+        return self._tree_run_cache
+
+    def _in_my_tree(self, prerequisite: WorkflowPrerequisite) -> bool:
+        """Whether a prerequisite names something in the same tree of embedded workflows as this workflow."""
+        target = prerequisite.target
+        other = target.workflow if target is not None else prerequisite.target_workflow
+        return other is not None and tree_top(other) is tree_top(self.workflow)
 
     def _files_pattern(self, prerequisite: WorkflowPrerequisite) -> str:
         """The folder and file pattern of an endpoint prerequisite, with its ${...} filled in. Empty if it cannot be."""
@@ -404,6 +430,40 @@ class WorkflowRunner:
         self.record.WorkflowVariables = json.dumps(fixed)
         if fixed["workflow"]:
             job_log.detail("Variables for its jobs: " + ", ".join(sorted(fixed["workflow"])) + ".")
+
+    def _frames_read(self) -> List[str]:
+        """The frames among the items that a condition looks inside, as %{Transform.Enrich.Status}."""
+        texts = [text for text in self._conditions() if text]
+        refs = [ref for text in texts for ref in conditions.references(text) if ref.startswith("%{")]
+        return [p.name for p in self.items if p.job_type == "WORKFLOW" and any(
+            ref.startswith("%{" + p.name + ".") and "." in ref[len(p.name) + 3:] for ref in refs)]
+
+    def _values(self) -> Dict[str, Any]:
+        """Every %{...} of the run as it stands: the items, what they wait for outside, and the insides of frames read by path."""
+        values = run_values(self.by_name, self.variables)
+        for name in self.frames_read:
+            values.update(self._inside_values(self.by_name[name]))
+        return values
+
+    def _inside_values(self, frame: Planned) -> Dict[str, Any]:
+        """%{Frame.Item.Output} for every item inside a frame, at any depth: unknown until the item has ended."""
+        values: Dict[str, Any] = {}
+        for path in frames.inner_paths({frame.name: frame.job}, self.workflow):
+            values.update(workflow_conditions.item_values(path, "PENDING", None, None, None, None, None, None))
+        run = self.db.query(JobRun).filter(JobRun.RunID == frame.run_id).first() if frame.run_id else None
+        if run is None and frame.row.ChildRun_id:
+            run = self.db.get(JobRun, frame.row.ChildRun_id)
+        if run is None:
+            return values
+        run_ids = outside.run_tree_ids(self.db, run.id)
+        for row in self.db.query(WorkflowRunItem).filter(WorkflowRunItem.WorkflowRun_id.in_(run_ids)):
+            child = row.child_run
+            path = frame.name + "." + row.Path[len(frame.row.Path) + 1:].replace("/", ".")
+            values.update(workflow_conditions.item_values(path, row.Status, row.ReturnCode, row.Reason,
+                                                          child.FileCount if child else None,
+                                                          child.Bytes if child else None,
+                                                          row.StartedDateTime, row.EndedDateTime))
+        return values
 
     def _conditions(self) -> List[str]:
         return [p.rule for p in self.items if p.rule] + ([self.workflow.SucceedsWhen] if self.workflow.SucceedsWhen else [])
@@ -438,7 +498,7 @@ class WorkflowRunner:
     def _readiness(self, planned: Planned) -> str:
         if planned.join != "CUSTOM":
             return readiness(planned, self.by_name)
-        values = run_values(self.by_name, self.variables)
+        values = self._values()
         try:
             state, answer = rule_state(planned, self.by_name, values)
         except ValueError as e:             # checked when saved, so only something the run could not foresee
@@ -585,11 +645,13 @@ class WorkflowRunner:
         o.check.UsedRunID, o.check.SeenStatus = o.run_id, o.seen
         o.check.Message = o.words if o.state != WAIT else f"Waiting for '{o.name}', {o.limit_words(default_hours)}. {o.words}"
         if o.state != before and o.state != WAIT:
-            logged = {HOLDS: job_log.detail, TIMED_OUT: job_log.warning, SKIPPED_OPTIONAL: job_log.summary}[o.state]
+            logged = {HOLDS: job_log.detail, TIMED_OUT: job_log.warning, SKIPPED_OPTIONAL: job_log.summary,
+                      NEVER: job_log.detail}[o.state]
             logged({HOLDS: f"'{planned.name}': '{o.name}' holds. {o.words}",
                     TIMED_OUT: f"'{planned.name}': ran out of patience waiting for '{o.name}'. {o.words}",
                     SKIPPED_OPTIONAL: f"'{planned.name}': stopped waiting for the optional '{o.name}' and went on without it. "
-                                      f"{o.words}"}[o.state])
+                                      f"{o.words}",
+                    NEVER: f"'{planned.name}': '{o.name}' ended in this run without what it waits for. {o.words}"}[o.state])
 
     def _close_checks(self, planned: Planned) -> None:
         """The job is decided: what it was still waiting for, it did not need."""

@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session
 from app.models import Endpoint, Job, WorkflowItem, WorkflowPrerequisite
 from app.schemas import NeededByOut, PrerequisiteOut, PrerequisiteSave
 from app.workflow_errors import WorkflowError
-from engine import conditions, return_codes, workflow_conditions
+from engine import conditions, frames, return_codes, workflow_conditions
 
 NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 CLOCK = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
@@ -215,6 +215,45 @@ def _waits_for_graph(db: Session, workflow: Job, names: List[str], submitted_ite
     return graph
 
 
+def _frame_edges(graph: Dict[str, List[str]], workflow: Job) -> None:
+    """
+    A frame as a whole ends after everything inside it, and nothing inside starts before the frame does:
+    "KEY: Frame (start)" waits for what the frame's own item waits for, and each item inside waits for it.
+    """
+    for item in workflow.items:
+        if item.job.JobType != "WORKFLOW":
+            continue
+        node = f"{workflow.JobKey}: {item.ItemName}"
+        graph[node] = graph.get(node, []) + [_whole(item.job.JobKey)]
+        if frames.is_embedded_in(item.job, workflow):
+            start = f"{node} (start)"
+            graph[start] = [_target_node(workflow.JobKey, p) for p in item.prerequisites if p.Kind in ("JOB", "OTHER_JOB")
+                            and (p.target is not None or p.target_workflow is not None)]
+            for inner in item.job.items:
+                inner_node = f"{item.job.JobKey}: {inner.ItemName}"
+                graph[inner_node] = graph.get(inner_node, []) + [start]
+
+
+def check_tree_loops(db: Session, workflow: Job) -> None:
+    """After a save of frames: refuses waits that, through the frames, come back to a job waiting for itself."""
+    from app.workflow_store import find_loop
+    graph: Dict[str, List[str]] = {}
+    top = frames.tree_top(workflow)
+    for item in _items_in_tree(top):
+        owner = item.workflow
+        graph[f"{owner.JobKey}: {item.ItemName}"] = [_target_node(owner.JobKey, p) for p in item.prerequisites
+                                                     if p.Kind in ("JOB", "OTHER_JOB")
+                                                     and (p.target is not None or p.target_workflow is not None)]
+    for owner in {item.workflow for item in _items_in_tree(top)} | {top}:
+        graph[_whole(owner.JobKey)] = [f"{owner.JobKey}: {i.ItemName}" for i in owner.items]
+        _frame_edges(graph, owner)
+    loop = find_loop(graph)
+    if loop:
+        chain = ", which waits for ".join(f"'{n}'" for n in loop)
+        raise WorkflowError(f"The prerequisites go round in a loop through the frames: {chain}. None of them could ever "
+                            f"start. A job inside a frame cannot wait for something that waits for the frame to end.")
+
+
 def _target_node(key: str, p: WorkflowPrerequisite) -> str:
     if p.Kind == "JOB":
         return f"{key}: {p.target.ItemName}"
@@ -311,7 +350,9 @@ def describe_all(prerequisites) -> List[PrerequisiteOut]:
 # ---------- Who waits ----------
 
 def _waiters_of_use(item: WorkflowItem) -> List[WorkflowPrerequisite]:
-    return [p for p in item.waiters if p.Kind == "OTHER_JOB" and p.item.Workflow_MasterObject_id != item.Workflow_MasterObject_id]
+    """The prerequisites in other workflows that wait for the use. Those inside its own tree of frames are not outside."""
+    mine = frames.tree_top(item.workflow)
+    return [p for p in item.waiters if p.Kind == "OTHER_JOB" and frames.tree_top(p.item.workflow) is not mine]
 
 
 def needed_by(item: WorkflowItem) -> List[NeededByOut]:
@@ -329,12 +370,32 @@ def waiting_for_use(item: WorkflowItem) -> List[str]:
     return _words((p.item.workflow.JobKey, p.item.ItemName) for p in _waiters_of_use(item))
 
 
+def workflow_needed_by(workflow: Job) -> List[NeededByOut]:
+    """The jobs elsewhere that wait for the workflow as a whole, or for a job in it, in order."""
+    mine = frames.tree_top(workflow)
+    found = {(p.item.workflow.JobKey, p.item.ItemName) for p in workflow.waiters
+             if p.Kind == "OTHER_JOB" and frames.tree_top(p.item.workflow) is not mine}
+    for item in _items_in_tree(workflow):
+        found |= {(p.item.workflow.JobKey, p.item.ItemName) for p in _waiters_of_use(item)}
+    return [NeededByOut(workflow=w, job=j) for w, j in sorted(found)]
+
+
 def waiting_for_workflow(db: Session, workflow: Job) -> List[str]:
     """The jobs that wait for the workflow as a whole, and for any job in it, in order."""
-    pairs = [(p.item.workflow.JobKey, p.item.ItemName) for p in workflow.waiters if p.Kind == "OTHER_JOB"]
-    for item in workflow.items:
+    mine = frames.tree_top(workflow)
+    pairs = [(p.item.workflow.JobKey, p.item.ItemName) for p in workflow.waiters
+             if p.Kind == "OTHER_JOB" and frames.tree_top(p.item.workflow) is not mine]
+    for item in _items_in_tree(workflow):
         pairs += [(p.item.workflow.JobKey, p.item.ItemName) for p in _waiters_of_use(item)]
     return _words(pairs)
+
+
+def _items_in_tree(workflow: Job):
+    """The workflow's items, and those of the workflows embedded in it, at any depth."""
+    for item in workflow.items:
+        yield item
+        if frames.is_embedded_in(item.job, workflow):
+            yield from _items_in_tree(item.job)
 
 
 def waiting_for_endpoint(db: Session, endpoint: Endpoint) -> List[str]:

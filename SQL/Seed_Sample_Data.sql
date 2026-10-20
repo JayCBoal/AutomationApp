@@ -576,3 +576,80 @@ INSERT INTO WorkflowPrerequisites (id, Item_id, TargetItem_id, Test, ReturnCodes
 (23, 25, 24,   'SUCCESS', NULL, 'JOB',       NULL,                           NULL, NULL, NULL, NULL, 'DEFAULT', NULL, 'OTHERS', 1),
 (24, 25, NULL, 'SUCCESS', NULL, 'TIME',      'Sunday',                       NULL, NULL, NULL,
  '%{Now.Weekday} = ''Sunday''', 'MINUTES', 1, 'OTHERS', 0);
+
+-- ----------------------------------------------------------------------------
+-- 10. A sample of frames (docs/WORKFLOWS_PHASE6.md): DEV-FRAMES_SAMPLE, a month end made of workflows and
+--     jobs embedded in it, drawn as frames. Embedded jobs belong to their workflow (Owner_MasterObject_id), are
+--     not in the lists, and take their keys from the names above them (DEV-FRAMES_SAMPLE.Extract.US).
+--    - Extract: an embedded workflow of two embedded jobs, US and EU, side by side.
+--    - FX_rates: a job of its own (shared), so "shared" shows beside "embedded".
+--    - Transform: an embedded workflow that waits for Extract as a whole. Its Enrich also waits for FX_rates,
+--      a line from outside the frame; Load does not. It carries a REGION variable its jobs read, and Load
+--      overrides it for itself.
+--    - Reporting: a workflow of its own (DEV-VARIABLES_SAMPLE) used as a box, which opens read only inline.
+--    - Report: runs only if Transform's Enrich succeeded, a condition by path: %{Transform.Enrich.Status}.
+-- ----------------------------------------------------------------------------
+INSERT INTO MasterObjects (id, ObjectType) VALUES
+(46, 'JOB'), (47, 'JOB'), (48, 'JOB'), (49, 'JOB'), (50, 'JOB'), (51, 'JOB'), (52, 'JOB'), (53, 'JOB'), (54, 'JOB');
+
+INSERT INTO Jobs (MasterObject_id, JobKey, Description) VALUES
+(53, 'DEV-SIM-FRAMES_FX',     'Stand-in: fetches the exchange rates, a job of its own'),
+(54, 'DEV-SIM-FRAMES_REPORT', 'Stand-in: reports once Enrich has succeeded');
+INSERT INTO Jobs (MasterObject_id, JobKey, JobType, Description) VALUES
+(46, 'DEV-FRAMES_SAMPLE', 'WORKFLOW', 'Sample workflow: a month end made of workflows and jobs embedded in it, drawn as frames');
+INSERT INTO Jobs (MasterObject_id, JobKey, JobType, Description, Owner_MasterObject_id) VALUES
+(47, 'DEV-FRAMES_SAMPLE.Extract',   'WORKFLOW', 'Embedded: the extracts, side by side', 46),
+(50, 'DEV-FRAMES_SAMPLE.Transform', 'WORKFLOW', 'Embedded: transforms once Extract is done; its jobs read REGION', 46);
+INSERT INTO Jobs (MasterObject_id, JobKey, Description, Owner_MasterObject_id) VALUES
+(48, 'DEV-FRAMES_SAMPLE.Extract.US',        'Embedded: the US extract', 47),
+(49, 'DEV-FRAMES_SAMPLE.Extract.EU',        'Embedded: the EU extract', 47),
+(51, 'DEV-FRAMES_SAMPLE.Transform.Enrich',  'Embedded: enriches with the exchange rates', 50),
+(52, 'DEV-FRAMES_SAMPLE.Transform.Load',    'Embedded: loads, for the region it overrides', 50);
+
+INSERT INTO Variables (MasterObject_id, VarName, VarValue, Description) VALUES
+(50, 'REGION', 'EU', 'The region the jobs in this frame write for, unless a use sets its own');
+
+INSERT INTO JobSteps (id, Job_MasterObject_id, StepType_id, StepOrder, StepTitle, StepName)
+SELECT 41, 48, id, 1, 'Extract the US', 'Extract_the_US' FROM StepTypes WHERE Code = 'SIMULATE';
+INSERT INTO JobSteps (id, Job_MasterObject_id, StepType_id, StepOrder, StepTitle, StepName)
+SELECT 42, 49, id, 1, 'Extract the EU', 'Extract_the_EU' FROM StepTypes WHERE Code = 'SIMULATE';
+INSERT INTO JobSteps (id, Job_MasterObject_id, StepType_id, StepOrder, StepTitle, StepName)
+SELECT 43, 51, id, 1, 'Enrich', 'Enrich' FROM StepTypes WHERE Code = 'SIMULATE';
+INSERT INTO JobSteps (id, Job_MasterObject_id, StepType_id, StepOrder, StepTitle, StepName)
+SELECT 44, 52, id, 1, 'Load', 'Load' FROM StepTypes WHERE Code = 'SIMULATE';
+INSERT INTO JobSteps (id, Job_MasterObject_id, StepType_id, StepOrder, StepTitle, StepName)
+SELECT 45, 53, id, 1, 'Fetch the rates', 'Fetch_the_rates' FROM StepTypes WHERE Code = 'SIMULATE';
+INSERT INTO JobSteps (id, Job_MasterObject_id, StepType_id, StepOrder, StepTitle, StepName)
+SELECT 46, 54, id, 1, 'Report', 'Report' FROM StepTypes WHERE Code = 'SIMULATE';
+
+INSERT INTO JobStepParameters (JobStep_id, ParameterName, ParameterValue) VALUES
+(41, 'Messages', 'Extracting the US'),
+(42, 'Messages', 'Extracting the EU'),
+(43, 'Messages', 'Enriching for ${REGION}'),
+(44, 'Messages', 'Loading for ${REGION}'),
+(45, 'Messages', 'Fetching the exchange rates'),
+(46, 'Messages', 'Reporting, now that Enrich has succeeded');
+
+INSERT INTO WorkflowItems (id, Workflow_MasterObject_id, ItemName, Job_MasterObject_id, JoinRule, StartRule, ItemOrder) VALUES
+(26, 46, 'FX_rates',  53, 'ALL', NULL, 1),
+(27, 46, 'Extract',   47, 'ALL', NULL, 2),
+(28, 46, 'Transform', 50, 'ALL', NULL, 3),
+(29, 46, 'Reporting', 39, 'ALL', NULL, 4),
+(30, 46, 'Report',    54, 'CUSTOM', '%{Transform.Enrich.Status} = ''SUCCESS''', 5),
+(31, 47, 'US',        48, 'ALL', NULL, 1),
+(32, 47, 'EU',        49, 'ALL', NULL, 2),
+(33, 50, 'Enrich',    51, 'ALL', NULL, 1),
+(34, 50, 'Load',      52, 'ALL', NULL, 2);
+
+INSERT INTO WorkflowItemVariables (Item_id, VarName, VarValue, Description) VALUES
+(34, 'REGION', 'US', 'This use loads for the US, whatever the frame says');
+
+-- Kind JOB: inside the workflow. OTHER_JOB: a job elsewhere; here, in the same tree: Enrich waits for FX_rates
+-- of the top workflow, in this run of it.
+INSERT INTO WorkflowPrerequisites (id, Item_id, TargetItem_id, Test, ReturnCodes, Kind, TargetName, Endpoint_MasterObject_id,
+                                   FilePattern, MinAgeSeconds, TimeCondition, WaitMode, WaitMinutes, WaitFrom, Required) VALUES
+(25, 28, 27, 'SUCCESS', NULL, 'JOB',       NULL,                          NULL, NULL, NULL, NULL, 'DEFAULT', NULL, 'OTHERS', 1),
+(26, 33, 26, 'SUCCESS', NULL, 'OTHER_JOB', 'DEV-FRAMES_SAMPLE.FX_rates',  NULL, NULL, NULL, NULL, 'DEFAULT', NULL, 'OTHERS', 1),
+(27, 34, 33, 'SUCCESS', NULL, 'JOB',       NULL,                          NULL, NULL, NULL, NULL, 'DEFAULT', NULL, 'OTHERS', 1),
+(28, 29, 28, 'SUCCESS', NULL, 'JOB',       NULL,                          NULL, NULL, NULL, NULL, 'DEFAULT', NULL, 'OTHERS', 1),
+(29, 30, 28, 'RULE',    NULL, 'JOB',       NULL,                          NULL, NULL, NULL, NULL, 'DEFAULT', NULL, 'OTHERS', 1);

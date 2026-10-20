@@ -127,6 +127,45 @@ def find_workflow(db: Session, workflow_id: int, hours: Optional[int], after: Op
     return _best(found)
 
 
+# ---------- A frame's own tree (Phase 6, D122) ----------
+
+def run_tree_ids(db: Session, root_run_id: int) -> List[int]:
+    """The ids of a run and of every workflow run below it (a frame's run, a shared workflow's, and so on)."""
+    found, level = [root_run_id], [root_run_id]
+    while level:
+        level = [run_id for (run_id,) in db.query(JobRun.id).filter(JobRun.ParentRun_id.in_(level))]
+        found += level
+    return found
+
+
+def find_job_in_tree(db: Session, item_id: int, root_run_id: int) -> Optional[Target]:
+    """
+    The use item_id as it stands in THIS run of its tree: never an earlier or a later run of the same
+    workflow (D122), so a rerun waits for this run's answer and not yesterday's. None while its frame
+    has not started.
+    """
+    rows = (db.query(WorkflowRunItem, JobRun).join(JobRun, JobRun.id == WorkflowRunItem.WorkflowRun_id)
+            .filter(WorkflowRunItem.Item_id == item_id, JobRun.id.in_(run_tree_ids(db, root_run_id)))
+            .order_by(JobRun.id.desc()))
+    found = []
+    for row, run in rows:
+        child = row.child_run
+        found.append(Target(row.Status, row.ReturnCode, row.Reason, child.FileCount if child else None,
+                            child.Bytes if child else None, row.StartedDateTime, row.EndedDateTime, run.RunID,
+                            run.EndedDateTime, run.Status == "RUNNING"))
+    return found[0] if found else None
+
+
+def find_workflow_in_tree(db: Session, workflow_id: int, root_run_id: int) -> Optional[Target]:
+    """A frame as a whole (its final status) in this run of its tree, or None while it has not started."""
+    run = (db.query(JobRun).filter(JobRun.Job_MasterObject_id == workflow_id, JobRun.JobType == "WORKFLOW",
+                                   JobRun.id.in_(run_tree_ids(db, root_run_id))).order_by(JobRun.id.desc()).first())
+    if run is None:
+        return None
+    return Target(run.Status, run.ReturnCode, run.Reason, run.FileCount, run.Bytes, run.StartedDateTime,
+                  run.EndedDateTime, run.RunID, run.EndedDateTime, run.Status == "RUNNING")
+
+
 def clock_time_after(start: datetime, hhmm: str) -> datetime:
     """The first moment after start that the clock reads hhmm ("02:00")."""
     hour, minute = (int(part) for part in hhmm.split(":"))

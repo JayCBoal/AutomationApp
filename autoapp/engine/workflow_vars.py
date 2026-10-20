@@ -89,24 +89,49 @@ def _filled_in(engine, value: Optional[str]) -> Optional[str]:
 
 
 def for_run(db: Session, parent_run_id: Optional[str], path: Optional[str]) -> Optional[Levels]:
-    """What the workflow run fixed for the job at path, or None if it fixed nothing (or is not a workflow's)."""
+    """
+    What the workflow run fixed for the job at path, or None if it fixed nothing (or is not a workflow's).
+    A job inside a frame or a shared workflow also gets what every workflow above it gave, the nearest
+    one winning (Phase 6, D91 completed); the use's own variables are those of the nearest only.
+    """
     if not parent_run_id:
         return None
     run = db.query(JobRun).filter(JobRun.RunID == str(parent_run_id)).first()
-    if run is None or not run.WorkflowVariables:
+    if run is None:
         return None
-    kept = json.loads(run.WorkflowVariables)
+    above = _runs_above(db, run)
+    if not any(r.WorkflowVariables for r in above):
+        return None
     levels = Levels(workflow_key=run.JobKey)
-    secrets = _secret_values(db, run.job) if run.job is not None else {}
-    for name, entry in kept.get("workflow", {}).items():
-        if "conflict" in entry:
-            levels.conflicts[name] = Noted(name, entry["conflict"])
-        else:
-            levels.values[name] = secrets.get(name) if entry.get("secret") else entry.get("value")
+    for ancestor in reversed(above):                    # the farthest first, so a nearer one overrides
+        _merge_workflow_level(db, ancestor, levels)
+    kept = json.loads(run.WorkflowVariables) if run.WorkflowVariables else {}
     use_secrets = _use_secret_values(db, run, path)
     for name, entry in kept.get("uses", {}).get(_item_name(path), {}).items():
         levels.use_values[name] = use_secrets.get(name) if entry.get("secret") else entry.get("value")
     return levels
+
+
+def _runs_above(db: Session, run: JobRun) -> list:
+    """The run and the workflow runs it is inside, nearest first."""
+    found = [run]
+    while found[-1].ParentRun_id is not None:
+        found.append(db.get(JobRun, found[-1].ParentRun_id))
+    return found
+
+
+def _merge_workflow_level(db: Session, run: JobRun, levels: Levels) -> None:
+    """Puts what one workflow run gave onto levels, over what is there."""
+    if not run.WorkflowVariables:
+        return
+    secrets = _secret_values(db, run.job) if run.job is not None else {}
+    for name, entry in json.loads(run.WorkflowVariables).get("workflow", {}).items():
+        if "conflict" in entry:
+            levels.conflicts[name] = Noted(name, entry["conflict"])
+            levels.values.pop(name, None)
+        else:
+            levels.conflicts.pop(name, None)
+            levels.values[name] = secrets.get(name) if entry.get("secret") else entry.get("value")
 
 
 def _secret_values(db: Session, workflow: Job) -> Dict[str, Optional[str]]:
@@ -135,9 +160,23 @@ def for_use(db: Session, workflow_key: str, use_name: str) -> Optional[Tuple[Lev
 
 def for_check(db: Session, workflow: Job, item: WorkflowItem) -> Levels:
     """What the job of a use would get, from the definitions as they are now: for checks and the page."""
-    conflicts: Dict[str, Dict[str, Any]] = {}
-    found = _workflow_variables(db, workflow, conflicts)
-    return Levels(workflow_key=workflow.JobKey,
-                  values={name: value for name, value, _ in found},
-                  conflicts={name: Noted(name, entry["conflict"]) for name, entry in conflicts.items()},
+    values: Dict[str, Optional[str]] = {}
+    noted: Dict[str, Noted] = {}
+    for owner in reversed(_owners(workflow)):               # the farthest first, so a nearer one overrides
+        conflicts: Dict[str, Dict[str, Any]] = {}
+        for name, value, _secret in _workflow_variables(db, owner, conflicts):
+            values[name] = value
+            noted.pop(name, None)
+        for name, entry in conflicts.items():
+            noted[name] = Noted(name, entry["conflict"])
+            values.pop(name, None)
+    return Levels(workflow_key=workflow.JobKey, values=values, conflicts=noted,
                   use_values={v.VarName: v.VarValue for v in item.variables})
+
+
+def _owners(workflow: Job) -> list:
+    """The workflow and the workflows it is embedded in, nearest first."""
+    found = [workflow]
+    while found[-1].owner is not None:
+        found.append(found[-1].owner)
+    return found

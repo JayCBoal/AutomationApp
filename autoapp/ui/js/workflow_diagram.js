@@ -12,6 +12,9 @@
  *                        rule (its Custom rule, or null), changed (true: changed since it was last saved),
  *                        outside (null; or "JOB", "FILES", "TIME" or "NEEDED": a dashed box outside the workflow, see below),
  *                        href (outside: the page a click opens), owner (outside: the id of the box a click selects instead) }]
+ *                        Frames (docs/WORKFLOWS_PHASE6.md): parent (the id of the frame it is in, or null), frame (true: a workflow
+ *                        embedded in this one, drawn as a box around its items), folded (true: drawn as one box, with its
+ *                        summary in sub or statusText; lines that end inside it end on it)
  *     diagram.lines:  [{ id, from, to, test, codes, words }]   "to" waits for "from"; test RULE: named in its Custom rule;
  *                     FILES, TIME: an outside box of files or a time; NEEDED: "to" is a job elsewhere that waits for "from".
  *                     words, if given, is what pointing at the line says
@@ -19,7 +22,8 @@
  *                     upstream as a dash-dot arc after the layout, so elkjs never sees a loop
  *     diagram.direction ("RIGHT" or "DOWN"), zoom (a number, or "fit"), find (text),
  *     selected ({ kind: "item" or "line", id }, or null), editing (true lets boxes be joined by dragging)
- *     handlers.select(kind, id), handlers.connect(fromId, toId), handlers.remove(lineId) (the x on a line, while editing)
+ *     handlers.select(kind, id), handlers.connect(fromId, toId), handlers.remove(lineId) (the x on a line, while editing),
+ *     handlers.fold(frameId) (the arrow on a frame, or a double-click on it)
  * draw() resolves to the zoom it used, so the page can show it after Fit.
  *
  * Outside dependencies (docs/WORKFLOWS_PHASE5.md) are dashed boxes at the edges: what a job waits for outside
@@ -113,6 +117,7 @@ const WorkflowDiagram = (() => {
     function markers(item) {
         const list = [];
         if (item.kind === "WORKFLOW") list.push(["workflow", "A workflow, used here as one job"]);
+        if (item.kind === "FRAME") list.push(["frame", "A workflow embedded in this one: it belongs to this workflow, and its jobs are inside"]);
         if (item.disabled) list.push(["disabled", item.disabled]);
         if (item.disabledHere === "STOP") list.push(["disabled", "Disabled here: it stops here, and what needs it to succeed does not run"]);
         if (item.disabledHere === "PASS_THROUGH") list.push(["pass", "Disabled here to pass through: it counts as succeeded without running"]);
@@ -123,6 +128,7 @@ const WorkflowDiagram = (() => {
         if (item.outside === "JOB") list.push(["workflow", "A job, or a whole workflow, outside this one"]);
         if (item.outside === "NEEDED") list.push(["workflow", "A job in another workflow, which waits for this job"]);
         list.push(...(item.externalMarks || []));        // external references folded into the box, when their boxes are hidden
+        if (item.readonly) list.push(["lock", "Read only: it belongs to another workflow. Click it to open that workflow"]);
         if (item.rule !== null && item.rule !== undefined) list.push(["rule", `Starts when its Custom rule holds: ${item.rule || "(not written yet)"}`]);
         return list;
     }
@@ -147,19 +153,52 @@ const WorkflowDiagram = (() => {
 
     // ---------- The graph elkjs lays out ----------
 
+    const FRAME_PADDING = "[top=40,left=14,bottom=14,right=14]";
+    const FRAME_HEAD = 34;
+
+    /** The items that can be seen: those not inside a folded frame. */
+    function visibleItems(diagram) {
+        const byId = new Map(diagram.items.map(item => [item.id, item]));
+        const hidden = item => { for (let up = byId.get(item.parent); up; up = byId.get(up.parent)) if (up.folded) return true; return false; };
+        return { byId, visible: diagram.items.filter(item => !hidden(item)), hidden };
+    }
+
+    /** One box, or a frame with its items inside it. */
+    function elkNode(item, visible, models) {
+        const model = boxModel(item);
+        models.set(item.id, model);
+        const kids = item.frame && !item.folded ? visible.filter(child => child.parent === item.id) : null;
+        if (!kids) return { id: item.id, width: model.width, height: model.height };
+        const head = 50 + textWidth(item.name || "(no name yet)", NAME_FONT) + 24 + textWidth(subLine(item) || "", SMALL_FONT) + PAD;
+        const width = Math.max(160, Math.ceil(head));
+        return { id: item.id, children: kids.map(child => elkNode(child, visible, models)),
+                 layoutOptions: { "elk.padding": FRAME_PADDING, "elk.nodeSize.constraints": "MINIMUM_SIZE",
+                                  "elk.nodeSize.minimum": `(${width}, 70)` } };
+    }
+
     function elkGraph(diagram, models) {
-        const ids = new Set(diagram.items.map(item => item.id));
-        const children = diagram.items.map(item => {
-            const model = boxModel(item);
-            models.set(item.id, model);
-            return { id: item.id, width: model.width, height: model.height };
-        });
-        const edges = diagram.lines.filter(line => ids.has(line.from) && ids.has(line.to) && line.from !== line.to).map(line => {
+        const { byId, visible, hidden } = visibleItems(diagram);
+        const ids = new Set(visible.map(item => item.id));
+        const shown = id => {                               // a line that ends inside a folded frame ends on the frame
+            let item = byId.get(id);
+            while (item && hidden(item)) item = byId.get(item.parent);
+            return item ? item.id : id;
+        };
+        const children = visible.filter(item => !item.parent || !byId.has(item.parent)).map(item => elkNode(item, visible, models));
+        const seen = new Set();
+        const edges = [];
+        for (const line of diagram.lines) {
+            const from = shown(line.from), to = shown(line.to);
+            const key = `${from}>${to}>${line.test}>${line.codes || ""}`;
+            if (!ids.has(from) || !ids.has(to) || from === to || seen.has(key)) continue;
+            seen.add(key);
             const label = lineLabel(line);
             const labels = label ? [{ text: label, width: textWidth(label, SMALL_FONT) + 10, height: 16 }] : [];
-            return { id: line.id, sources: [line.from], targets: [line.to], labels };
-        });
-        return { id: "root", children, edges, layoutOptions: layoutOptions(diagram.direction) };
+            edges.push({ id: line.id, sources: [from], targets: [to], labels });
+        }
+        const options = layoutOptions(diagram.direction);
+        if (diagram.items.some(item => item.frame)) options["elk.hierarchyHandling"] = "INCLUDE_CHILDREN";    // lines may cross frames
+        return { id: "root", children, edges, layoutOptions: options };
     }
 
     /** Left to right (or top to bottom); each column keeps the outline's order, so nothing reshuffles. */
@@ -185,6 +224,9 @@ const WorkflowDiagram = (() => {
             svg("rect", { x: 1, y: 1.5, width: 4.5, height: 4, rx: 1, ...stroke }, g);
             svg("rect", { x: 8.5, y: 8.5, width: 4.5, height: 4, rx: 1, ...stroke }, g);
             svg("path", { d: "M3.2 5.5v4.5h5.3", ...stroke }, g);
+        } else if (name === "frame") {              // a box inside a box
+            svg("rect", { x: 0.8, y: 0.8, width: 12.4, height: 12.4, rx: 1.5, ...stroke }, g);
+            svg("rect", { x: 3.8, y: 5, width: 6.4, height: 5, rx: 1, ...stroke }, g);
         } else if (name === "disabled") {
             svg("circle", { cx: 7, cy: 7, r: 5.5, ...stroke }, g);
             svg("path", { d: "M3.2 10.8 10.8 3.2", ...stroke }, g);
@@ -279,9 +321,10 @@ const WorkflowDiagram = (() => {
         const g = svg("g", { class: "wf-box" + (item.outside ? " wf-outside" : ""), "data-id": item.id, "data-name": item.name,
                              "data-status": item.status || null, "data-disabled-here": item.disabledHere || null,
                              "data-outside": item.outside || null, "data-href": item.href || null, "data-owner": item.owner || null,
+                             "data-shared": item.shared ? "true" : null,
                              cursor: "pointer" }, layer);
         const look = boxLook(lookOf(item), prefix, item.outside || false);
-        if (item.outside) look.dash = "5 3";         // dashed: not part of this workflow
+        if (item.outside || item.readonly) look.dash = "5 3";         // dashed: not part of this workflow
         drawShape(g, look, at.x, at.y, at.width, at.height, 6);
         if (matchesFind(item, diagram.find)) svg("rect", { class: "wf-found", x: at.x - 4, y: at.y - 4, width: at.width + 8, height: at.height + 8, rx: 9,
                                                             fill: "none", stroke: css("--accent"), "stroke-width": 2.5 }, g);
@@ -290,6 +333,42 @@ const WorkflowDiagram = (() => {
         if (isSelected(diagram, "item", item.id)) svg("rect", { class: "wf-selected", x: at.x - 2, y: at.y - 2, width: at.width + 4, height: at.height + 4, rx: 8,
                                                                 fill: "none", stroke: css("--text"), "stroke-width": 1, "stroke-dasharray": "3 2" }, g);
         drawBoxText(g, at, model, look);
+        if (item.frame && item.folded) {            // a frame folded to one box: its arrow opens it
+            const toggle = svg("g", { class: "wf-fold", "data-fold": item.id, cursor: "pointer" }, g);
+            svg("rect", { x: at.x + at.width - 24, y: at.y + 2, width: 22, height: 20, fill: "transparent" }, toggle);
+            svg("text", { x: at.x + at.width - 19, y: at.y + 17, fill: css("--text"), style: "font: 700 14px system-ui, sans-serif" }, toggle).textContent = "▸";
+            tooltip(toggle, "Open this frame (or double-click it)");
+        }
+        tooltip(g, item.status ? `${item.name}: ${item.statusText}` : item.name);
+    }
+
+    /** A frame that is open: a box around its items, with a header carrying its name, its fold arrow and its state. */
+    function drawFrame(layer, item, at, diagram, prefix) {
+        const g = svg("g", { class: "wf-box wf-frame" + (item.shared ? " wf-shared" : ""), "data-id": item.id, "data-name": item.name,
+                             "data-status": item.status || null, "data-folded": "false", "data-href": item.href || null, cursor: "pointer" }, layer);
+        const look = boxLook(lookOf(item), prefix);
+        const body = svg("rect", { x: at.x, y: at.y, width: at.width, height: at.height, rx: 8, fill: look.fill.startsWith("url(") ? css("--panel-raised") : look.fill,
+                                   "fill-opacity": item.status ? 0.08 : 0.25, stroke: look.stroke, "stroke-width": look.width + 0.5,
+                                   "pointer-events": "none" }, g);
+        if (look.dash) body.setAttribute("stroke-dasharray", look.dash);
+        if (item.shared) body.setAttribute("stroke-dasharray", "5 3");               // another workflow, read only
+        if (matchesFind(item, diagram.find)) svg("rect", { class: "wf-found", x: at.x - 4, y: at.y - 4, width: at.width + 8, height: at.height + 8, rx: 11,
+                                                            fill: "none", stroke: css("--accent"), "stroke-width": 2.5, "pointer-events": "none" }, g);
+        if (item.changed) svg("rect", { class: "wf-changed", x: at.x - 3, y: at.y - 3, width: at.width + 6, height: at.height + 6, rx: 10,
+                                        fill: "none", stroke: css("--warning"), "stroke-width": 2, "pointer-events": "none" }, g);
+        if (isSelected(diagram, "item", item.id)) svg("rect", { class: "wf-selected", x: at.x - 2, y: at.y - 2, width: at.width + 4, height: at.height + 4, rx: 10,
+                                                                fill: "none", stroke: css("--text"), "stroke-width": 1, "stroke-dasharray": "3 2", "pointer-events": "none" }, g);
+        svg("rect", { class: "wf-frame-head", x: at.x, y: at.y, width: at.width, height: FRAME_HEAD, rx: 8, fill: css("--panel-raised"),
+                      "fill-opacity": 0.9, stroke: "none" }, g);
+        const toggle = svg("g", { class: "wf-fold", "data-fold": item.id, cursor: "pointer" }, g);
+        svg("rect", { x: at.x + 4, y: at.y + 4, width: 22, height: 26, fill: "transparent" }, toggle);
+        svg("text", { x: at.x + 9, y: at.y + 22, fill: css("--text"), style: "font: 700 14px system-ui, sans-serif" }, toggle).textContent = "▾";
+        tooltip(toggle, "Fold this frame into one box (or double-click it)");
+        icon(g, "frame", at.x + 30, at.y + 10, css("--muted"), "A workflow embedded in this one: it belongs to this workflow");
+        svg("text", { x: at.x + 50, y: at.y + 22, fill: css("--text"), style: `font: ${NAME_FONT}`, "pointer-events": "none" }, g).textContent = item.name || "(no name yet)";
+        const note = subLine(item);
+        if (note) svg("text", { class: "wf-sub", x: at.x + at.width - PAD, y: at.y + 22, "text-anchor": "end", fill: css("--muted"),
+                                style: `font: ${SMALL_FONT}`, "pointer-events": "none" }, g).textContent = note;
         tooltip(g, item.status ? `${item.name}: ${item.statusText}` : item.name);
     }
 
@@ -410,26 +489,54 @@ const WorkflowDiagram = (() => {
 
     // ---------- Putting a drawing together ----------
 
+    /** Every box of the laid-out graph with its place on the whole drawing (elkjs gives each relative to its frame). */
+    function placed(node, ox = 0, oy = 0, into = []) {
+        for (const child of node.children || []) {
+            const at = { ...child, x: ox + child.x, y: oy + child.y };
+            into.push(at);
+            placed(child, at.x, at.y, into);
+        }
+        return into;
+    }
+
+    /** Every line of the laid-out graph with its points on the whole drawing: each is relative to the frame it runs inside. */
+    function placedEdges(node, ox = 0, oy = 0, into = []) {
+        for (const edge of node.edges || []) {
+            const move = p => ({ x: p.x + ox, y: p.y + oy });
+            const sections = (edge.sections || []).map(sec => ({ ...sec, startPoint: move(sec.startPoint), endPoint: move(sec.endPoint),
+                                                                bendPoints: (sec.bendPoints || []).map(move) }));
+            const labels = (edge.labels || []).map(l => ({ ...l, x: l.x + ox, y: l.y + oy }));
+            into.push({ ...edge, sections, labels });
+        }
+        for (const child of node.children || []) placedEdges(child, ox + child.x, oy + child.y, into);
+        return into;
+    }
+
     function picture(result, models, diagram, prefix) {
         const zoom = diagram.zoom;
         const root = svg("svg", { width: result.width * zoom, height: result.height * zoom, viewBox: `0 0 ${result.width} ${result.height}`,
                                   role: "img", "aria-label": "Workflow diagram" });
         defs(root, prefix);
-        const lines = svg("g", {}, root), boxes = svg("g", {}, root), over = svg("g", {}, root);
+        const frames = svg("g", {}, root), lines = svg("g", {}, root), boxes = svg("g", {}, root), over = svg("g", {}, root);
         const byId = new Map(diagram.items.map(item => [item.id, item]));
         const names = new Map(diagram.items.map(item => [item.id, item.name || "(no name yet)"]));
         const linesById = new Map(diagram.lines.map(line => [line.id, line]));
-        for (const node of result.children || []) drawBox(boxes, byId.get(node.id), node, models.get(node.id), diagram, prefix);
-        for (const edge of result.edges || []) {
+        const nodes = placed(result);
+        for (const node of nodes) {
+            const item = byId.get(node.id);
+            if (item.frame && !item.folded) drawFrame(frames, item, node, diagram, prefix);
+            else drawBox(boxes, item, node, models.get(node.id), diagram, prefix);
+        }
+        for (const edge of placedEdges(result)) {
             const line = linesById.get(edge.id);
             drawLine(lines, edge, line, lineWords(line, names), diagram, prefix);
         }
-        for (const node of result.children || []) {
+        for (const node of nodes) {
             const item = byId.get(node.id);
             const entering = diagram.lines.filter(line => line.to === item.id).length;
             if (item.join === "ANY" && entering > 1) drawAnyMarker(over, node, diagram.direction);
         }
-        const at = new Map((result.children || []).map(node => [node.id, node]));
+        const at = new Map(nodes.map(node => [node.id, node]));
         for (const rerun of diagram.reruns || []) {
             if (at.has(rerun.from) && at.has(rerun.to)) drawRerun(over, rerun, at.get(rerun.from), at.get(rerun.to), diagram.direction, prefix);
         }
@@ -486,6 +593,10 @@ const WorkflowDiagram = (() => {
             if (target && target !== from) handlers.connect(from, target);
         });
         root.addEventListener("click", event => onClick(canvas, event, handlers));
+        root.addEventListener("dblclick", event => {            // a frame, or the box it is folded into, opens or folds
+            const box = event.target.closest(".wf-frame, .wf-box");
+            if (box && handlers.fold && (box.classList.contains("wf-frame") || box.querySelector(".wf-fold"))) handlers.fold(box.dataset.id);
+        });
         // The canvas around the drawing (right of it, below it) is empty space too: a click there deselects.
         // Wired once per canvas; each drawing hands it its own handlers.
         canvas.wfHandlers = handlers;
@@ -500,6 +611,8 @@ const WorkflowDiagram = (() => {
     function onClick(canvas, event, handlers) {
         if (Date.now() - (canvas.wfDragEnded || 0) < 400) return;
         const line = event.target.closest(".wf-line");
+        const fold = event.target.closest(".wf-fold");
+        if (fold && handlers.fold) return handlers.fold(fold.dataset.fold);
         if (line && event.target.closest(".wf-line-remove")) return handlers.remove(line.dataset.line);
         const box = event.target.closest(".wf-box");
         if (line) handlers.select("line", line.dataset.line);
@@ -567,6 +680,7 @@ const WorkflowDiagram = (() => {
                       "marker-end": "url(#key-r-a-RERUN)" }, rerun);
         row(rerun, "↺ Rerun from...: a Reaction that runs an earlier job, and those between, again");
         row(keySample("icon", "workflow", "key-i1-"), "A workflow, used as one job");
+        row(keySample("icon", "frame", "key-i0-"), "A frame: a workflow embedded in this one, with its jobs inside. ▾ folds it into one box, ▸ opens it (or double-click). A line into a folded frame ends on it");
         const outsideBox = svg("svg", { width: 70, height: 22, "aria-hidden": "true" });
         drawShape(outsideBox, { ...boxLook(null, "key-o-", "JOB"), dash: "5 3" }, 4, 3, 62, 16, 4);
         const nonJobBox = svg("svg", { width: 70, height: 22, "aria-hidden": "true" });

@@ -19,7 +19,7 @@ Designed, not built: embedded jobs and workflows; frames; prerequisites that cro
 ## What Phase 6 includes, and what it leaves out
 
 - **In (proposed):**
-  - **Embedded jobs and workflows:** "New job here" and "New workflow here" in the editor, beside "Use an existing job…". An embedded one belongs to its workflow, is hidden from lists, and is deleted with its item or its workflow.
+  - **Embedded jobs and workflows:** "New job here" and "New workflow here" in the editor, beside "Use an existing job…". An embedded one belongs to its workflow, is hidden from the Jobs & Workflows page and the search pages (not from its own workflow's editor), and is deleted with its item or its workflow.
   - **Frames:** an embedded workflow drawn as a frame around its items, to any depth; folded it is one box with a summary (in a run: "2 running, 1 failed"); lines that end inside a folded frame carry their arrowhead a little way in. One Save covers the whole tree.
   - **Prerequisites across frames:** on the frame as a whole (it gates everything inside), and from a job inside to anything else in the same tree, outside its frame included.
   - **Paths:** `%{Transform.Stage_EU.Status}` in conditions, down through embedded workflows; the path shown in Find results, Job History and logs as `MONTH_END / Transform / Stage_EU`.

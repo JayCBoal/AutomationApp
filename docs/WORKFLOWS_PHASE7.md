@@ -2,7 +2,7 @@
 
 The seventh phase of [WORKFLOWS.md](WORKFLOWS.md) ("Implementation in phases"): **a failed run can be picked up where it stopped, or restarted in whole or in part, from one Rerun ▸ menu, and every choice is on record.** It answers the restart half of shortcoming 2 ([PROJECT_GOALS.md](PROJECT_GOALS.md) goal 2): in RunMyJobs a failed chain is restarted by hand, step by step, with nothing saying what the failed step had already done.
 
-Status: **PLAN AGREED 2026-10-20; building on branch `workflows-phase7`: steps 0 to 2b built (see "Built so far").** Every question was answered by the owner (see "Settled by the owner"); proposals 1 to 13 stand as written. Decisions are D136 to D142 in WORKFLOW_DECISIONS.md. The plan is for a separate building session.
+Status: **PLAN AGREED 2026-10-20; building on branch `workflows-phase7`: steps 0 to 3 built (see "Built so far").** Every question was answered by the owner (see "Settled by the owner"); proposals 1 to 13 stand as written. Decisions are D136 to D142 in WORKFLOW_DECISIONS.md. The plan is for a separate building session.
 
 ## Starting point
 
@@ -56,6 +56,8 @@ Designed, not built: the Rerun ▸ menu; Resume; Restart from beginning; Advance
   - Edits go in the Audit Log as `JOB_RESUMED_WITH_EDITS` (by name, old and new value, never a secret), and in the job log. The run's *Restarts* list does not exist until step 3; the edits join it there.
   - API: `refresh_values` and `edits` on `POST /runs/{id}/rerun` (Resume only; a restart reads everything again); `values` and `changes` on the rerun plan. Runner: `--refresh-values`, `--edit-values` (JSON). Tests: `test_resume_values.py`.
   - Job History's Rerun button stays in step 4 (the owner, 2026-10-20).
+- **Step 3 (reopening a workflow run), built.** `engine/reopen.py` holds the rules for each item (stays, goes on, starts again, or is on the way to the item chosen); the plan (`app/rerun_tree.py`) and the workflow runner both use it. The runner takes `--reopen resume|restart`, `--reopen-scope PATH` and `--rerun-decisions JSON`; the run goes back to Running under its own run ID (first start, business date and workflow variables kept; the log continues in the same file) and plans from its existing items. A failed job resumes in a new attempt from its control file; a failed frame is reopened as its own run; a Not run item is looked at again; Succeeded, Bypassed, Skipped and Disabled stay. Reaction counts are rebuilt from the run's Reaction records. API: `rerun-plan` and `rerun` now work for a workflow run, a frame and a job inside one (`scope`, `reopens_run_id`, `items`, `steps_to_decide`; `decisions` by path on the request). Decisions D143 to D146. Tests: `test_workflow_reopen.py`.
+  - Not built (later steps): the dialog and buttons (step 4), the Restarts list and Audit rows (step 5), the Reaction's Resume option (3a), changing `${...}` values for a workflow (open with the owner, 2026-10-20: a first version could come after step 4).
 - **Left for Part 2 (the owner, 2026-10-20):** whether a control file is kept or removed after a job succeeds (the only use is "run from a chosen step" on a succeeded job), and whether to snapshot the resolved `${...}` values. Until then a control file stays as long as its log.
 
 ## Proposals to settle with the owner

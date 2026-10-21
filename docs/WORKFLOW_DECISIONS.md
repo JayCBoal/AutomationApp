@@ -636,6 +636,23 @@ Compiled 2026-10-18, from the design record and Phases 1 to 4.
 - *Why:* D75; secrets never reach records.
 - *Status:* Designed (Phase 7). *Source:* WORKFLOWS_PHASE7.md, proposal 11.
 
+**D143. Reopening picks up the run's own record; only a frame that goes on is reopened too.** A failed frame is reopened as its own run (same run ID, its first start kept) and goes on inside; a failed job gets a new attempt that resumes from its control file. A *Restart* of the whole run reopens the top run only: every item starts again as a new attempt, a frame as a new run.
+- *Why:* proposals 5 to 8. A restart means the earlier attempt's work is done again, so there is nothing to reopen below the top.
+- *Status:* Built (Phase 7, step 3). *Source:* WORKFLOWS_PHASE7.md, "Built so far".
+
+**D144. A failed job or frame inside a workflow is rerun by reopening the run at the top, changing only the frames on the way and the item chosen.** What else already ended stays as it is, including what was Not run because of the failure. The item must have Failed; a run that Succeeded is refused (D140).
+- *Why:* the top run is the runner of the whole tree, and it is what a waiting job looks at. Leaving the rest alone is proposal 8; *Advanced → from a chosen job* is the way to include it.
+- *Status:* Built (Phase 7, step 3). *Source:* WORKFLOWS_PHASE7.md, proposal 8.
+
+**D145. A run's `${...}` values used in its conditions are kept on the run with its other fixed variables** (`WorkflowVariables`, key `conditions`), so a reopened run uses the first attempt's. A run from before this reads them again.
+- *Why:* proposal 4; Resume was the reason for fixing values (D57, D91).
+- *Status:* Built (Phase 7, step 3). *Source:* WORKFLOWS_PHASE7.md.
+
+**D146. Resume of a workflow is refused as a whole when a failed job's record of how far it got cannot be used** (removed, or on another host), naming the jobs; Restart is offered. A failed item that never had a run of its own starts from the beginning.
+- *Why:* starting such a job over silently could repeat work already done; the standalone job is treated the same way (D136).
+- *Considered:* restarting only those jobs and resuming the rest.
+- *Status:* Built (Phase 7, step 3). *Source:* WORKFLOWS_PHASE7.md.
+
 ## How the work is done
 
 **D89. Phases, each a working, demonstrable AutoApp**, in the order of the shortcomings' priority, except the diagram second and restarts and time-based Reactions last; each planned in detail with the owner just before it is built.

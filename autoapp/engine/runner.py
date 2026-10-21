@@ -10,7 +10,8 @@ The job's return code is 0 unless a step sets another (Set Return Code and Simul
 succeeded if its steps did and that code is one of its Success return codes ("0" unless set).
 The code is recorded with the run; the exit code stays 0 or 1 (docs/INTEGRATION.md).
 
-A job that is a workflow is handed to engine/workflow_runner.py, so it is started the same way.
+A job that is a workflow is handed to engine/workflow_runner.py, so it is started the same way. Given
+--reopen, a workflow picks up a run that has ended, under the same run ID (docs/WORKFLOWS_PHASE7.md).
 
 As it goes, a job keeps a control file beside its log (engine/control_file.py). A run given the ID of an
 earlier attempt (resume_run_id) reads that attempt's file and picks up where it stopped: steps that
@@ -281,6 +282,13 @@ def main():
     parser.add_argument("--attempt", type=int, default=1, help="Given by the workflow runner: which attempt this is")
     parser.add_argument("--resume-run-id", default=None,
                         help="Pick up an earlier attempt of this job where it stopped, given its run ID")
+    parser.add_argument("--reopen", default=None, choices=["resume", "restart"],
+                        help="For a workflow: pick up the run --run-id names, which has ended, instead of starting a new one")
+    parser.add_argument("--reopen-scope", default=None,
+                        help="With --reopen: the path of the one item to run again; without it, the whole run")
+    parser.add_argument("--rerun-decisions", default=None,
+                        help="With --reopen: a JSON object saying, by path, run_again or count_done for each failed step "
+                             "whose effect is not known")
     parser.add_argument("--count-as-done", default=None,
                         help="With --resume-run-id: the key of the failed step (e.g. 3|) to count as done and not run again")
     parser.add_argument("--refresh-values", action="store_true",
@@ -321,11 +329,11 @@ def run_with_reactions(db: Session, args) -> int:
             own = OwnReactions(rules, {"spool_dir": args.spool_dir, "api_url": args.api_url,
                                        "working_root": args.working_root, "log_level": args.log_level})
     run_id, attempt, resume_run_id = str(args.run_id) if args.run_id else None, args.attempt, args.resume_run_id
-    count_as_done = args.count_as_done
+    count_as_done, reopen = args.count_as_done, args.reopen
     refresh_values, value_edits = args.refresh_values, json.loads(args.edit_values) if args.edit_values else None
     while True:
         if job is not None and job.JobType == "WORKFLOW":
-            exit_code = start_workflow(db, job, args, run_id, attempt, own)
+            exit_code = start_workflow(db, job, args, run_id, attempt, own, reopen)
         else:
             exit_code = run_job(db, args.job_key, args.instance_id, args.spool_dir, args.working_root,
                                 run_number=args.run_number, scheduler=args.scheduler, api_url=args.api_url,
@@ -336,20 +344,22 @@ def run_with_reactions(db: Session, args) -> int:
         if own is None or own.rerun is None:
             return exit_code
         time.sleep(own.rerun.wait_seconds)
-        run_id, attempt, resume_run_id, count_as_done = None, attempt + 1, None, None
+        run_id, attempt, resume_run_id, count_as_done, reopen = None, attempt + 1, None, None, None
         refresh_values, value_edits = False, None
         db.expire_all()
 
 
 def start_workflow(db: Session, workflow: Job, args, run_id: Optional[str], attempt: int,
-                   own: Optional[OwnReactions]) -> int:
+                   own: Optional[OwnReactions], reopen: Optional[str] = None) -> int:
     from engine.workflow_runner import RunOptions, run_workflow
     options = RunOptions(instance_id=args.instance_id, spool_dir=args.spool_dir,
                          run_id=run_id, run_number=args.run_number,
                          scheduler=args.scheduler, api_url=args.api_url,
                          working_root=args.working_root or os.getenv("AUTOAPP_WORKING_ROOT"),
                          business_date=args.business_date, log_level=args.log_level,
-                         parent_run_id=args.parent_run_id, workflow_path=args.workflow_path, attempt=attempt)
+                         parent_run_id=args.parent_run_id, workflow_path=args.workflow_path, attempt=attempt,
+                         reopen=reopen, reopen_scope=args.reopen_scope if reopen else None,
+                         decisions=json.loads(args.rerun_decisions) if reopen and args.rerun_decisions else {})
     return run_workflow(db, workflow, options, own)
 
 

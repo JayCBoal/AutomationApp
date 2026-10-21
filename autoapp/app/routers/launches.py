@@ -108,13 +108,15 @@ def launch(payload: LaunchRequest, request: Request, db: Session = Depends(get_d
 
 
 def start_runner(request: Request, job_key: str, instance_id: str, level: str, business_date: Optional[date],
-                 extra: Optional[List[str]] = None, scheduler: str = SCHEDULER_NAME) -> LaunchOut:
+                 extra: Optional[List[str]] = None, scheduler: str = SCHEDULER_NAME,
+                 run_id: Optional[str] = None) -> LaunchOut:
     """
     Starts the runner for a job as a scheduler would, and remembers the launch. extra: more arguments for
-    the runner (a rerun passes --attempt, --resume-run-id and the like).
+    the runner (a rerun passes --attempt, --resume-run-id and the like). run_id: the run to go on under, for
+    a workflow run that is reopened; otherwise a new one.
     """
     extra = extra or []
-    run_id = str(uuid.uuid4())
+    run_id = run_id or str(uuid.uuid4())
     api_url = str(request.base_url).rstrip("/")
     working_root = os.environ.get("AUTOAPP_WORKING_ROOT")
     command = [sys.executable, "-m", "engine.runner", "--job-key", job_key, "--instance-id", instance_id,

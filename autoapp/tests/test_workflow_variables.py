@@ -138,7 +138,8 @@ def test_a_secret_reaches_the_job_but_its_value_is_never_kept_on_the_run(coded, 
 
     assert codes(items) == {"A": 6, "B": 8}, log
     kept = json.loads(run.WorkflowVariables)
-    assert kept == {"workflow": {"Code": {"secret": True}}, "uses": {"A": {}, "B": {"Code": {"secret": True}}}}
+    assert kept == {"workflow": {"Code": {"secret": True}}, "uses": {"A": {}, "B": {"Code": {"secret": True}}},
+                    "conditions": {}}
 
 
 def test_a_workflows_value_is_filled_in_as_the_run_starts(coded, flow, run_flow, seed, db):

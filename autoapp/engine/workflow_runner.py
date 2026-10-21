@@ -50,10 +50,10 @@ from app.models import (ConditionCheck, Job, JobRun, ReactionEvent, WorkflowPrer
                         WorkflowRunItem, utcnow)
 from engine import frames
 from engine.frames import tree_top
-from engine import conditions, job_log, log_files, outside, settings, workflow_conditions, workflow_vars
+from engine import conditions, job_log, log_files, outside, reopen, settings, workflow_conditions, workflow_vars
 from engine.outside_state import Context, Outside
 from engine.prerequisites import FINAL, HOLDS, NEVER, TIMED_OUT, WAIT, SKIPPED_OPTIONAL, prerequisite_state
-from engine.reactions import Act, OwnReactions, Rule, judge, read_rules, start_workflow
+from engine.reactions import LIMITED, Act, OwnReactions, Rule, judge, read_rules, start_workflow
 
 AUTOAPP_DIR = Path(__file__).resolve().parents[1]
 CHILD_SCHEDULER = "AutoApp workflow"
@@ -79,6 +79,9 @@ class RunOptions:
     parent_run_id: Optional[str] = None
     workflow_path: Optional[str] = None
     attempt: int = 1
+    reopen: Optional[str] = None            # resume or restart: picks up this run's record, already ended (engine/reopen.py)
+    reopen_scope: Optional[str] = None      # the one item chosen, by path; None for the whole run
+    decisions: Dict[str, str] = field(default_factory=dict)     # failed steps whose effect is unknown: path to run_again or count_done
 
 
 @dataclass
@@ -108,6 +111,9 @@ class Planned:
     on_unmet: str = "NOT_RUN"       # what happens when it can't start: NOT_RUN or FAIL
     attempt_waited: int = -1        # the attempt the waiting message was last said for
     job: Optional[Job] = None       # the job it runs
+    resume_from: Optional[str] = None       # a reopened run: the run of the item's last attempt, to pick up
+    reopen_kind: Optional[str] = None       # a frame picked up: resume, or restart on the way to the item chosen
+    count_as_done: Optional[str] = None     # the step of that attempt the operator counted as done
 
 
 # ---------- Whether a job may start ----------
@@ -225,8 +231,11 @@ class WorkflowRunner:
         if self.options.working_root:       # so the check of its jobs finds their working folders, as they will
             os.environ["AUTOAPP_WORKING_ROOT"] = self.options.working_root
         self.record = self._record_start()
+        if self.record is None:
+            return 1
         self.record_start_ts = time.time()
-        job_log.summary(f"Workflow '{self.workflow.JobKey}', instance {self.options.instance_id}")
+        job_log.summary(f"Workflow '{self.workflow.JobKey}', instance {self.options.instance_id}"
+                        + (f", picked up again ({self.options.reopen})" if self.options.reopen else ""))
         problems = workflow_problems(self.db, self.workflow)
         if problems:
             for problem in problems:
@@ -245,7 +254,9 @@ class WorkflowRunner:
 
     # --- Starting and ending the run's record ---
 
-    def _record_start(self) -> JobRun:
+    def _record_start(self) -> Optional[JobRun]:
+        if self.options.reopen:
+            return self._reopen_record()
         parent = None
         if self.options.parent_run_id:
             parent = self.db.query(JobRun).filter(JobRun.RunID == self.options.parent_run_id).first()
@@ -259,6 +270,31 @@ class WorkflowRunner:
         self.db.add(run)
         self.db.commit()
         return run
+
+    def _reopen_record(self) -> Optional[JobRun]:
+        """The run that ended, set back to Running: the same record, its first start kept (docs/WORKFLOWS_PHASE7.md, proposal 5)."""
+        run = self.db.query(JobRun).filter(JobRun.RunID == self.run_id, JobRun.JobType == "WORKFLOW").first()
+        if run is None:
+            print(f"Run {self.run_id} is not a workflow run AutoApp knows, so there is nothing to pick up.", file=sys.stderr)
+            return None
+        run.Status, run.Reason, run.ErrorMessage, run.ReturnCode, run.EndedDateTime = "RUNNING", None, None, None, None
+        run.StatusBeforeOverride, run.CancelRequestedDateTime, run.KillRequestedDateTime = None, None, None
+        run.ProcessID, run.Attempt = os.getpid(), self.options.attempt
+        self.options.instance_id, self.options.run_number = run.SchedulerInstanceID, run.RunNumber
+        self.options.business_date = run.BusinessDate or self.options.business_date
+        run.LogFile = self._keep_logging_to(run)
+        self.db.commit()
+        return run
+
+    def _keep_logging_to(self, run: JobRun) -> Optional[str]:
+        """Goes on writing to the run's log file, from its first start; a run whose file is gone starts a new one."""
+        if run.LogFile:
+            try:
+                job_log.write_to(log_files.host_folder(run.Host) / run.LogFile)
+                return run.LogFile
+            except OSError:
+                pass
+        return log_files.start(self.run_id)
 
     def _finish(self, status: str, reason: Optional[str], error: Optional[str] = None) -> int:
         code = self._return_code(status)
@@ -354,10 +390,9 @@ class WorkflowRunner:
 
     def _plan(self) -> None:
         base = f"{self.options.workflow_path}/" if self.options.workflow_path else ""
+        kept = self._rows_kept()
         for position, item in enumerate(self.workflow.items, start=1):
-            row = WorkflowRunItem(WorkflowRun_id=self.record.id, Item_id=item.id, Path=base + item.ItemName,
-                                  ItemName=item.ItemName, JobKey=item.job.JobKey, ItemOrder=position)
-            self.db.add(row)
+            row = self._item_row(kept.pop(base + item.ItemName, None), item, base, position)
             inside = [p for p in item.prerequisites if p.Kind == "JOB" and p.target]
             prerequisites = [(p.target.ItemName, p.Test, p.ReturnCodes) for p in inside]
             self.items.append(Planned(item.ItemName, item.job.JobKey, item.JoinRule, prerequisites, row,
@@ -368,10 +403,90 @@ class WorkflowRunner:
                                       outside=[self._outside(p) for p in item.prerequisites if p.Kind != "JOB"]))
         self.by_name = {p.name: p for p in self.items}
         self.frames_read = self._frames_read()
-        self.variables = self._fixed_variables()
-        self._fix_workflow_variables()
+        if self.options.reopen:
+            self._reopen_items(kept)
+        else:
+            self.variables = self._fixed_variables()
+            self._fix_workflow_variables()
         job_log.detail(f"{_count(self.items, 'job')}: " + ", ".join(p.name for p in self.items))
         self._save()
+
+    def _rows_kept(self) -> Dict[str, WorkflowRunItem]:
+        """The items a reopened run already has, by path; none for a run that is starting."""
+        if not self.options.reopen:
+            return {}
+        rows = self.db.query(WorkflowRunItem).filter(WorkflowRunItem.WorkflowRun_id == self.record.id)
+        return {row.Path: row for row in rows}
+
+    def _item_row(self, kept: Optional[WorkflowRunItem], item, base: str, position: int) -> WorkflowRunItem:
+        """The run's row for an item: the one it kept (brought up to date with the workflow), or a new one."""
+        if kept is not None:
+            kept.Item_id, kept.JobKey, kept.ItemOrder = item.id, item.job.JobKey, position
+            return kept
+        row = WorkflowRunItem(WorkflowRun_id=self.record.id, Item_id=item.id, Path=base + item.ItemName,
+                              ItemName=item.ItemName, JobKey=item.job.JobKey, ItemOrder=position, Status="PENDING")
+        self.db.add(row)
+        return row
+
+    # --- Reopening a run that ended (engine/reopen.py) ---
+
+    def _reopen_items(self, leftover: Dict[str, WorkflowRunItem]) -> None:
+        """Puts the items a reopened run is to run again back to Pending, and keeps what the others ended with."""
+        kind, scope = self.options.reopen, self.options.reopen_scope
+        self._read_stored_variables()
+        if kind == reopen.RESTART and scope is None:
+            for row in leftover.values():           # items the workflow no longer has
+                self.db.delete(row)
+        self._remember_reactions_used()
+        for planned in self.items:
+            row = planned.row
+            child = row.child_run
+            action = reopen.action_for(row.Status, child is not None, row.Path, kind, scope)
+            if action == reopen.UNTOUCHED:
+                planned.file_count, planned.size = (child.FileCount, child.Bytes) if child else (None, None)
+            else:
+                self._reset_item(planned, action, kind)
+
+    def _read_stored_variables(self) -> None:
+        """The ${...} the conditions use are the first attempt's, as are the workflow's variables."""
+        kept = json.loads(self.record.WorkflowVariables) if self.record.WorkflowVariables else None
+        if kept is not None and "conditions" in kept:
+            self.variables = kept["conditions"]
+            return
+        self.variables = self._fixed_variables()
+        if kept is None:
+            self._fix_workflow_variables()
+
+    def _remember_reactions_used(self) -> None:
+        """How often each rerun Reaction has run in this run, so a manual rerun does not give it a fresh allowance (D61)."""
+        events = self.db.query(ReactionEvent).filter(
+            ReactionEvent.WorkflowRun_id == self.record.id, ReactionEvent.Result == "TOOK_EFFECT",
+            ReactionEvent.Action.in_(LIMITED), ReactionEvent.ReactionAction_id.isnot(None))
+        for event in events:
+            self.times_used[(event.WorkflowPath, event.ReactionAction_id)] += 1
+
+    def _reset_item(self, planned: Planned, action: str, kind: str) -> None:
+        """The item is to run again: from scratch, or picking up the run of its last attempt."""
+        row, child = planned.row, planned.row.child_run
+        row.Status, row.Reason, row.ReturnCode, row.StatusBeforeOverride, row.EndedDateTime = "PENDING", None, None, None, None
+        planned.file_count = planned.size = None
+        if action == reopen.FRESH or child is None:
+            job_log.summary(f"'{planned.name}' will run again from the beginning.")
+            return
+        planned.resume_from = child.RunID
+        if child.JobType == "WORKFLOW":
+            planned.reopen_kind = kind if action == reopen.ROUTE else reopen.RESUME
+        else:
+            self._note_decision(planned, child)
+        job_log.summary(f"'{planned.name}' will go on from attempt {row.Attempt}.")
+
+    def _note_decision(self, planned: Planned, child: JobRun) -> None:
+        """A failed step whose effect is unknown, which the operator said to count as done, is not run again."""
+        from engine.runner import find_earlier_attempt
+        record, _problem = find_earlier_attempt(self.db, child.RunID)
+        failure = record.open_failure() if record else None
+        if failure and failure.get("operator_decides") and self.options.decisions.get(planned.row.Path) == reopen.COUNT_AS_DONE:
+            planned.count_as_done = failure["key"]
 
     def _outside(self, prerequisite: WorkflowPrerequisite) -> Outside:
         """A prerequisite on something outside the workflow, ready to look at it."""
@@ -427,6 +542,7 @@ class WorkflowRunner:
         """Keeps the workflow's variables and each use's on the run, for its jobs to read as they start."""
         fixed = workflow_vars.fixed_values(self.db, self.workflow, self.options.instance_id,
                                            environment=dict(os.environ), business_date=self.options.business_date)
+        fixed["conditions"] = self.variables
         self.record.WorkflowVariables = json.dumps(fixed)
         if fixed["workflow"]:
             job_log.detail("Variables for its jobs: " + ", ".join(sorted(fixed["workflow"])) + ".")
@@ -661,7 +777,7 @@ class WorkflowRunner:
 
     def _start(self, planned: Planned) -> None:
         self._close_checks(planned)
-        planned.run_id, planned.kill_sent = str(uuid.uuid4()), False
+        planned.run_id, planned.kill_sent = planned.resume_from if planned.reopen_kind else str(uuid.uuid4()), False
         planned.row.Attempt += 1
         output = tempfile.NamedTemporaryFile(prefix="autoapp_workflow_job_", suffix=".log", delete=False)
         try:
@@ -670,6 +786,7 @@ class WorkflowRunner:
         finally:
             output.close()
         planned.output_path = output.name
+        planned.resume_from = planned.reopen_kind = planned.count_as_done = None     # a later rerun is an ordinary one
         planned.row.Status, planned.row.StartedDateTime = "RUNNING", utcnow()
         planned.row.ProcessID = planned.process.pid
         attempt = f", attempt {planned.row.Attempt}" if planned.row.Attempt > 1 else ""
@@ -689,7 +806,20 @@ class WorkflowRunner:
             command += ["--working-root", o.working_root]
         if o.business_date:
             command += ["--business-date", o.business_date.isoformat()]
-        return command
+        return command + self._pick_up_arguments(planned)
+
+    def _pick_up_arguments(self, planned: Planned) -> List[str]:
+        """For an item that goes on from an earlier attempt: a job resumes from its record, a frame is reopened."""
+        o = self.options
+        if planned.reopen_kind:
+            arguments = ["--reopen", planned.reopen_kind]
+            if reopen.is_on_the_way(planned.row.Path, o.reopen_scope):
+                arguments += ["--reopen-scope", o.reopen_scope]
+            return arguments + (["--rerun-decisions", json.dumps(o.decisions)] if o.decisions else [])
+        if planned.resume_from:
+            return ["--resume-run-id", planned.resume_from] + (
+                ["--count-as-done", planned.count_as_done] if planned.count_as_done else [])
+        return []
 
     def _collect_ended(self) -> None:
         for planned in self.items:

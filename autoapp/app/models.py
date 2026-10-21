@@ -552,7 +552,8 @@ class Reaction(Base):
 class ReactionAction(Base):
     """
     One thing a Reaction does. Decisions change what happens next: COUNT_AS_SUCCEEDED,
-    COUNT_AS_FAILED, RERUN (this job, after WaitSeconds, at most MaxTimes), RERUN_FROM (TargetItem
+    COUNT_AS_FAILED, RERUN (this job, after WaitSeconds, at most MaxTimes; RerunMode says whether
+    from the beginning, RESTART, or from where it failed, RESUME), RERUN_FROM (TargetItem
     and everything between it and this job, at most MaxTimes), SKIP (TargetItem), SKIP_BRANCH (what
     waits for this job), KILL_WORKFLOW. A side effect changes nothing in the run: START_WORKFLOW
     (TargetJob). RERUN_FROM, SKIP, SKIP_BRANCH and KILL_WORKFLOW only make sense on a use.
@@ -562,6 +563,7 @@ class ReactionAction(Base):
     DECISIONS = ("COUNT_AS_SUCCEEDED", "COUNT_AS_FAILED", "RERUN", "RERUN_FROM", "SKIP", "SKIP_BRANCH", "KILL_WORKFLOW")
     SIDE_EFFECTS = ("START_WORKFLOW",)
     ONLY_IN_WORKFLOWS = ("RERUN_FROM", "SKIP", "SKIP_BRANCH", "KILL_WORKFLOW")
+    RERUN_MODES = ("RESTART", "RESUME")
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     Reaction_id = Column(Integer, ForeignKey('Reactions.id', ondelete='CASCADE'), nullable=False, index=True)
@@ -569,6 +571,8 @@ class ReactionAction(Base):
     Action = Column(String(30), nullable=False)
     MaxTimes = Column(Integer, nullable=True)
     WaitSeconds = Column(Integer, nullable=True)
+    # RERUN only: RESTART (from the beginning) or RESUME (from where the job failed); empty reads as RESTART
+    RerunMode = Column(String(10), nullable=True)
     TargetItem_id = Column(Integer, ForeignKey('WorkflowItems.id', ondelete='CASCADE'), nullable=True)
     # The workflow START_WORKFLOW starts; a workflow named here cannot be deleted
     TargetJob_MasterObject_id = Column(Integer, ForeignKey('Jobs.MasterObject_id', ondelete='RESTRICT'), nullable=True)

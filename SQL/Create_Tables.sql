@@ -446,6 +446,7 @@ CREATE TABLE `ReactionActions` (
 	`Action` VARCHAR(30) NOT NULL, 
 	`MaxTimes` INTEGER, 
 	`WaitSeconds` INTEGER, 
+	`RerunMode` VARCHAR(10), 
 	`TargetItem_id` INTEGER, 
 	`TargetJob_MasterObject_id` INTEGER, 
 	PRIMARY KEY (id), 

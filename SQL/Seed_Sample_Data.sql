@@ -425,12 +425,12 @@ INSERT INTO Reactions (id, Job_MasterObject_id, Item_id, Section, ReactionOrder,
 (4, NULL, 12,   'NEXT', 1, 'FAILED', NULL),
 (5, NULL, 12,   'NEXT', 2, 'FAILED', NULL);
 
-INSERT INTO ReactionActions (id, Reaction_id, ActionOrder, Action, MaxTimes, WaitSeconds, TargetItem_id) VALUES
-(1, 1, 1, 'RERUN',              2,    2,    NULL),
-(2, 2, 1, 'COUNT_AS_SUCCEEDED', NULL, NULL, NULL),
-(3, 3, 1, 'COUNT_AS_SUCCEEDED', NULL, NULL, NULL),
-(4, 4, 1, 'RERUN_FROM',         1,    0,    11),
-(5, 5, 1, 'SKIP_BRANCH',        NULL, NULL, NULL);
+INSERT INTO ReactionActions (id, Reaction_id, ActionOrder, Action, MaxTimes, WaitSeconds, RerunMode, TargetItem_id) VALUES
+(1, 1, 1, 'RERUN',              2,    2,    'RESTART', NULL),
+(2, 2, 1, 'COUNT_AS_SUCCEEDED', NULL, NULL, NULL, NULL),
+(3, 3, 1, 'COUNT_AS_SUCCEEDED', NULL, NULL, NULL, NULL),
+(4, 4, 1, 'RERUN_FROM',         1,    0,    NULL, 11),
+(5, 5, 1, 'SKIP_BRANCH',        NULL, NULL, NULL, NULL);
 
 -- ----------------------------------------------------------------------------
 -- 7. A sample of conditions (docs/WORKFLOWS_PHASE4.md):

@@ -73,7 +73,10 @@ def run_job(db: Session, job_key: str, instance_id: str, spool_dir: str,
     """
     environment = dict(os.environ) if environment is None else environment
     signal.signal(signal.SIGTERM, _killed)
-    resume, resume_problem = find_earlier_attempt(db, resume_run_id)
+    if own is not None and resume_run_id and own.run_id == resume_run_id and own.record is not None:
+        resume, resume_problem = own.record, None           # this process ran it: its record is in hand, not yet in the database
+    else:
+        resume, resume_problem = find_earlier_attempt(db, resume_run_id)
     business_date = business_date or (resume.business_date if resume else None)
     with LocalSpoolTelemetryClient(spool_dir=spool_dir, instance_id=instance_id, api_url=api_url,
                                    run_id=run_id) as telemetry:
@@ -86,8 +89,10 @@ def run_job(db: Session, job_key: str, instance_id: str, spool_dir: str,
         job_log.debug(f"Run ID {telemetry.run_id}; spool file {telemetry.active_file_path}")
         telemetry.deliver()         # so the run shows as running straight away
         control = open_control(log_file, resume)
+        if own is not None:
+            own.control_path = control.path
         if resume:
-            telemetry.carry_over(*earlier_totals(db, resume_run_id))
+            telemetry.carry_over(*(own.totals if own is not None and own.record is resume else earlier_totals(db, resume_run_id)))
 
         executor, success_codes = None, None
         try:
@@ -175,6 +180,35 @@ def find_earlier_attempt(db: Session, run_id: Optional[str]) -> Tuple[Optional[C
     return ControlRecord.read(path), None
 
 
+def automatic_resume_problem(record: Optional[ControlRecord], problem: Optional[str]) -> Optional[str]:
+    """
+    Why a Reaction may not Resume a failed run, given its control record (or why there is none), in words,
+    or None when it may. The rules are the operator's (docs/WORKFLOWS_PHASE7.md, proposals 3 and 13),
+    except that nobody is there to decide: a step whose effect is not known stops it, and Restart from
+    the beginning stays a choice.
+    """
+    if record is None:
+        return problem
+    failure = record.open_failure()
+    if failure is None:
+        return ("every step had finished, so there is nothing to pick up (the job failed on its return code). "
+                "Choose Restart from the beginning to run it again.")
+    if failure.get("operator_decides"):
+        return (f"step '{failure.get('title') or failure.get('step')}' failed and AutoApp cannot tell whether it "
+                f"changed anything ({failure.get('why') or 'no reason given'}). The job stays failed: Resume it by "
+                f"hand and choose what to do about that step, or Restart from the beginning.")
+    return None
+
+
+def own_resume_problem(own: OwnReactions) -> Optional[str]:
+    """Why a Reaction cannot Resume the run just ended, from the control file it left; the record is kept to resume from."""
+    path = own.control_path
+    own.record = ControlRecord.read(path) if path is not None and path.is_file() else None
+    problem = None if own.record else ("this run kept no record of how far it got, so there is nothing to pick up. "
+                                       "Choose Restart from the beginning.")
+    return automatic_resume_problem(own.record, problem)
+
+
 def earlier_totals(db: Session, run_id: str) -> Tuple[Optional[int], Optional[int]]:
     """The files and bytes the run being picked up had delivered, its own net total if it was a pick-up too."""
     run = db.query(JobRun).filter(JobRun.RunID == str(run_id)).first()
@@ -234,7 +268,8 @@ def _end(telemetry, own: Optional[OwnReactions], status: str, code: Optional[int
         def record(act, result, message):
             (job_log.warning if result == "LIMIT_REACHED" else job_log.summary)(message)
             telemetry.record_reaction(act.action, result, message, act.id)
-        counted = own.after(status, code, record)
+        own.run_id, own.totals = telemetry.run_id, tuple(telemetry.delivered().values())
+        counted = own.after(status, code, record, lambda: own_resume_problem(own))
     telemetry.end_run(counted, error=error, return_code=code, reason=reason,
                       status_before_override=status if counted != status else None)
     return 0 if counted == "SUCCESS" else 1
@@ -344,7 +379,8 @@ def run_with_reactions(db: Session, args) -> int:
         if own is None or own.rerun is None:
             return exit_code
         time.sleep(own.rerun.wait_seconds)
-        run_id, attempt, resume_run_id, count_as_done, reopen = None, attempt + 1, None, None, None
+        resume_run_id = own.run_id if own.rerun.resumes and not (job and job.JobType == "WORKFLOW") else None
+        run_id, attempt, count_as_done, reopen = None, attempt + 1, None, None
         refresh_values, value_edits = False, None
         db.expire_all()
 

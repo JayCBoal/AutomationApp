@@ -187,6 +187,8 @@ class ReactionActionIO(BaseModel):
         "(What happens next); START_WORKFLOW (Also)"))
     max_times: Optional[int] = Field(None, description="RERUN and RERUN_FROM: at most this many times in a run")
     wait_seconds: Optional[int] = Field(None, description="RERUN and RERUN_FROM: how long to wait first")
+    mode: Optional[str] = Field(None, description=(
+        "RERUN: RESTART (from the beginning) or RESUME (from where the job failed; the default for a new one)"))
     target: Optional[str] = Field(None, max_length=100, description="RERUN_FROM and SKIP: a job in the workflow, by its name there")
     workflow: Optional[str] = Field(None, max_length=320, description="START_WORKFLOW: the workflow's key")
 
@@ -471,7 +473,7 @@ class ReactionRecord(BaseModel):
     RunID: str
     Seq: int
     Action: str = Field(..., max_length=30)
-    Result: str = Field(..., max_length=20, description="TOOK_EFFECT or LIMIT_REACHED")
+    Result: str = Field(..., max_length=20, description="TOOK_EFFECT, LIMIT_REACHED or NOT_FIRED")
     Message: Optional[str] = None
     ReactionActionID: Optional[int] = None
     AtUtc: datetime

@@ -846,11 +846,14 @@ class WorkflowRunner:
         if not planned.rules or row.Reason == "KILLED" or self.killing:
             return
         verdict = judge(planned.rules, row.Status, row.ReturnCode,
-                        lambda act: self.times_used[(row.Path, act.id)], in_workflow=True)
+                        lambda act: self.times_used[(row.Path, act.id)], in_workflow=True,
+                        cannot=lambda act: self._cannot_resume(planned, child, act))
         for act in verdict.used_up:
             self._event(planned, child, act, "LIMIT_REACHED",
                         f"'{planned.name}': {act.words()} has already run {_count(range(act.max_times), 'time')}, "
                         f"its limit, so the next Reaction that holds applies.")
+        for act, why in verdict.not_fired:
+            self._event(planned, child, act, "NOT_FIRED", f"'{planned.name}': {act.words()} was not carried out: {why}")
         if verdict.deciding:
             job_log.summary(f"'{planned.name}': {verdict.deciding.when_words()}, so, as its Reactions say: "
                             + ", ".join(a.words() for a in verdict.decisions) + ".")
@@ -890,8 +893,17 @@ class WorkflowRunner:
             p.row.Status, p.row.EndedDateTime = "SKIPPED", utcnow()
         return f"Skipped ({why}): {', '.join(p.name for p in skipped) or 'nothing not yet started'}."
 
+    def _cannot_resume(self, planned: Planned, child: Optional[JobRun], act: Act) -> Optional[str]:
+        """Why a Rerun this job that resumes cannot, in words, or None. A workflow is always run again from the beginning."""
+        if not act.resumes or planned.job_type == "WORKFLOW":
+            return None
+        if child is None:
+            return "the job left no record of its run, so there is nothing to pick up. Choose Restart from the beginning."
+        from engine.runner import automatic_resume_problem, find_earlier_attempt
+        return automatic_resume_problem(*find_earlier_attempt(self.db, child.RunID))
+
     def _rerun(self, chain: List[Planned], planned: Planned, act: Act) -> str:
-        """Runs the chain again, each a new attempt, the first after the action's wait."""
+        """Runs the chain again, each a new attempt, the first after the action's wait. A Resume picks up the job's own."""
         self.times_used[(planned.row.Path, act.id)] += 1
         for p in chain:
             if p.row.Status == "RUNNING":
@@ -904,7 +916,10 @@ class WorkflowRunner:
         chain[0].start_after = time.time() + act.wait_seconds
         used = self.times_used[(planned.row.Path, act.id)]
         wait = f" after {act.wait_seconds} s" if act.wait_seconds else ""
-        return (f"Rerunning {', '.join(p.name for p in chain)}{wait} "
+        resumed = act.resumes and planned.job_type != "WORKFLOW" and planned.row.child_run is not None
+        if resumed:
+            planned.resume_from = planned.row.child_run.RunID
+        return (f"Rerunning {', '.join(p.name for p in chain)}{' from where it failed' if resumed else ''}{wait} "
                 f"(rerun {used} of at most {act.max_times}).")
 
     def _downstream(self, planned: Planned) -> List[Planned]:

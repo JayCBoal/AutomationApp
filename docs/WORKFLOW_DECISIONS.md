@@ -662,3 +662,13 @@ Compiled 2026-10-18, from the design record and Phases 1 to 4.
 **D90. Each phase includes only what workflows need**; side ideas go to TO-DO, long-term features to the roadmap planning session.
 - *Why:* the owner, 2026-10-18: operational features (Hold, expression Whens) "feel like outside the scope of Workflow work". Keeping phases tight keeps them reviewable.
 - *Status:* In force. *Source:* WORKFLOWS_PHASE3.md; the owner.
+
+**D147. A Reaction's Rerun this job is stored as RESTART or RESUME on its action (`ReactionActions.RerunMode`); existing ones are RESTART, a new one saved without a choice is RESUME.** The API reads an empty value as RESTART, so a database not yet migrated behaves as before.
+- *Why:* the owner's choice (proposal 13): nothing that ran before runs differently; a job of steps is the standard job, so a new Reaction resumes.
+- *Considered:* a separate action name (RERUN_RESUME); rejected because the limit, the wait and the "at most N times" count are the same thing, and the Reaction record would split one rule in two.
+- *Status:* Built (Phase 7, step 3a). *Source:* WORKFLOWS_PHASE7.md, proposal 13.
+
+**D148. A Resume by Reaction that cannot be carried out is passed over, like a rerun at its limit, and the next entry that holds decides.** It is recorded as NOT_FIRED, with the reason, in the Reaction record, the job log and the run page. It is passed over when: a step failed and could not say what it changed (or cannot finish by itself); every step had finished and the job failed on its return code (nothing to pick up); or the record of how far the run got is gone or on another host. A workflow is always run again from the beginning, whatever the choice says.
+- *Why:* "stays failed" for an unknown failure must not be undone by an automatic retry, yet "rerun twice, then count as failed" should still work; treating it as used up gives both. Restart stays a choice for anyone who accepts the work being done again.
+- *Considered:* stopping all Reactions for that job (the job could not then be counted as succeeded by a later entry); firing a Restart instead (silently repeats work).
+- *Status:* Built (Phase 7, step 3a). *Source:* WORKFLOWS_PHASE7.md, proposal 13 and settled item 3.

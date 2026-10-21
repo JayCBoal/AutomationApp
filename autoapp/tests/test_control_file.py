@@ -52,9 +52,9 @@ def control_of(tmp_path, run_id) -> ControlRecord:
     return ControlRecord.read(next((tmp_path / "logs").rglob(f"{run_id}.control")))
 
 
-def put_gate(tmp_path, *names):
+def put_gate(tmp_path, *names, job="RES"):
     """The files the gate steps wait for."""
-    gate = tmp_path / "work" / "RES" / "gate"
+    gate = tmp_path / "work" / job / "gate"
     gate.mkdir(parents=True, exist_ok=True)
     for name in names:
         (gate / name).write_text("ok")

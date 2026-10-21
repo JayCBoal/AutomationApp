@@ -457,7 +457,7 @@ class RunEndRecord(BaseModel):
     Status: str = Field(..., max_length=20)
     Error: Optional[str] = None
     ReturnCode: Optional[int] = Field(None, description="The job's return code: 0 unless a step set one")
-    Reason: Optional[str] = Field(None, max_length=40, description="Why it failed: ERROR, RETURN_CODE or KILLED")
+    Reason: Optional[str] = Field(None, max_length=40, description="Why it failed: ERROR, RETURN_CODE, KILLED or EFFECT_UNKNOWN (a step failed and could not say whether it changed anything)")
     StatusBeforeOverride: Optional[str] = Field(None, max_length=20, description=(
         "What it ended as before a Reaction counted it as succeeded or failed"))
     FileCount: Optional[int] = Field(None, description="How many files the run delivered (wrote to a destination)")

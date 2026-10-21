@@ -162,6 +162,33 @@
                 <span class="muted small" x-show="launch.exit_code !== null" x-text="'exit code ' + launch.exit_code"></span>
                 <button type="button" class="secondary danger" id="kill-button" x-show="run && run.status === 'RUNNING'"
                         @click="kill()" x-text="killWords(run)"></button>
+                <button type="button" class="secondary" id="rerun-button" x-show="canRerun(run)" @click="openRerun()">Rerun &#9656;</button>
+            </div>
+            <div class="panel" id="rerun-panel" x-show="rerunPlan" x-cloak>
+                <template x-if="rerunPlan">
+                    <div>
+                        <p class="small" id="rerun-summary" x-text="rerunPlan.refusal || rerunPlan.summary"></p>
+                        <p class="message warning small" id="rerun-resume-problem" x-show="rerunPlan.resume_problem"
+                           x-text="rerunPlan.resume_problem"></p>
+                        <fieldset x-show="rerunPlan.step_to_decide" id="rerun-decision">
+                            <p class="small" x-show="rerunPlan.step_to_decide">
+                                <strong x-text="rerunPlan.step_to_decide && ('Step ' + rerunPlan.step_to_decide.step + ' \u2018' + rerunPlan.step_to_decide.title + '\u2019')"></strong>:
+                                <span x-text="rerunPlan.step_to_decide && rerunPlan.step_to_decide.why"></span>.
+                                It is not known whether this step changed anything before it failed. What should Resume do with it?
+                            </p>
+                            <label><input type="radio" name="rerun-unknown" value="run_again" x-model="rerunChoice"> Run it again</label>
+                            <label><input type="radio" name="rerun-unknown" value="count_done" x-model="rerunChoice"> Count it as done</label>
+                            <p class="muted small">Or restart the job from the beginning.</p>
+                        </fieldset>
+                        <div class="actions">
+                            <button type="button" class="primary" id="rerun-resume" @click="rerun('resume')"
+                                    :disabled="rerunBusy || !rerunPlan.can_resume || (rerunPlan.step_to_decide && !rerunChoice)">Resume</button>
+                            <button type="button" class="secondary" id="rerun-restart" @click="rerun('restart')"
+                                    :disabled="rerunBusy || !rerunPlan.can_restart">Restart from beginning</button>
+                            <button type="button" class="secondary" id="rerun-close" @click="closeRerun()">Close</button>
+                        </div>
+                    </div>
+                </template>
             </div>
             <p class="small"><code id="run-command" x-text="launch.command"></code></p>
             <p class="small" x-show="run">

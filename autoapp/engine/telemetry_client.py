@@ -53,6 +53,7 @@ class LocalSpoolTelemetryClient:
         # The files the run delivered, by where they went, and their size: reported with its end, so
         # Job History has them without anyone counting its operations (docs/WORKFLOWS_PHASE4.md)
         self._delivered: Dict[str, Optional[int]] = {}
+        self._carried = (0, 0)              # the files and bytes of the attempt this one picked up
 
     def _write(self, record_type: str, fields: Dict[str, Any]) -> None:
         self._seq += 1
@@ -136,9 +137,15 @@ class LocalSpoolTelemetryClient:
         self._write("RUN_END", {**override, "Status": status, "Error": error, "ReturnCode": return_code,
                                 "Reason": reason, **self.delivered(), "EndedAtUtc": utc_now_iso()})
 
+    def carry_over(self, files: Optional[int], size: Optional[int]) -> None:
+        """A run that picks up an earlier one adds that attempt's totals to its own (the net result, D43)."""
+        self._carried = (files or 0, size or 0)
+
     def delivered(self) -> Dict[str, int]:
         """FileCount and Bytes: the files this run has delivered so far, and their size added up."""
-        return {"FileCount": len(self._delivered), "Bytes": sum(size or 0 for size in self._delivered.values())}
+        files, total = self._carried
+        return {"FileCount": files + len(self._delivered),
+                "Bytes": total + sum(size or 0 for size in self._delivered.values())}
 
     def record_reaction(self, action: str, result: str, message: str, action_id: Optional[int] = None) -> None:
         """A Reaction's action that fired after the job ended, or was passed over at its limit."""

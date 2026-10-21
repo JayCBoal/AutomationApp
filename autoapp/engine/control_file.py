@@ -12,6 +12,7 @@ Each record names the step it is about by its place in the job: the step number,
 each loop around it ("3.1|2.1" is step 3.1 in pass 2 of a loop and pass 1 of the loop inside). Records:
 
     job          the run's anchors: when it started, its business date
+    values       the ${...} values the job used, by key; a secret's by name only (engine/run_values.py)
     resumed      this attempt picked up another run's record; that run's records follow, copied
     begin        a step started
     end          a step ended; done says whether the job went on past it, with its outputs
@@ -120,14 +121,19 @@ class ControlRecord:
             self._last[("pass", key, record.get("n"))] = record
         elif event in ("file_begin", "file_end"):
             self._files.setdefault(key, {})[record["src"]] = record
-        elif event == "job":
-            self._last[("job",)] = record
+        elif event in ("job", "values"):
+            self._last[(event,)] = record
 
     # ---------- The run ----------
 
     @property
     def job(self) -> Dict[str, Any]:
         return self._last.get(("job",), {})
+
+    @property
+    def values(self) -> Dict[str, Dict[str, Any]]:
+        """The ${...} values the latest attempt used, as {key: {"value": text} or {"secret": true}}."""
+        return self._last.get(("values",), {}).get("values", {})
 
     @property
     def business_date(self) -> Optional[date]:

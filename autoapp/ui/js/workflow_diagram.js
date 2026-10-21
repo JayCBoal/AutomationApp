@@ -9,6 +9,7 @@
  *     diagram.items:  [{ id, name, sub, kind ("JOB" or "WORKFLOW"), disabled (words, or null),
  *                        join ("ALL" or "ANY"), status (a run's state, or null), statusText,
  *                        disabledHere ("STOP", "PASS_THROUGH" or null), reactions (words, or null),
+ *                        attempt (in a run: how many times it has run, shown as ×2 from the second),
  *                        rule (its Custom rule, or null), changed (true: changed since it was last saved),
  *                        outside (null; or "JOB", "FILES", "TIME" or "NEEDED": a dashed box outside the workflow, see below),
  *                        href (outside: the page a click opens), owner (outside: the id of the box a click selects instead) }]
@@ -123,6 +124,7 @@ const WorkflowDiagram = (() => {
         if (item.disabledHere === "PASS_THROUGH") list.push(["pass", "Disabled here to pass through: it counts as succeeded without running"]);
         if (item.changed) list.push(["changed", "Changed since it was last saved: Save keeps the change, Cancel drops it"]);
         if (item.reactions) list.push(["reactions", item.reactions]);
+        if (item.attempt > 1) list.push([`attempts:${item.attempt}`, `Run ${item.attempt} times in this run: see Job History for each attempt`]);
         if (item.outside === "FILES") list.push(["files", "Files at an endpoint, on this server"]);
         if (item.outside === "TIME") list.push([item.calendar ? "calendar" : "clock", "A condition on the time"]);
         if (item.outside === "JOB") list.push(["workflow", "A job, or a whole workflow, outside this one"]);
@@ -253,6 +255,8 @@ const WorkflowDiagram = (() => {
         } else if (name === "lock") {
             svg("rect", { x: 2.5, y: 6, width: 9, height: 6.5, rx: 1, ...stroke }, g);
             svg("path", { d: "M4.5 6V4.2a2.5 2.5 0 0 1 5 0V6", ...stroke }, g);
+        } else if (name.startsWith("attempts:")) {  // ×2: this item has been run more than once in the run
+            svg("text", { x: 7, y: 11, "text-anchor": "middle", fill: "currentColor", style: `font: ${SMALL_FONT}; font-weight: 700` }, g).textContent = "×" + name.slice(9);
         } else if (name === "reactions") {          // a circling arrow: what happens after it ends
             svg("path", { d: "M11.5 7a4.5 4.5 0 1 1-1.4-3.3", ...stroke }, g);
             svg("path", { d: "M10.6 1.2v2.9H7.7", ...stroke }, g);
@@ -704,6 +708,7 @@ const WorkflowDiagram = (() => {
         row(keySample("icon", "disabled", "key-i2-"), "Its job is disabled, or it is disabled here");
         row(keySample("icon", "pass", "key-i3-"), "Disabled here to pass through: counts as succeeded without running");
         row(keySample("icon", "reactions", "key-i4-"), "Has Reactions: what happens after it ends");
+        row(keySample("icon", "attempts:2", "key-i10-"), "Run more than once in this run (×2 is a second attempt, after a Rerun)");
         row(keySample("icon", "changed", "key-i6-"), "Outlined and marked so while editing: changed since the workflow was last saved");
         row(keySample("icon", "rule", "key-i5-"), "Starts by a Custom rule; point at it to read the rule. Dotted lines come from the jobs the rule names");
         row(Object.assign(document.createElement("span"), { className: "wf-any-sample", textContent: "ANY" }),

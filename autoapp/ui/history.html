@@ -7,6 +7,7 @@
     <link rel="icon" href="data:,">
     <link rel="stylesheet" href="css/autoapp.css">
     <script src="js/common.js"></script>
+    <script src="js/rerun.js"></script>
     <script src="js/history.js"></script>
     <script defer src="vendor/alpine-3.17.4.min.js"></script>
 </head>
@@ -56,6 +57,7 @@
         <p class="message error" x-show="error" x-text="error" role="alert"></p>
         <p class="message" id="result-summary" x-show="!error" x-text="summary"></p>
         <p class="message capped" x-show="capped">Only the newest <span x-text="rows.length"></span> are shown.</p>
+        <div data-rerun-panel></div>
         <div class="table-scroll" x-show="rows.length > 0">
             <table class="results">
                 <thead><tr><th>Job</th><th>Status</th><th>Started</th><th>Took</th><th>Scheduler</th><th>Files</th><th>Log</th></tr></thead>
@@ -101,6 +103,8 @@
                             <td class="nowrap">
                                 <a class="run-log" :href="logLink(run)" x-show="run.has_log || run.status === 'RUNNING'">Log</a>
                                 <span class="muted small" x-show="!run.has_log && run.status !== 'RUNNING'">None kept</span>
+                                <div><button type="button" class="secondary rerun-row" x-show="canRerun(run)"
+                                             @click="rerunRow = run; openRerun(run.run_id)">Rerun &#9656;</button></div>
                             </td>
                         </tr>
                     </template>

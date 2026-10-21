@@ -22,6 +22,7 @@
  *     GET    /api/v1/runs?job_key=...&job_type=WORKFLOW, GET /api/v1/runs/{run_id}
  *     POST   /api/v1/runs/{run_id}/cancel, /api/v1/runs/{run_id}/kill (Kill and Cancel)
  *     POST   /api/v1/runs/{run_id}/items/{path}/kill (Kill one job of the run)
+ *     Rerun ▸ on the run, and on a failed job or frame in it: rerun.js
  *
  * Reactions (docs/WORKFLOWS_PHASE3.md, js/reactions.js): the workflow's own, and on each job its
  * job's, or this use's own once Override here is chosen. Disable here stops a job or lets it
@@ -99,6 +100,7 @@ function workflowDetail() {
     };
 
     return {
+        ...rerunDialog(),
         ...AutoApp.tagEditing(ownVariables),
         ...AutoApp.reactionEditing(),
         key: address.get("key") || "",
@@ -1333,7 +1335,7 @@ function workflowDetail() {
                 const used = definition.get(item.path);
                 const frame = Boolean(item.frame_run_id) || (item.inside || []).length > 0;
                 const saved = this.form && used ? this.form.items.find(i => i.id === used.id) : null;
-                return { id: item.path, name: item.name, join: used ? used.join : "ALL", status: item.status,
+                return { id: item.path, name: item.name, join: used ? used.join : "ALL", status: item.status, attempt: item.attempt,
                          statusText: frame ? [this.stateWords(item), this.insideWords(item)].filter(Boolean).join(" · ") : this.stateWords(item),
                          kind: frame ? "FRAME" : this.jobKind(item.job_key), disabled: null,
                          disabledHere: used ? used.disabled_here : null, rule: used && used.join === "CUSTOM" ? used.rule : null,
@@ -1436,6 +1438,16 @@ function workflowDetail() {
             } else if (this.job) {
                 await this.loadRuns();
             }
+        },
+
+        /** A rerun reopens the run at the top: show it starting again, and follow it once it is Running. */
+        async afterRerun(launch) {
+            this.runId = launch.run_id;
+            this.runSelected = "";
+            this.run = { ...this.run, starting: true, status: "RUNNING" };
+            history.replaceState(null, "", "workflow.html?" + new URLSearchParams({ key: this.key, run: this.runId }));
+            await this.waitUntilRunning(launch);
+            this.followRun();
         },
 
         async killRun() {

@@ -7,6 +7,7 @@
     <link rel="icon" href="data:,">
     <link rel="stylesheet" href="css/autoapp.css">
     <script src="js/common.js"></script>
+    <script src="js/rerun.js"></script>
     <script src="js/run.js"></script>
     <script defer src="vendor/alpine-3.17.4.min.js"></script>
 </head>
@@ -164,58 +165,7 @@
                         @click="kill()" x-text="killWords(run)"></button>
                 <button type="button" class="secondary" id="rerun-button" x-show="canRerun(run)" @click="openRerun()">Rerun &#9656;</button>
             </div>
-            <div class="panel" id="rerun-panel" x-show="rerunPlan" x-cloak>
-                <template x-if="rerunPlan">
-                    <div>
-                        <p class="small" id="rerun-summary" x-text="rerunPlan.refusal || rerunPlan.summary"></p>
-                        <p class="message warning small" id="rerun-resume-problem" x-show="rerunPlan.resume_problem"
-                           x-text="rerunPlan.resume_problem"></p>
-                        <fieldset x-show="rerunPlan.step_to_decide" id="rerun-decision">
-                            <p class="small" x-show="rerunPlan.step_to_decide">
-                                <strong x-text="rerunPlan.step_to_decide && ('Step ' + rerunPlan.step_to_decide.step + ' \u2018' + rerunPlan.step_to_decide.title + '\u2019')"></strong>:
-                                <span x-text="rerunPlan.step_to_decide && rerunPlan.step_to_decide.why"></span>.
-                                It is not known whether this step changed anything before it failed. What should Resume do with it?
-                            </p>
-                            <label><input type="radio" name="rerun-unknown" value="run_again" x-model="rerunChoice"> Run it again</label>
-                            <label><input type="radio" name="rerun-unknown" value="count_done" x-model="rerunChoice"> Count it as done</label>
-                            <p class="muted small">Or restart the job from the beginning.</p>
-                        </fieldset>
-                        <fieldset x-show="rerunPlan.can_resume && rerunPlan.values.length" id="rerun-values">
-                            <p class="small">The values Resume uses for the job&rsquo;s ${...} placeholders:</p>
-                            <label><input type="radio" name="rerun-values" value="as_were" x-model="valuesChoice"> Use as they were</label>
-                            <label><input type="radio" name="rerun-values" value="refresh" x-model="valuesChoice"> Refresh</label>
-                            <label><input type="radio" name="rerun-values" value="edit" x-model="valuesChoice"> Edit</label>
-                            <p class="message warning small" id="rerun-refresh-changes" x-show="valuesChoice === 'refresh'">
-                                <span x-show="!rerunPlan.changes.length">No variable has changed since attempt <span x-text="rerunPlan.attempt"></span>. Anything read from the environment is read again when the job starts.</span>
-                                <span x-show="rerunPlan.changes.length">These have changed since attempt <span x-text="rerunPlan.attempt"></span>, and will use their new values:</span>
-                                <template x-for="change in rerunPlan.changes" :key="change.key">
-                                    <span style="display: block"><code x-text="change.key"></code>: <span x-text="change.was"></span> &rarr; <span x-text="change.now"></span></span>
-                                </template>
-                            </p>
-                            <table class="small" id="rerun-value-list">
-                                <template x-for="v in rerunPlan.values" :key="v.key">
-                                    <tr>
-                                        <td><code x-text="v.key"></code></td>
-                                        <td>
-                                            <span x-show="v.secret" class="muted">a secret: always read when the job runs</span>
-                                            <span x-show="!v.secret && valuesChoice !== 'edit'" x-text="v.value"></span>
-                                            <input type="text" x-show="!v.secret && valuesChoice === 'edit'" :aria-label="'Value of ' + v.key"
-                                                   :value="v.value" @input="valueEdits[v.key] = $event.target.value">
-                                        </td>
-                                    </tr>
-                                </template>
-                            </table>
-                        </fieldset>
-                        <div class="actions">
-                            <button type="button" class="primary" id="rerun-resume" @click="rerun('resume')"
-                                    :disabled="rerunBusy || !rerunPlan.can_resume || (rerunPlan.step_to_decide && !rerunChoice)">Resume</button>
-                            <button type="button" class="secondary" id="rerun-restart" @click="rerun('restart')"
-                                    :disabled="rerunBusy || !rerunPlan.can_restart">Restart from beginning</button>
-                            <button type="button" class="secondary" id="rerun-close" @click="closeRerun()">Close</button>
-                        </div>
-                    </div>
-                </template>
-            </div>
+            <div data-rerun-panel></div>
             <p class="small"><code id="run-command" x-text="launch.command"></code></p>
             <p class="small" x-show="run">
                 <span x-text="'Started ' + time(run && run.started)"></span>

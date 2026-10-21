@@ -11,6 +11,7 @@
     <script src="js/conditions.js"></script>
     <script src="vendor/elk-0.12.0.bundled.js"></script>
     <script src="js/workflow_diagram.js"></script>
+    <script src="js/rerun.js"></script>
     <script src="js/workflow.js"></script>
     <script defer src="vendor/alpine-3.17.4.min.js"></script>
 </head>
@@ -63,9 +64,12 @@
                         x-show="run.status === 'RUNNING' && !run.kill_requested" @click="killRun()"
                         title="Kill the jobs running now, and start nothing more">Kill and Cancel</button>
                 <span class="muted small" x-show="run.kill_requested && run.status === 'RUNNING'">Killing</span>
+                <button type="button" class="secondary" id="rerun-button" x-show="canRerun(run) && run.run_id"
+                        @click="openRerun(run.run_id)">Rerun &#9656;</button>
                 <a x-show="run.run_id" :href="logLink(run.run_id)">The workflow's log</a>
                 <button type="button" class="link" @click="closeRun()">Close</button>
             </div>
+            <div data-rerun-panel></div>
             <p class="error-text" x-show="run.error" x-text="run.error"></p>
             <template x-for="(check, i) in checksFor(null)" :key="i">
                 <div class="cond-explained run-succeeds-when">
@@ -91,6 +95,8 @@
                             <div class="muted small" x-show="runItem.started" x-text="'started ' + time(runItem.started)"></div>
                             <div class="muted small" x-show="runItem.ended" x-text="'ended ' + time(runItem.ended)"></div>
                             <a x-show="runItem.run_id" :href="logLink(runItem.run_id)">Its log</a>
+                            <button type="button" class="secondary rerun-item" x-show="canRerun(run) && runItem.status === 'FAILED' && runItem.run_id"
+                                    @click="openRerun(runItem.run_id)">Rerun &#9656;</button>
                             <button type="button" class="secondary danger kill-item" x-show="runItem.status === 'RUNNING'"
                                     @click="killItem(runItem)">Kill</button>
                             <div class="muted small run-waiting" x-show="runItem.waiting_for" x-text="runItem.waiting_for"></div>
@@ -142,6 +148,8 @@
                         <span class="muted small run-inside" x-show="item.frame_run_id" x-text="insideWords(item)"></span>
                         <a x-show="item.run_id || item.frame_run_id" :href="logLink(item.run_id || item.frame_run_id)">Log</a>
                         <button type="button" class="link small kill-item" x-show="item.status === 'RUNNING'" @click="killItem(item)">Kill</button>
+                        <button type="button" class="link small rerun-item" x-show="canRerun(run) && item.status === 'FAILED' && (item.run_id || item.frame_run_id)"
+                                @click="openRerun(item.run_id || item.frame_run_id)">Rerun &#9656;</button>
                         <span class="muted small run-waiting" x-show="item.waiting_for" x-text="item.waiting_for"></span>
                         <template x-for="(check, i) in checksFor(item.path)" :key="i">
                             <span class="muted small run-rule-words" :title="check.condition"

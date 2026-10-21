@@ -8,9 +8,7 @@
  *     GET  /api/v1/launches/{launch_id}     whether the runner process is still going
  *     GET  /api/v1/runs/{run_id}            the run as recorded, with its job log so far
  *     POST /api/v1/runs/{run_id}/kill       Kill (a workflow: Kill and Cancel)
- *     GET  /api/v1/runs/{run_id}/rerun-plan what Rerun can do for a failed job, and a step to decide
- *     POST /api/v1/runs/{run_id}/rerun      Resume or Restart from beginning: the next attempt; a Resume's ${...}
- *                                           values are used as they were, refreshed or edited
+ *     (Rerun ▸ is in rerun.js)
  */
 const LOG_LEVELS = ["DETAIL", "SUMMARY", "DEBUG", "SILENT"];
 const POLL_MS = 1000;
@@ -47,53 +45,10 @@ function followRun() {
             }
         },
 
-        // ---- Rerun: Resume or Restart from beginning, for a failed job run on its own ----
-        rerunPlan: null,        // what Rerun can do, shown while the choice is open
-        rerunChoice: "",        // run_again or count_done, for a step that may or may not have changed something
-        rerunBusy: false,
-        valuesChoice: "as_were",    // for Resume: use the ${...} values as they were, refresh them, or edit some
-        valueEdits: {},             // value by key, as typed
-
-        canRerun(run) { return Boolean(run) && run.status === "FAILED" && run.job_type !== "WORKFLOW" && !run.parent_run_id; },
+        ...rerunDialog(),
 
         /** A run's status, with "(effect unknown)" for a failure whose step could not say what it did. */
         statusWords(run) { return run.status === "FAILED" && run.reason === "EFFECT_UNKNOWN" ? "Failed (effect unknown)" : run.status; },
-
-        async openRerun() {
-            this.error = "";
-            this.rerunChoice = "";
-            this.valuesChoice = "as_were";
-            this.valueEdits = {};
-            try {
-                this.rerunPlan = await AutoApp.get(`/runs/${encodeURIComponent(this.run.run_id)}/rerun-plan`);
-            } catch (e) {
-                this.error = e.message;
-            }
-        },
-        closeRerun() { this.rerunPlan = null; },
-
-        /** The values the operator typed over, not those left as they were. */
-        changedEdits() {
-            const was = Object.fromEntries(this.rerunPlan.values.map(v => [v.key, v.value]));
-            return Object.fromEntries(Object.entries(this.valueEdits).filter(([key, value]) => value !== was[key]));
-        },
-
-        async rerun(kind) {
-            this.rerunBusy = true;
-            try {
-                const launch = await AutoApp.send("POST", `/runs/${encodeURIComponent(this.run.run_id)}/rerun`, {
-                    kind, unknown_step: kind === "resume" ? this.rerunChoice || null : null,
-                    refresh_values: kind === "resume" && this.valuesChoice === "refresh",
-                    edits: kind === "resume" && this.valuesChoice === "edit" ? this.changedEdits() : {},
-                });
-                this.rerunPlan = null;
-                this.afterRerun(launch);
-            } catch (e) {
-                this.error = e.message;
-            } finally {
-                this.rerunBusy = false;
-            }
-        },
 
         killWords(run) { return run && run.job_type === "WORKFLOW" ? "Kill and Cancel" : "Kill"; },
 

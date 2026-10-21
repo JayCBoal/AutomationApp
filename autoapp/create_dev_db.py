@@ -49,7 +49,7 @@ def load_seed(db) -> None:
 
 
 def create_sample_files(db) -> Path:
-    """Puts two extract files, and one file the job should ignore, in the legal application's outbox."""
+    """Puts two extract files, and one file the job should ignore, in the legal application's outbox (and the Resume sample's files)."""
     root = (
         db.query(Variable.VarValue)
         .join(Application, Application.MasterObject_id == Variable.MasterObject_id)
@@ -61,7 +61,15 @@ def create_sample_files(db) -> Path:
     (outbox / "Legal_Batch_001.csv").write_text("client,amount\nACME,100\n")
     (outbox / "Legal_Batch_002.csv").write_text("client,amount\nGLOBEX,250\nINITECH,75\n")
     (outbox / "readme.txt").write_text("Not part of the batch; the job should leave this alone.\n")
+    create_restart_files(Path(root) / "restarts_in")
     return outbox
+
+
+def create_restart_files(folder: Path) -> None:
+    """Five files for DEV-RESUME_SAMPLE to copy. The fourth is empty, so the job fails there."""
+    folder.mkdir(parents=True, exist_ok=True)
+    for number in range(1, 6):
+        (folder / f"restart_{number}.csv").write_text("" if number == 4 else f"row\n{number}\n")
 
 
 def create_sales_db(path: Path = SALES_DB) -> bool:

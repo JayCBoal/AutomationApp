@@ -653,3 +653,54 @@ INSERT INTO WorkflowPrerequisites (id, Item_id, TargetItem_id, Test, ReturnCodes
 (27, 34, 33, 'SUCCESS', NULL, 'JOB',       NULL,                          NULL, NULL, NULL, NULL, 'DEFAULT', NULL, 'OTHERS', 1),
 (28, 29, 28, 'SUCCESS', NULL, 'JOB',       NULL,                          NULL, NULL, NULL, NULL, 'DEFAULT', NULL, 'OTHERS', 1),
 (29, 30, 28, 'RULE',    NULL, 'JOB',       NULL,                          NULL, NULL, NULL, NULL, 'DEFAULT', NULL, 'OTHERS', 1);
+
+-- ----------------------------------------------------------------------------
+-- 11. A sample of Resume (docs/WORKFLOWS_PHASE7.md): two jobs to fail and rerun from the Run Job page.
+--     - DEV-RESUME_SAMPLE copies the five files in the legal application's restarts_in folder, one by one.
+--       The fourth file is empty, so the job fails there. Put something in restart_4.csv and choose
+--       Rerun, then Resume: the three files done are not copied again, and the net file count is five.
+--     - DEV-UNKNOWN_SAMPLE has a Post step that fails and says it is not known whether it did anything
+--       ("Failed (effect unknown)"). Resume asks what to do with it: run it again (set POST_FAILS to
+--       False first), or count it as done.
+-- ----------------------------------------------------------------------------
+INSERT INTO MasterObjects (id, ObjectType) VALUES
+(55, 'ENDPOINT'), (56, 'JOB'), (57, 'JOB');
+
+INSERT INTO Endpoints (MasterObject_id, Name, Application_MasterObject_id, Site_MasterObject_id, Path, FilenamePattern, Description) VALUES
+(55, 'LEGAL_RESTARTS_IN', 1, NULL, '${APP.Root}/restarts_in', 'restart_*.csv', 'Five files for the Resume sample to copy; the fourth is empty');
+
+INSERT INTO Jobs (MasterObject_id, JobKey, Description) VALUES
+(56, 'DEV-RESUME_SAMPLE',  'Sample: copies five files one by one and fails at the empty fourth; Resume does the rest'),
+(57, 'DEV-UNKNOWN_SAMPLE', 'Sample: a Post step fails without knowing whether it did anything; Resume asks what to do');
+
+INSERT INTO Variables (MasterObject_id, VarName, VarValue, Description) VALUES
+(57, 'POST_FAILS', 'True', 'Whether the Post step fails; set to False before running it again');
+
+INSERT INTO JobSteps (id, Job_MasterObject_id, StepType_id, StepOrder, StepTitle, StepName)
+SELECT 47, 56, id, 1, 'Copy each file', 'Each' FROM StepTypes WHERE Code = 'FOR_EACH_FILE';
+INSERT INTO JobSteps (id, Job_MasterObject_id, ParentStep_id, StepType_id, StepOrder, StepTitle, StepName)
+SELECT 48, 56, 47, id, 1, 'Check the file has something in it', 'Check_the_file' FROM StepTypes WHERE Code = 'CHECK_FILES';
+INSERT INTO JobSteps (id, Job_MasterObject_id, ParentStep_id, StepType_id, StepOrder, StepTitle, StepName)
+SELECT 49, 56, 47, id, 2, 'Copy the file', 'Copy_the_file' FROM StepTypes WHERE Code = 'COPY_FILES';
+INSERT INTO JobSteps (id, Job_MasterObject_id, StepType_id, StepOrder, StepTitle, StepName)
+SELECT 50, 56, id, 2, 'Report', 'Report' FROM StepTypes WHERE Code = 'SIMULATE';
+INSERT INTO JobSteps (id, Job_MasterObject_id, StepType_id, StepOrder, StepTitle, StepName)
+SELECT 51, 57, id, 1, 'Prepare', 'Prepare' FROM StepTypes WHERE Code = 'SIMULATE';
+INSERT INTO JobSteps (id, Job_MasterObject_id, StepType_id, StepOrder, StepTitle, StepName)
+SELECT 52, 57, id, 2, 'Post', 'Post' FROM StepTypes WHERE Code = 'SIMULATE';
+INSERT INTO JobSteps (id, Job_MasterObject_id, StepType_id, StepOrder, StepTitle, StepName)
+SELECT 53, 57, id, 3, 'Report', 'Report' FROM StepTypes WHERE Code = 'SIMULATE';
+
+INSERT INTO JobStepParameters (JobStep_id, ParameterName, ParameterValue) VALUES
+(47, 'SourceEndpoint', 'LEGAL_RESTARTS_IN'),
+(47, 'ItemName',       'Batch'),
+(48, 'Source',         '%{Batch.FullName}'),
+(49, 'Source',         '%{Batch.FullName}'),
+(49, 'Dest',           'copied'),
+(50, 'Messages',       'All the files are copied'),
+(51, 'Messages',       'Preparing the posting'),
+(52, 'Messages',       'Posting'),
+(52, 'Fail',           '${POST_FAILS}'),
+(52, 'EffectUnknown',  'True'),
+(52, 'FailMessage',    'The connection dropped while posting'),
+(53, 'Messages',       'Posting is done');

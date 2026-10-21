@@ -12,6 +12,11 @@ The code is recorded with the run; the exit code stays 0 or 1 (docs/INTEGRATION.
 
 A job that is a workflow is handed to engine/workflow_runner.py, so it is started the same way.
 
+As it goes, a job keeps a control file beside its log (engine/control_file.py). A run given the ID of an
+earlier attempt (resume_run_id) reads that attempt's file and picks up where it stopped: steps that
+finished are not run again, an If keeps its branch, a loop goes on from its pass, and a file step skips
+the files already done.
+
 Told to stop (SIGTERM, as Kill sends), the job ends Failed, Reason KILLED, with no return code.
 A job run on its own carries out its own Reactions (engine/reactions.py): Count as, Rerun this
 job (a new run, the next attempt, in this same process) and Start a workflow. In a workflow,
@@ -24,17 +29,19 @@ import sys
 import time
 import uuid
 from datetime import date, datetime
-from typing import Dict, Optional
+from typing import Dict, Optional, Tuple
 
 from sqlalchemy.orm import Session
 
 from app.database import SessionLocal
-from app.models import Job, Variable, WorkflowItemVariable
+from app.models import Job, JobRun, Variable, WorkflowItemVariable
 from engine import job_log, log_files, return_codes, workflow_vars
+from engine.control_file import ControlRecord, ControlWriter, NullControl, control_name
 from engine.executor import Executor
 from engine.preflight import describe_problems, prepare_job
 from engine.reactions import OwnReactions, read_rules
 from engine.scope_engine import ScopeResolutionEngine
+from engine.step_catalog import UNKNOWN
 from engine.telemetry_client import LocalSpoolTelemetryClient
 
 class Killed(BaseException):
@@ -50,14 +57,19 @@ def run_job(db: Session, job_key: str, instance_id: str, spool_dir: str,
             scheduler: Optional[str] = None, api_url: Optional[str] = None, run_id: Optional[str] = None,
             business_date: Optional[date] = None, environment: Optional[Dict[str, str]] = None,
             parent_run_id: Optional[str] = None, workflow_path: Optional[str] = None, attempt: int = 1,
-            own: Optional[OwnReactions] = None) -> int:
+            own: Optional[OwnReactions] = None, resume_run_id: Optional[str] = None,
+            count_as_done: Optional[str] = None) -> int:
     """
     Executes the job and returns the exit code to hand back to the scheduler.
     environment is what ${ENV:...} and the ENV level read: this process's own, unless given.
     own: the job's own Reactions, when it runs on its own.
+    resume_run_id: an earlier attempt to pick up where it stopped, using its control file.
+    count_as_done: the key of a step of that attempt the operator says to count as done, not run again.
     """
     environment = dict(os.environ) if environment is None else environment
     signal.signal(signal.SIGTERM, _killed)
+    resume, resume_problem = find_earlier_attempt(db, resume_run_id)
+    business_date = business_date or (resume.business_date if resume else None)
     with LocalSpoolTelemetryClient(spool_dir=spool_dir, instance_id=instance_id, api_url=api_url,
                                    run_id=run_id) as telemetry:
         log_file = log_files.start(telemetry.run_id)
@@ -68,9 +80,14 @@ def run_job(db: Session, job_key: str, instance_id: str, spool_dir: str,
                         + (f", business date {business_date.isoformat()}" if business_date else ""))
         job_log.debug(f"Run ID {telemetry.run_id}; spool file {telemetry.active_file_path}")
         telemetry.deliver()         # so the run shows as running straight away
+        control = open_control(log_file, resume)
+        if resume:
+            telemetry.carry_over(*earlier_totals(db, resume_run_id))
 
         executor, success_codes = None, None
         try:
+            if resume_problem:
+                raise ValueError(resume_problem)
             job = db.query(Job).filter(Job.JobKey == job_key).first()
             if not job:
                 raise ValueError(f"No job with JobKey '{job_key}' exists.")
@@ -84,8 +101,13 @@ def run_job(db: Session, job_key: str, instance_id: str, spool_dir: str,
             scope_engine = ScopeResolutionEngine(
                 db=db, job_id=job_id, instance_id=instance_id, global_config=global_config,
                 environment=environment, business_date=business_date, workflow=from_workflow,
+                started=resume.started if resume else None,
             )
             scope_engine.build_context()
+            control.write("job", run_id=telemetry.run_id, job_key=job_key, started=scope_engine.started.isoformat(),
+                          business_date=business_date.isoformat() if business_date else None)
+            if resume:
+                job_log.summary(f"Picking up run {resume_run_id}: the steps it finished are not run again.")
             if scope_engine.working_folder:
                 os.makedirs(scope_engine.working_folder, exist_ok=True)
             job_log.debug(f"Working folder: {scope_engine.working_folder}")
@@ -96,7 +118,8 @@ def run_job(db: Session, job_key: str, instance_id: str, spool_dir: str,
                 raise ValueError(describe_problems(problems))
 
             # Send what a step recorded; a failure here never affects the job
-            executor = Executor(db, scope_engine, telemetry, telemetry.deliver)
+            executor = Executor(db, scope_engine, telemetry, telemetry.deliver, control=control, resume=resume,
+                                count_as_done=count_as_done)
             executor.run_all(prepared_steps)
 
         except Killed:
@@ -106,8 +129,57 @@ def run_job(db: Session, job_key: str, instance_id: str, spool_dir: str,
         except Exception as e:
             job_log.error(f"Job '{job_key}' failed: {e}")
             code = executor.job_return_code if executor and executor.job_return_code is not None else 1
-            return _end(telemetry, own, "FAILED", code, "ERROR", str(e))
+            return _end(telemetry, own, "FAILED", code, failure_reason(e), str(e))
+        finally:
+            control.close()
         return _finish(job_key, executor.job_return_code, success_codes, telemetry, own)
+
+
+def find_earlier_attempt(db: Session, run_id: Optional[str]) -> Tuple[Optional[ControlRecord], Optional[str]]:
+    """
+    The control file of the run to pick up, or, in words, why there is none to use. Its file is on the
+    host that ran it, so a run that would resume elsewhere, or whose file is gone, cannot.
+    """
+    if not run_id:
+        return None, None
+    run = db.query(JobRun).filter(JobRun.RunID == str(run_id)).first()
+    if run is None:
+        return None, f"Run {run_id} is not known, so there is nothing to pick up. Restart the job from the beginning."
+    if (run.Host or log_files.this_host()) != log_files.this_host():
+        return None, (f"Run {run_id} ran on host '{run.Host}', and the record of how far it got is kept there; "
+                      f"this run is on '{log_files.this_host()}'. Restart the job from the beginning.")
+    path = log_files.host_folder(run.Host) / control_name(run.LogFile) if run.LogFile else None
+    if path is None or not path.is_file():
+        return None, (f"The record of how far run {run_id} got is not there; it is removed with the job log. "
+                      f"Restart the job from the beginning.")
+    return ControlRecord.read(path), None
+
+
+def earlier_totals(db: Session, run_id: str) -> Tuple[Optional[int], Optional[int]]:
+    """The files and bytes the run being picked up had delivered, its own net total if it was a pick-up too."""
+    run = db.query(JobRun).filter(JobRun.RunID == str(run_id)).first()
+    return (run.FileCount, run.Bytes) if run else (None, None)
+
+
+def failure_reason(error: Exception) -> str:
+    """ERROR, or EFFECT_UNKNOWN (shown as "Failed (effect unknown)") when the failed step could not say what it did."""
+    knew = getattr(error, "knew", None) or getattr(error.__cause__, "knew", None)
+    return "EFFECT_UNKNOWN" if knew is not None and knew.answer == UNKNOWN else "ERROR"
+
+
+def open_control(log_file: Optional[str], resume: Optional[ControlRecord]):
+    """
+    The control file for this run, beside its log. A picked-up run starts its own with the earlier
+    attempt's records, so the file alone tells a third attempt everything. Without a log file there is none.
+    """
+    if log_file is None:
+        job_log.warning("This run keeps no record of how far it gets, so it cannot be picked up later.")
+        return NullControl()
+    control = ControlWriter(log_files.host_folder(log_files.this_host()) / control_name(log_file))
+    if resume:
+        control.copy_of(resume.records)
+        control.write("resumed", from_run=resume.job.get("run_id"))
+    return control
 
 
 def _log_from_workflow(levels: Optional[workflow_vars.Levels]) -> None:
@@ -188,6 +260,10 @@ def main():
                         help="Given by the workflow runner: the workflow run this job runs in")
     parser.add_argument("--workflow-path", default=None, help="Given by the workflow runner: the job's place in it")
     parser.add_argument("--attempt", type=int, default=1, help="Given by the workflow runner: which attempt this is")
+    parser.add_argument("--resume-run-id", default=None,
+                        help="Pick up an earlier attempt of this job where it stopped, given its run ID")
+    parser.add_argument("--count-as-done", default=None,
+                        help="With --resume-run-id: the key of the failed step (e.g. 3|) to count as done and not run again")
     parser.add_argument("--log-level", default=os.getenv("AUTOAPP_LOG_LEVEL", job_log.DEFAULT_LEVEL),
                         type=str.upper, choices=list(job_log.LEVELS),
                         help="How much the job log says: DETAIL (default) logs every action, SUMMARY one line "
@@ -221,7 +297,8 @@ def run_with_reactions(db: Session, args) -> int:
         if rules:
             own = OwnReactions(rules, {"spool_dir": args.spool_dir, "api_url": args.api_url,
                                        "working_root": args.working_root, "log_level": args.log_level})
-    run_id, attempt = str(args.run_id) if args.run_id else None, args.attempt
+    run_id, attempt, resume_run_id = str(args.run_id) if args.run_id else None, args.attempt, args.resume_run_id
+    count_as_done = args.count_as_done
     while True:
         if job is not None and job.JobType == "WORKFLOW":
             exit_code = start_workflow(db, job, args, run_id, attempt, own)
@@ -230,11 +307,11 @@ def run_with_reactions(db: Session, args) -> int:
                                 run_number=args.run_number, scheduler=args.scheduler, api_url=args.api_url,
                                 run_id=run_id, business_date=args.business_date,
                                 parent_run_id=args.parent_run_id, workflow_path=args.workflow_path,
-                                attempt=attempt, own=own)
+                                attempt=attempt, own=own, resume_run_id=resume_run_id, count_as_done=count_as_done)
         if own is None or own.rerun is None:
             return exit_code
         time.sleep(own.rerun.wait_seconds)
-        run_id, attempt = None, attempt + 1
+        run_id, attempt, resume_run_id, count_as_done = None, attempt + 1, None, None
         db.expire_all()
 
 

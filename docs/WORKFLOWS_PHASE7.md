@@ -2,7 +2,7 @@
 
 The seventh phase of [WORKFLOWS.md](WORKFLOWS.md) ("Implementation in phases"): **a failed run can be picked up where it stopped, or restarted in whole or in part, from one Rerun ▸ menu, and every choice is on record.** It answers the restart half of shortcoming 2 ([PROJECT_GOALS.md](PROJECT_GOALS.md) goal 2): in RunMyJobs a failed chain is restarted by hand, step by step, with nothing saying what the failed step had already done.
 
-Status: **PLAN AGREED 2026-10-20; nothing is built.** Every question was answered by the owner (see "Settled by the owner"); proposals 1 to 13 stand as written. Decisions are D136 to D142 in WORKFLOW_DECISIONS.md. The plan is for a separate building session.
+Status: **PLAN AGREED 2026-10-20; building on branch `workflows-phase7`: steps 0 and 1 built (see "Built so far").** Every question was answered by the owner (see "Settled by the owner"); proposals 1 to 13 stand as written. Decisions are D136 to D142 in WORKFLOW_DECISIONS.md. The plan is for a separate building session.
 
 ## Starting point
 
@@ -42,6 +42,13 @@ Designed, not built: the Rerun ▸ menu; Resume; Restart from beginning; Advance
   - **Restart from a scheduler.** A scheduler still starts a top-level job or workflow by its key; INTEGRATION.md is not touched. The restart count the scheduler passes in is unchanged.
   - **Restart from an outside event** (a scheduled automatic restart of a whole run) belongs with scheduling in the roadmap.
   - **Loops across workflows** ("Rerun workflow" Reaction, TO-DO 9): not a restart of a past run.
+
+## Built so far
+
+- **Step 0 (classification).** Every step type declares `FAILURE_KNOWLEDGE`; Run SQL answers by how far its statement got. Two changes from the plan, found while building: Run SQL that committed and then failed writing its result file is *partly done* but cannot be finished by a later attempt (the rows were only in memory), so the operator decides (`WhatItKnew.cannot_finish`; the owner agreed); and **Zip is *not done***, not partly done, because its archive is written under another name and renamed whole.
+- **Step 1 (control file).** `engine/control_file.py`; `<RunID>.control` beside the job log, removed with it (`app/log_agent.py`). The runner takes `--resume-run-id`. Executor: finished steps are skipped with their outputs restored, an If keeps its branch, a For Each File keeps its list and goes on from the pass that failed, a While goes on from its pass count. Copy, Delete and **Unzip** note each file (the plan said Unzip removes its partial output; it did not, so it now skips the files already out). A killed step writes what it knew. A resumed run keeps the first attempt's start moment and business date.
+- **Not done in step 1, to settle at the step 2 stop:** the plan says the control file holds the job's resolved `${...}` values (secrets by name only). It does not yet: only the start moment and business date are kept, so a resume reads job variables as they are now. Keeping the values means the scope engine taking them as overrides.
+- **Left for Part 2 (the owner, 2026-10-20):** whether a control file is kept or removed after a job succeeds (the only use is "run from a chosen step" on a succeeded job), and whether to snapshot the resolved `${...}` values. Until then a control file stays as long as its log.
 
 ## Proposals to settle with the owner
 

@@ -81,6 +81,13 @@ def configure(level: Optional[str] = None, secrets: Iterable[str] = ()) -> None:
     _logger.setLevel(level_number(level))
 
 
+def mask(text: str) -> str:
+    """The text with the values of secret variables replaced by ********, as in the log."""
+    for secret in _redact.secrets:
+        text = text.replace(secret, MASK)
+    return text
+
+
 def write_to(path: Path) -> None:
     """From now on, also writes every line to this file, masked as on screen. Each line is written as it comes."""
     path.parent.mkdir(parents=True, exist_ok=True)

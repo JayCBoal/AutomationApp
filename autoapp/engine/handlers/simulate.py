@@ -8,7 +8,7 @@ import time
 
 from engine import job_log
 from engine.handlers.base_handler import BaseHandler
-from engine.step_catalog import BOOLEAN, CHOICE, INTEGER, STRING, TEXT, Param
+from engine.step_catalog import BOOLEAN, CHOICE, INTEGER, NOT_DONE, STRING, TEXT, Param
 from engine.telemetry_client import utc_now_iso
 
 MESSAGE_LEVELS = ("SUMMARY", "DETAIL", "WARNING", "ERROR")
@@ -17,6 +17,7 @@ _WRITERS = {"SUMMARY": job_log.summary, "DETAIL": job_log.detail, "WARNING": job
 
 class SimulateHandler(BaseHandler):
     CODE = "SIMULATE"
+    FAILURE_KNOWLEDGE = NOT_DONE
     NAME = "Simulate"
     DESCRIPTION = ("Stands in for real work while a workflow is built and tried: writes what it is told to the "
                    "job log, waits, and ends with a chosen return code")

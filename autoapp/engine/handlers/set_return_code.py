@@ -6,12 +6,13 @@ codes decide whether the code means Succeeded or Failed.
 """
 from engine import job_log
 from engine.handlers.base_handler import BaseHandler
-from engine.step_catalog import INTEGER, STRING, Param
+from engine.step_catalog import INTEGER, NOT_DONE, STRING, Param
 from engine.telemetry_client import utc_now_iso
 
 
 class SetReturnCodeHandler(BaseHandler):
     CODE = "SET_RETURN_CODE"
+    FAILURE_KNOWLEDGE = NOT_DONE
     NAME = "Set Return Code"
     DESCRIPTION = "Sets the job's return code and carries on; if several run, the last one wins"
 

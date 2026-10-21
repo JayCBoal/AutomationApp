@@ -62,6 +62,7 @@ class ScopeResolutionEngine:
         environment: Optional[Dict[str, str]] = None,
         business_date: Optional[date] = None,
         workflow: Optional[Any] = None,
+        started: Optional[datetime] = None,
     ):
         """
         environment: the environment variables a run has, which the runner passes. None
@@ -69,6 +70,7 @@ class ScopeResolutionEngine:
         cannot know what a scheduler will set, so ${ENV:...} is left for the run to fill in.
         business_date: the date the run is for, if the scheduler gave one.
         workflow: for a job in a workflow, what the workflow gives it (engine.workflow_vars.Levels).
+        started: the moment every date placeholder shows, where it is not now: a resumed run keeps the first attempt's.
         """
         self.db = db
         self.job_id = job_id
@@ -77,6 +79,7 @@ class ScopeResolutionEngine:
         self.environment = dict(environment) if environment is not None else None
         self.business_date = business_date
         self.workflow = workflow
+        self._started_given = started
 
         # Isolated scope caches for targeted lookup
         self.scoped_vars: Dict[str, Dict[str, Any]] = {
@@ -131,7 +134,7 @@ class ScopeResolutionEngine:
 
     def build_context(self) -> Dict[str, Any]:
         """Populates scope caches and eager-merges the execution context dictionary."""
-        now = datetime.now()
+        now = self._started_given or datetime.now()
         self.started = now      # every date placeholder in the run shows this one moment
         # ${BUSINESS_DATE:...} shows the date the run is for, at midnight; the run's own date if none was given
         self.business_day = datetime.combine(self.business_date or now.date(), time())

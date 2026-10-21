@@ -31,7 +31,7 @@ import sys
 import time
 import uuid
 from datetime import date, datetime
-from typing import Dict, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from sqlalchemy.orm import Session
 
@@ -61,7 +61,7 @@ def run_job(db: Session, job_key: str, instance_id: str, spool_dir: str,
             parent_run_id: Optional[str] = None, workflow_path: Optional[str] = None, attempt: int = 1,
             own: Optional[OwnReactions] = None, resume_run_id: Optional[str] = None,
             count_as_done: Optional[str] = None, refresh_values: bool = False,
-            value_edits: Optional[Dict[str, str]] = None) -> int:
+            value_edits: Optional[Dict[str, str]] = None, drop_values: Optional[List[str]] = None) -> int:
     """
     Executes the job and returns the exit code to hand back to the scheduler.
     environment is what ${ENV:...} and the ENV level read: this process's own, unless given.
@@ -70,6 +70,7 @@ def run_job(db: Session, job_key: str, instance_id: str, spool_dir: str,
     count_as_done: the key of a step of that attempt the operator says to count as done, not run again.
     refresh_values: a picked-up run reads its variables again; by default it uses the values as that attempt had them.
     value_edits: values the operator changed for a picked-up run, by key (engine/run_values.py).
+    drop_values: names of the workflow's or the use's variables that were changed: the run reads them again.
     """
     environment = dict(os.environ) if environment is None else environment
     signal.signal(signal.SIGTERM, _killed)
@@ -112,7 +113,8 @@ def run_job(db: Session, job_key: str, instance_id: str, spool_dir: str,
                 db=db, job_id=job_id, instance_id=instance_id, global_config=global_config,
                 environment=environment, business_date=business_date, workflow=from_workflow,
                 started=resume.started if resume else None,
-                pinned=run_values.pins(resume.values, value_edits, keep=not refresh_values) if resume else None,
+                pinned=run_values.pins(resume.values, value_edits, keep=not refresh_values,
+                                       drop=drop_values) if resume else None,
             )
             scope_engine.build_context()
             control.write("job", run_id=telemetry.run_id, job_key=job_key, started=scope_engine.started.isoformat(),
@@ -132,7 +134,7 @@ def run_job(db: Session, job_key: str, instance_id: str, spool_dir: str,
             used = run_values.snapshot(scope_engine)
             control.write("values", values=used)
             if resume:
-                _log_values(resume, used, refresh_values, value_edits or {})
+                _log_values(resume, used, refresh_values, value_edits or {}, drop_values or [])
             executor = Executor(db, scope_engine, telemetry, telemetry.deliver, control=control, resume=resume,
                                 count_as_done=count_as_done)
             executor.run_all(prepared_steps)
@@ -150,7 +152,8 @@ def run_job(db: Session, job_key: str, instance_id: str, spool_dir: str,
         return _finish(job_key, executor.job_return_code, success_codes, telemetry, own)
 
 
-def _log_values(resume: ControlRecord, now: Dict[str, dict], refreshed: bool, edits: Dict[str, str]) -> None:
+def _log_values(resume: ControlRecord, now: Dict[str, dict], refreshed: bool, edits: Dict[str, str],
+                dropped: List[str]) -> None:
     """Says in the job log which values a picked-up run reads again, or the operator changed."""
     if refreshed:
         for change in run_values.changes(resume.values, now):
@@ -158,6 +161,9 @@ def _log_values(resume: ControlRecord, now: Dict[str, dict], refreshed: bool, ed
     for key, value in edits.items():
         was = resume.values.get(key, {}).get("value")
         job_log.summary(f"Edited {key}: it was '{was}', the operator set '{value}'.")
+    for name in dropped:
+        if not refreshed and {name, f"WORKFLOW.{name}", f"USE.{name}"} & set(resume.values):
+            job_log.summary(f"{name} is read again: the workflow's value for it was changed.")
 
 
 def find_earlier_attempt(db: Session, run_id: Optional[str]) -> Tuple[Optional[ControlRecord], Optional[str]]:
@@ -329,7 +335,12 @@ def main():
     parser.add_argument("--refresh-values", action="store_true",
                         help="With --resume-run-id: read the ${...} values again, not use them as the earlier attempt had them")
     parser.add_argument("--edit-values", default=None,
-                        help="With --resume-run-id: a JSON object of values to use instead, by key")
+                        help="With --resume-run-id: a JSON object of values to use instead, by key. "
+                             "With --reopen (a workflow): the values changed at each level of the workflow "
+                             "(engine/workflow_vars.py, apply_choices)")
+    parser.add_argument("--drop-values", default=None,
+                        help="With --resume-run-id: a JSON list of names the workflow or the use changed; "
+                             "the run reads them again, not as the earlier attempt had them")
     parser.add_argument("--log-level", default=os.getenv("AUTOAPP_LOG_LEVEL", job_log.DEFAULT_LEVEL),
                         type=str.upper, choices=list(job_log.LEVELS),
                         help="How much the job log says: DETAIL (default) logs every action, SUMMARY one line "
@@ -366,27 +377,29 @@ def run_with_reactions(db: Session, args) -> int:
     run_id, attempt, resume_run_id = str(args.run_id) if args.run_id else None, args.attempt, args.resume_run_id
     count_as_done, reopen = args.count_as_done, args.reopen
     refresh_values, value_edits = args.refresh_values, json.loads(args.edit_values) if args.edit_values else None
+    drop_values = json.loads(args.drop_values) if args.drop_values else None
     while True:
         if job is not None and job.JobType == "WORKFLOW":
-            exit_code = start_workflow(db, job, args, run_id, attempt, own, reopen)
+            exit_code = start_workflow(db, job, args, run_id, attempt, own, reopen, refresh_values, value_edits)
         else:
             exit_code = run_job(db, args.job_key, args.instance_id, args.spool_dir, args.working_root,
                                 run_number=args.run_number, scheduler=args.scheduler, api_url=args.api_url,
                                 run_id=run_id, business_date=args.business_date,
                                 parent_run_id=args.parent_run_id, workflow_path=args.workflow_path,
                                 attempt=attempt, own=own, resume_run_id=resume_run_id, count_as_done=count_as_done,
-                                refresh_values=refresh_values, value_edits=value_edits)
+                                refresh_values=refresh_values, value_edits=value_edits, drop_values=drop_values)
         if own is None or own.rerun is None:
             return exit_code
         time.sleep(own.rerun.wait_seconds)
         resume_run_id = own.run_id if own.rerun.resumes and not (job and job.JobType == "WORKFLOW") else None
         run_id, attempt, count_as_done, reopen = None, attempt + 1, None, None
-        refresh_values, value_edits = False, None
+        refresh_values, value_edits, drop_values = False, None, None
         db.expire_all()
 
 
 def start_workflow(db: Session, workflow: Job, args, run_id: Optional[str], attempt: int,
-                   own: Optional[OwnReactions], reopen: Optional[str] = None) -> int:
+                   own: Optional[OwnReactions], reopen: Optional[str] = None, refresh_values: bool = False,
+                   value_edits: Optional[dict] = None) -> int:
     from engine.workflow_runner import RunOptions, run_workflow
     options = RunOptions(instance_id=args.instance_id, spool_dir=args.spool_dir,
                          run_id=run_id, run_number=args.run_number,
@@ -395,7 +408,8 @@ def start_workflow(db: Session, workflow: Job, args, run_id: Optional[str], atte
                          business_date=args.business_date, log_level=args.log_level,
                          parent_run_id=args.parent_run_id, workflow_path=args.workflow_path, attempt=attempt,
                          reopen=reopen, reopen_scope=args.reopen_scope if reopen else None,
-                         decisions=json.loads(args.rerun_decisions) if reopen and args.rerun_decisions else {})
+                         decisions=json.loads(args.rerun_decisions) if reopen and args.rerun_decisions else {},
+                         refresh_values=bool(reopen and refresh_values), value_edits=(value_edits or {}) if reopen else {})
     return run_workflow(db, workflow, options, own)
 
 

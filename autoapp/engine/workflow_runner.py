@@ -82,6 +82,8 @@ class RunOptions:
     reopen: Optional[str] = None            # resume or restart: picks up this run's record, already ended (engine/reopen.py)
     reopen_scope: Optional[str] = None      # the one item chosen, by path; None for the whole run
     decisions: Dict[str, str] = field(default_factory=dict)     # failed steps whose effect is unknown: path to run_again or count_done
+    refresh_values: bool = False            # a Resume: read the ${...} values again, not as the run had them
+    value_edits: Dict[str, Any] = field(default_factory=dict)   # a Resume: what the operator changed, by level and path (workflow_vars.level_of)
 
 
 @dataclass
@@ -452,10 +454,37 @@ class WorkflowRunner:
         kept = json.loads(self.record.WorkflowVariables) if self.record.WorkflowVariables else None
         if kept is not None and "conditions" in kept:
             self.variables = kept["conditions"]
+            self._apply_value_choices()
             return
         self.variables = self._fixed_variables()
         if kept is None:
             self._fix_workflow_variables()
+        self._apply_value_choices()
+
+    def _apply_value_choices(self) -> None:
+        """
+        A Resume's Refresh and Edit (docs/WORKFLOWS_PHASE7.md, step 4b) go onto the variables the run kept, which every
+        job and frame that runs again reads as it starts. The ${...} the conditions use are read again by a Refresh,
+        and an edited variable of this workflow flows into them; a condition already decided stays decided.
+        """
+        o = self.options
+        level = workflow_vars.level_of(o.value_edits, o.workflow_path)
+        if o.reopen != reopen.RESUME or not (o.refresh_values or level):
+            return
+        kept = json.loads(self.record.WorkflowVariables)
+        fresh = None
+        if o.refresh_values:
+            fresh = workflow_vars.fixed_values(self.db, self.workflow, o.instance_id,
+                                               environment=dict(os.environ), business_date=o.business_date)
+            self.variables = self._fixed_variables()
+        for line in workflow_vars.apply_choices(kept, fresh, level):
+            job_log.summary(line)
+        for name, value in level.get("workflow", {}).items():
+            for ref in (f"${{{name}}}", f"${{JOB.{name}}}"):
+                if ref in self.variables:
+                    self.variables[ref] = value
+        kept["conditions"] = self.variables
+        self.record.WorkflowVariables = json.dumps(kept)
 
     def _remember_reactions_used(self) -> None:
         """How often each rerun Reaction has run in this run, so a manual rerun does not give it a fresh allowance (D61)."""
@@ -815,11 +844,24 @@ class WorkflowRunner:
             arguments = ["--reopen", planned.reopen_kind]
             if reopen.is_on_the_way(planned.row.Path, o.reopen_scope):
                 arguments += ["--reopen-scope", o.reopen_scope]
+            if planned.reopen_kind == reopen.RESUME:
+                arguments += (["--refresh-values"] if o.refresh_values else []) + (
+                    ["--edit-values", json.dumps(o.value_edits)] if o.value_edits else [])
             return arguments + (["--rerun-decisions", json.dumps(o.decisions)] if o.decisions else [])
         if planned.resume_from:
             return ["--resume-run-id", planned.resume_from] + (
-                ["--count-as-done", planned.count_as_done] if planned.count_as_done else [])
+                ["--count-as-done", planned.count_as_done] if planned.count_as_done else []) + self._value_arguments(planned)
         return []
+
+    def _value_arguments(self, planned: Planned) -> List[str]:
+        """A job that picks up its earlier attempt: whether it reads its values again, what was edited for it, and what the workflow changed."""
+        o = self.options
+        arguments = ["--refresh-values"] if o.refresh_values else []
+        edits = (o.value_edits.get("jobs") or {}).get(planned.row.Path)
+        if edits:
+            arguments += ["--edit-values", json.dumps(edits)]
+        dropped = workflow_vars.dropped_names(o.value_edits, o.workflow_path, planned.name)
+        return arguments + (["--drop-values", json.dumps(dropped)] if dropped else [])
 
     def _collect_ended(self) -> None:
         for planned in self.items:

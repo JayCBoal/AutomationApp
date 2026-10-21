@@ -50,9 +50,15 @@ def snapshot(engine: ScopeResolutionEngine, secrets: Optional[List[str]] = None)
     return values
 
 
-def pins(stored: Dict[str, dict], edits: Optional[Dict[str, str]] = None, keep: bool = True) -> Dict[str, str]:
-    """What a Resume pins: the stored values (unless it refreshes), with the operator's edits over them."""
-    pinned = {key: entry["value"] for key, entry in stored.items() if keep and "value" in entry}
+def pins(stored: Dict[str, dict], edits: Optional[Dict[str, str]] = None, keep: bool = True,
+         drop: Optional[List[str]] = None) -> Dict[str, str]:
+    """
+    What a Resume pins: the stored values (unless it refreshes), with the operator's edits over them.
+    drop: names of the workflow's or a use's variables that changed; the job's stored copy of each is let go,
+    so it reads the changed value (precedence still decides which level wins).
+    """
+    dropped = {key for name in drop or [] for key in (name, f"WORKFLOW.{name}", f"USE.{name}")}
+    pinned = {key: entry["value"] for key, entry in stored.items() if keep and "value" in entry and key not in dropped}
     pinned.update(edits or {})
     return pinned
 

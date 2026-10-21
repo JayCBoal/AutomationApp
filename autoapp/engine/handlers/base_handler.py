@@ -55,7 +55,7 @@ class BaseHandler(ABC):
     FAILURE_WHY = {
         "NOT_DONE": "it failed before it changed anything",
         "PARTLY_DONE": "it had done part of its work, and the record shows which part",
-        "UNKNOWN": "it is not known whether it changed anything before it failed",
+        "UNKNOWN": "it failed in a way that does not show how far it got",
     }
 
     # Whether the handler can reach Endpoints that live on a remote Site

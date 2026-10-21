@@ -32,7 +32,7 @@ def test_a_step_type_that_does_not_say_counts_as_unknown(tmp_path):
         knew = SaysNothing({"StepID": 1}, telemetry).what_failed_step_knew(RuntimeError("boom"))
 
     assert knew.answer == UNKNOWN
-    assert "not known" in knew.why
+    assert "does not show how far it got" in knew.why
 
 
 def test_the_answers_for_the_step_types_are_the_ones_agreed():

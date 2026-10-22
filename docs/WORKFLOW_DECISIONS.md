@@ -717,3 +717,11 @@ Compiled 2026-10-18, from the design record and Phases 1 to 4.
 
 **D158. A workflow's Reaction Resume is a Reaction event on the run, not copied into `RunRestarts`, and writes no Audit row.** It is merged into the Restarts list at read time, labelled "a Reaction", as D153 does for a job; a workflow's own Reaction events carry no workflow run ID, so the list also reads those naming the run itself. The job log writes the Reaction's message, and a process writes one run's log file at a time (a rerun in the same process no longer adds lines to the files of the attempts before it).
 - *Status:* Built (Phase 7, step 5a-3). *Source:* WORKFLOWS_PHASE7.md, step 5a.
+
+**D159. A job's control file is not kept after the job succeeds.** Step 5's removal (D152) stands; Advanced does not need it, since a Succeeded job on its own is never rerun or restarted from a step.
+- *Why:* the owner, 2026-10-22: settled already; a way to start a fresh run at a chosen step stays a possible later idea.
+- *Status:* Decided, nothing to build. *Source:* WORKFLOWS_PHASE7.md, "Left for Part 2".
+
+**D160. The resolved `${...}` values are snapshotted with the run, as part of its audit trail.** For any run, whether or not it is ever resumed, the owner can see how each variable resolved on that occasion. Secrets are never stored (they are read again, as in Resume).
+- *Why:* the owner, 2026-10-22: someone investigating why a job behaved as it did on a particular occasion needs to know how its variables resolved for that instance. Needed whether or not Step 6 uses it.
+- *Status:* Decided, not built: where it is kept and shown (run page, log page, Resume's "Use as they were") is to be planned. *Source:* WORKFLOWS_PHASE7.md, "Left for Part 2".

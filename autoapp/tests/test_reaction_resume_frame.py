@@ -2,15 +2,32 @@
 A Reaction resumes a failed workflow (docs/WORKFLOWS_PHASE7.md, step 5a): a frame by its parent's Reaction, and a
 workflow run on its own by its own. What succeeded stays; what cannot be picked up is passed over for the next Reaction.
 """
+import threading
+import time
+
 from app.models import JobRun
 from app.run_restarts import restarts_for
 from engine.reactions import RESTART, RESUME
 from test_control_file import gated_job, put_gate
 from test_frames_engine import tree     # noqa: F401  (fixture)
-from test_reaction_resume import messages, open_gate_soon, unknown_job
+from test_reaction_resume import messages, unknown_job
 from test_workflow_reactions import events, react
 from test_workflow_runner import flow, results, run_flow, sim, start    # noqa: F401  (fixtures)
 from app.models import WorkflowPrerequisite
+
+
+def open_gate_after_first_failure(tmp_path, job="RES"):
+    """The gate file appears once the first attempt has failed for want of it, however slowly it got started."""
+    def _wait_then_open():
+        deadline = time.time() + 90
+        while time.time() < deadline:
+            if any("No files matched" in path.read_text(errors="ignore") for path in (tmp_path / "logs").rglob("*.log")):
+                break
+            time.sleep(0.1)
+        put_gate(tmp_path, "a.ok", job=job)
+    timer = threading.Thread(target=_wait_then_open)
+    timer.start()
+    return timer
 
 
 def test_a_frame_is_resumed_by_its_parents_reaction(seed, endpoints, db, tree, sim, run_flow, tmp_path):
@@ -20,7 +37,7 @@ def test_a_frame_is_resumed_by_its_parents_reaction(seed, endpoints, db, tree, s
     db.commit()
     made["Frame"].ReactionsOverridden = True
     react(db, made["Frame"], "FAILED", ("RERUN", {"MaxTimes": 2, "WaitSeconds": 4, "RerunMode": RESUME}))
-    timer = open_gate_soon(tmp_path)
+    timer = open_gate_after_first_failure(tmp_path)
 
     code, run, items, log = run_flow("TOP")
     timer.join()
@@ -62,7 +79,7 @@ def unsure_job(seed, key="UNSURE"):
 def test_a_workflow_on_its_own_is_resumed_by_its_own_reaction_in_the_same_run(seed, endpoints, db, flow, sim, run_flow, tmp_path):
     wf = flow("WF", [("Gate", gated_job(seed)), ("Report", sim("REPORT"), ["Gate"])])
     react(db, wf, "FAILED", ("RERUN", {"MaxTimes": 1, "WaitSeconds": 4, "RerunMode": RESUME}))
-    timer = open_gate_soon(tmp_path)
+    timer = open_gate_after_first_failure(tmp_path)
 
     code, run, items, log = run_flow("WF")
     timer.join()

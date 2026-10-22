@@ -8,6 +8,7 @@
  * API routes used:
  *     GET  /api/v1/runs/{run_id}/rerun-plan  what Rerun can do for a failed run: a job on its own, a workflow run,
  *                                            a frame, or a job inside one; the steps to decide; the ${...} values
+ *                                            (one list, or for a workflow one list for each workflow, use and resumed job)
  *     POST /api/v1/runs/{run_id}/rerun       Resume or Restart from beginning: the next attempt
  */
 const RERUN_PANEL = `
@@ -46,7 +47,8 @@ const RERUN_PANEL = `
                 </template>
                 <p class="muted small">Or restart from the beginning.</p>
             </fieldset>
-            <fieldset x-show="rerunPlan.can_resume && rerunPlan.values.length" id="rerun-values">
+            <template x-if="rerunPlan.can_resume && rerunPlan.values.length && !rerunPlan.value_levels.length">
+            <fieldset id="rerun-values">
                 <p class="small">The values Resume uses for the job&rsquo;s \${...} placeholders:</p>
                 <label><input type="radio" name="rerun-values" value="as_were" x-model="valuesChoice"> Use as they were</label>
                 <label><input type="radio" name="rerun-values" value="refresh" x-model="valuesChoice"> Refresh</label>
@@ -72,6 +74,44 @@ const RERUN_PANEL = `
                     </template>
                 </table>
             </fieldset>
+            </template>
+            <template x-if="rerunPlan.can_resume && rerunPlan.value_levels.length">
+            <fieldset id="rerun-levels">
+                <p class="small">The values Resume uses for the \${...} placeholders of the workflow and its jobs:</p>
+                <label><input type="radio" name="rerun-level-values" value="as_were" x-model="valuesChoice"> Use as they were</label>
+                <label><input type="radio" name="rerun-level-values" value="refresh" x-model="valuesChoice"> Refresh</label>
+                <label><input type="radio" name="rerun-level-values" value="edit" x-model="valuesChoice"> Edit</label>
+                <p class="muted small" id="rerun-values-note" x-show="rerunPlan.values_note" x-text="rerunPlan.values_note"></p>
+                <p class="message warning small" id="rerun-kept-jobs" x-show="keptJobsNamed()">
+                    Already finished, so not run again; they keep the values they ran with:
+                    <code x-text="rerunPlan.kept_jobs.join(', ')"></code>.
+                </p>
+                <template x-for="level in rerunPlan.value_levels" :key="level.kind + '|' + level.path + '|' + level.name">
+                    <div class="rerun-level" :data-kind="level.kind">
+                        <p class="small"><strong x-text="levelHeading(level)"></strong></p>
+                        <p class="message warning small rerun-level-changes" x-show="valuesChoice === 'refresh' && level.changes.length">
+                            These have changed, and will use their new values:
+                            <template x-for="change in level.changes" :key="change.key">
+                                <span style="display: block"><code x-text="change.key"></code>: <span x-text="change.was"></span> &rarr; <span x-text="change.now"></span></span>
+                            </template>
+                        </p>
+                        <table class="small rerun-level-values">
+                            <template x-for="v in level.values" :key="v.key">
+                                <tr>
+                                    <td><code x-text="v.key"></code></td>
+                                    <td>
+                                        <span x-show="v.secret" class="muted">a secret: always read when the job runs</span>
+                                        <span x-show="!v.secret && valuesChoice !== 'edit'" x-text="v.value"></span>
+                                        <input type="text" x-show="!v.secret && valuesChoice === 'edit'" :aria-label="'Value of ' + v.key + ' in ' + levelHeading(level)"
+                                               :value="v.value" @input="valueEdits[editKey(level, v)] = $event.target.value">
+                                    </td>
+                                </tr>
+                            </template>
+                        </table>
+                    </div>
+                </template>
+            </fieldset>
+            </template>
             <div class="actions">
                 <button type="button" class="primary" id="rerun-resume" @click="rerun('resume')"
                         :disabled="rerunBusy || !rerunDecided()">Resume</button>
@@ -139,6 +179,42 @@ function rerunDialog() {
             }
         },
 
+        /** The heading of one list of a workflow's values. */
+        levelHeading(level) {
+            if (level.kind === "workflow") return level.path ? `Workflow ${level.name} (${level.path})` : `Workflow ${level.name}`;
+            if (level.kind === "use") return `Variables of ${level.name} in ${level.path || "the workflow"}`;
+            return `Job ${level.path}`;
+        },
+
+        editKey(level, v) { return [level.kind, level.path, level.name, v.key].join("|"); },
+
+        /** Finished jobs are named once a value that reaches the workflow's level is going to read differently, or has been edited. */
+        keptJobsNamed() {
+            const plan = this.rerunPlan;
+            if (!plan || !plan.kept_jobs.length || !plan.value_levels.length) return false;
+            if (this.valuesChoice === "refresh") return plan.value_levels.some(l => l.kind !== "job" && l.changes.length);
+            return this.valuesChoice === "edit" && Boolean(Object.keys(this.levelEdits().levels).length);
+        },
+
+        /** What the operator typed over in the workflow's lists, in the shape the API takes. */
+        levelEdits() {
+            const levels = {}, jobs = {};
+            for (const level of this.rerunPlan.value_levels) {
+                for (const v of level.values) {
+                    const typed = this.valueEdits[this.editKey(level, v)];
+                    if (typed === undefined || typed === v.value) continue;
+                    if (level.kind === "job") {
+                        (jobs[level.path] ||= {})[v.key] = typed;
+                        continue;
+                    }
+                    const at = (levels[level.path] ||= { workflow: {}, uses: {} });
+                    if (level.kind === "workflow") at.workflow[v.key] = typed;
+                    else ((at.uses[level.name] ||= {}))[v.key] = typed;
+                }
+            }
+            return { levels, jobs };
+        },
+
         /** The values the operator typed over, not those left as they were. */
         changedEdits() {
             const was = Object.fromEntries(this.rerunPlan.values.map(v => [v.key, v.value]));
@@ -148,12 +224,15 @@ function rerunDialog() {
         async rerun(kind) {
             this.rerunBusy = true;
             const resume = kind === "resume";
+            const edited = resume && this.rerunPlan.value_levels.length ? this.levelEdits() : { levels: {}, jobs: {} };
             try {
                 const launch = await AutoApp.send("POST", `/runs/${encodeURIComponent(this.rerunRunId)}/rerun`, {
                     kind, unknown_step: resume ? this.rerunChoice || null : null,
                     decisions: resume ? { ...this.rerunDecisions } : {},
                     refresh_values: resume && this.valuesChoice === "refresh",
-                    edits: resume && this.valuesChoice === "edit" ? this.changedEdits() : {},
+                    edits: resume && this.valuesChoice === "edit" && !this.rerunPlan.value_levels.length ? this.changedEdits() : {},
+                    level_edits: resume && this.valuesChoice === "edit" ? edited.levels : {},
+                    job_edits: resume && this.valuesChoice === "edit" ? edited.jobs : {},
                 });
                 this.rerunPlan = null;
                 this.afterRerun(launch);

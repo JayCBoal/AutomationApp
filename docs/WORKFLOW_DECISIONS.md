@@ -672,3 +672,16 @@ Compiled 2026-10-18, from the design record and Phases 1 to 4.
 - *Why:* "stays failed" for an unknown failure must not be undone by an automatic retry, yet "rerun twice, then count as failed" should still work; treating it as used up gives both. Restart stays a choice for anyone who accepts the work being done again.
 - *Considered:* stopping all Reactions for that job (the job could not then be counted as succeeded by a later entry); firing a Restart instead (silently repeats work).
 - *Status:* Built (Phase 7, step 3a). *Source:* WORKFLOWS_PHASE7.md, proposal 13 and settled item 3.
+
+**D149. A workflow's Resume offers Use as they were / Refresh / Edit for its `${...}` values, one list for each level that can be edited.** The lists are the workflow's variables (the run at the top and each frame that is reopened), each use's variables, and what each resumed job read from its own levels (job, application, system and so on). Restart has no values choice: everything is read again.
+- *Why:* the owner's choice (step 4b). A value from the workflow or its use is shown once, where it is set, so one edit reaches every job that runs again; precedence still decides which level wins.
+- *Considered:* one flat list per job (the same value repeated and edited in many places); a separate dialog for conditions (conditions already decided stay as decided, and those not yet decided use the new values, which the dialog says).
+- *Status:* Built (Phase 7, step 4b). *Source:* WORKFLOWS_PHASE7.md, step 4b.
+
+**D150. Refresh and Edit reach only the jobs that run now; the dialog names the jobs that already Succeeded and keep the values they ran with.** When a workflow or use value is refreshed and changed, or edited, every succeeded job is named. A Restart applies every value to every job.
+- *Why:* a succeeded job is not run again, and its control file is removed on success (step 5), so the run cannot say which succeeded job used a changed value. Naming them all is honest and cannot miss one.
+- *Status:* Built (Phase 7, step 4b). *Source:* WORKFLOWS_PHASE7.md, step 4b.
+
+**D151. Edited values are checked before the run reopens, and each edit is recorded as `JOB_RESUMED_WITH_EDITS` in the Audit Log, one row for each edited job and one for each workflow or frame whose own or use variables were edited.** A secret cannot be edited and never appears in a row. Refresh or Edit with a Restart is refused (422).
+- *Why:* D142; an edit that changes what a job does is something the operator may have to explain later, by name, without exposing a secret.
+- *Status:* Built (Phase 7, step 4b). *Source:* WORKFLOWS_PHASE7.md, step 4b.

@@ -23,7 +23,8 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import Audit, Job, JobRun
-from app import rerun_tree
+from app import rerun_tree, rerun_values
+from app.rerun_values import LevelEdit, ValueChange, ValueLevel, ValueShown
 from app.routers.launches import LaunchOut, start_runner
 from engine import job_log, reopen, run_values
 from engine.control_file import ControlRecord
@@ -41,18 +42,6 @@ class StepToDecide(BaseModel):
     why: str = Field(..., description="Why it is not known what the step did, in words")
     key: str = Field(..., description="The step's place in the run, with its loop passes, as the runner names it")
     path: Optional[str] = Field(None, description="In a workflow run: the job's place in it")
-
-
-class ValueShown(BaseModel):
-    key: str = Field(..., description="What the job wrote: Region for ${Region}, JOB.Region, or ENV:Region")
-    value: Optional[str] = Field(None, description="The value the earlier attempt used; absent for a secret")
-    secret: bool = Field(False, description="A secret is read again each time, and cannot be edited")
-
-
-class ValueChange(BaseModel):
-    key: str
-    was: str
-    now: str
 
 
 class ItemPlan(BaseModel):
@@ -80,6 +69,10 @@ class RerunPlan(BaseModel):
     values: List[ValueShown] = Field([], description="The ${...} values the earlier attempt used")
     changes: List[ValueChange] = Field(
         [], description="Values that read differently now: what Refresh would use instead of what the earlier attempt had")
+    value_levels: List[ValueLevel] = Field(
+        [], description="In a workflow run: the values to choose about, one list for each workflow, use and resumed job")
+    kept_jobs: List[str] = Field([], description="In a workflow run: jobs that Succeeded; they are not run again and keep their values")
+    values_note: str = Field("", description="In a workflow run: what to say about the conditions not yet decided")
 
 
 class RerunRequest(BaseModel):
@@ -88,6 +81,10 @@ class RerunRequest(BaseModel):
     decisions: Dict[str, str] = Field({}, description="For a workflow run: run_again or count_done for each step to decide, by the job's path")
     refresh_values: bool = Field(False, description="For a Resume: read the ${...} values again, not use them as they were")
     edits: Dict[str, str] = Field({}, description="For a Resume: values to use instead, by key (not for a secret)")
+    level_edits: Dict[str, LevelEdit] = Field(
+        {}, description="For a workflow's Resume: variables to change, by the workflow's place in the run (empty for the top)")
+    job_edits: Dict[str, Dict[str, str]] = Field(
+        {}, description="For a workflow's Resume: a job's own values to change, by key, by the job's place in the run")
     log_level: str = Field(job_log.DEFAULT_LEVEL, description="DEBUG, DETAIL, SUMMARY or SILENT")
 
 
@@ -139,7 +136,7 @@ def make_plan(db: Session, run: JobRun) -> RerunPlan:
         plan.summary = _summary(plan)
         plan.values = [ValueShown(key=key, value=entry.get("value"), secret="secret" in entry)
                        for key, entry in sorted(record.values.items())]
-        plan.changes = _changes(db, run, record)
+        plan.changes = changes_for(db, run, record)
     return plan
 
 
@@ -154,6 +151,10 @@ def make_workflow_plan(db: Session, run: JobRun) -> RerunPlan:
     plan.steps_to_decide = _steps_to_decide(tree)
     plan.steps_finished = sum(len(p.record.ended_steps()) for p in tree.picks if p.record)
     plan.summary = _tree_summary(tree, plan)
+    if plan.can_resume:
+        plan.value_levels = rerun_values.levels_for(db, tree)
+        plan.kept_jobs = rerun_values.kept_jobs(db, tree)
+        plan.values_note = rerun_values.note_for(tree)
     return plan
 
 
@@ -184,7 +185,7 @@ def _tree_summary(tree: "rerun_tree.TreePlan", plan: RerunPlan) -> str:
     return text + "."
 
 
-def _changes(db: Session, run: JobRun, record: ControlRecord) -> List[ValueChange]:
+def changes_for(db: Session, run: JobRun, record: ControlRecord) -> List[ValueChange]:
     """
     Which of the earlier attempt's values read differently now. The server has no environment to look in, so
     an environment variable's value, and what depends on one, is not compared: the run reads it when it starts.
@@ -249,8 +250,7 @@ def rerun(run_id: str, payload: RerunRequest, request: Request, db: Session = De
 def _reopen(db: Session, request: Request, plan: RerunPlan, kind: str, level: str, payload: RerunRequest) -> LaunchOut:
     """Starts the workflow runner on the run at the top, reopened: the same run ID, the next go at it."""
     top = _find(db, plan.reopens_run_id)
-    if payload.refresh_values or payload.edits:
-        raise HTTPException(422, "Values are used as the run had them; changing them for a workflow comes later.")
+    values = _workflow_values(db, top, plan, kind, payload)
     extra = ["--run-number", str(top.RunNumber), "--attempt", str(top.Attempt), "--reopen", kind]
     if plan.scope:
         extra += ["--reopen-scope", plan.scope]
@@ -259,6 +259,7 @@ def _reopen(db: Session, request: Request, plan: RerunPlan, kind: str, level: st
             raise HTTPException(409, plan.resume_problem)
         decisions = _decisions(plan, payload.decisions)
         extra += ["--rerun-decisions", json.dumps(decisions)] if decisions else []
+        extra += values
     return start_runner(request, top.JobKey, top.SchedulerInstanceID, level, top.BusinessDate, extra,
                         scheduler=top.SchedulerName or "AutoApp UI", run_id=top.RunID)
 
@@ -302,3 +303,25 @@ def _value_arguments(db: Session, run: JobRun, payload: RerunRequest) -> List[st
                  PerformedBy="web interface", Details=json.dumps({"changes": changes})))
     db.commit()
     return arguments + ["--edit-values", json.dumps(payload.edits)]
+
+
+def _workflow_values(db: Session, top: JobRun, plan: RerunPlan, kind: str, payload: RerunRequest) -> List[str]:
+    """Refresh or edit the values of a workflow's Resume; edits are checked, then recorded in the Audit Log."""
+    wanted = payload.refresh_values or payload.level_edits or payload.job_edits or payload.edits
+    if not wanted:
+        return []
+    if kind != "resume":
+        raise HTTPException(422, "Values can be refreshed or edited for a Resume; a restart reads them all again.")
+    if payload.edits:
+        raise HTTPException(422, "Use level_edits and job_edits to change the values of a workflow's Resume.")
+    if not plan.can_resume:
+        raise HTTPException(409, plan.resume_problem)
+    tree = rerun_tree.make_tree_plan(db, _find(db, plan.run_id))
+    choices, problems = rerun_values.check_edits(tree, payload.level_edits, payload.job_edits)
+    if problems:
+        raise HTTPException(422, " ".join(problems))
+    arguments = ["--refresh-values"] if payload.refresh_values else []
+    if payload.level_edits or payload.job_edits:
+        rerun_values.audit(db, tree, choices)
+        arguments += ["--edit-values", json.dumps(choices)]
+    return arguments

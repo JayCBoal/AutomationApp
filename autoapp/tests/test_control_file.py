@@ -113,13 +113,13 @@ def test_a_failed_step_is_recorded_with_what_it_knew(seed, endpoints, attempt, t
 
 
 def test_a_resumed_job_keeps_the_first_attempts_business_date(seed, endpoints, attempt, tmp_path):
-    gated_job(seed)
+    gated_job(seed, gates=("a", "b"))
     first, _ = attempt("RES", "--business-date", "2026-03-31")
     put_gate(tmp_path, "a.ok")
 
     second, resumed = attempt("RES", "--resume-run-id", first)
 
-    assert resumed.returncode == 0, resumed.stderr
+    assert resumed.returncode == 1                      # stops at gate b, so its file is kept
     assert control_of(tmp_path, second).business_date.isoformat() == "2026-03-31"
 
 
@@ -211,19 +211,19 @@ def test_a_file_step_skips_the_files_already_done_and_counts_them(seed, endpoint
 
 
 def test_a_file_that_arrived_complete_before_the_stop_is_not_copied_again(seed, endpoints, attempt, tmp_path):
-    job = seed.job("RES")
-    seed.step(job, 1, title="Collect", name="Collect", SourceEndpoint="LEGAL_EXTRACTS", Dest="incoming")
+    gated_job(seed)
     first, _ = attempt("RES")
     # As if the runner was killed after the copy but before it noted the file done
     path = next((tmp_path / "logs").rglob(f"{first}.control"))
     kept = [line for line in path.read_text().splitlines() if '"e": "file_end"' not in line
-            and '"e": "end"' not in line and '"e": "pass_end"' not in line]
+            and '"e": "end"' not in line and '"e": "pass_end"' not in line and '"e": "failed"' not in line]
     path.write_text("\n".join(kept) + "\n")
+    put_gate(tmp_path, "a.ok")
 
     second, resumed = attempt("RES", "--resume-run-id", first)
 
     assert resumed.returncode == 0, resumed.stderr
-    assert operations(tmp_path, second) == []               # both files were there, whole
+    assert [op for op in operations(tmp_path, second) if op["StepNumber"] == "1"] == []     # both files were there, whole
     assert "had arrived complete when the earlier attempt stopped" in log_of(tmp_path, second)
 
 

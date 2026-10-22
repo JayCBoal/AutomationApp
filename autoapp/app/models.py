@@ -693,6 +693,30 @@ class ReactionEvent(Base):
 
 
 
+class RunRestart(Base):
+    """
+    An operator ran a run again, from where it stopped (RESUME) or from the beginning (RESTART): one row for each
+    request, written by the API when the request is made (the runner never writes the database). RunID is text, not
+    a link, so the row outlives the run record as the job log does: the reopened workflow run's own, or the new
+    run of a job on its own. Scope is the item chosen, by path; empty for the whole run. Details is JSON: the earlier
+    attempt it went on from, the items touched with what each got, the choices made on steps of unknown effect,
+    whether values were refreshed, and the edits by name, never a secret. A Reaction's rerun is not copied here:
+    it is already on record as a Reaction event, and the run's list merges the two when it is read.
+    """
+    __tablename__ = 'RunRestarts'
+
+    KINDS = ("RESUME", "RESTART")
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    RunID = Column(String(36), nullable=False, index=True)
+    Number = Column(Integer, nullable=False)
+    Kind = Column(String(10), nullable=False)
+    Scope = Column(String(1000), nullable=False, default="", server_default="")
+    PerformedBy = Column(String(100), nullable=False, default="web interface", server_default="web interface")
+    ChosenDateTime = Column(PreciseDateTime, nullable=False, default=lambda: utcnow())
+    Details = Column(Text, nullable=True)
+
+
 class ConditionCheck(Base):
     """
     A workflow condition worked out in a run, when it decided something (docs/WORKFLOWS_PHASE4.md):

@@ -83,7 +83,8 @@
                                       x-text="'return code ' + run.return_code"></span>
                                 <span class="muted small counted" x-show="run.status_before_override"
                                       x-text="'(counted; it ended ' + run.status_before_override + ')'"></span>
-                                <span class="muted small" x-show="run.attempt > 1" x-text="'attempt ' + run.attempt"></span>
+                                <span class="muted small restarted" x-show="run.restarts_count > 0" :title="run.restarts_words"
+                                      x-text="'Restarted ×' + run.restarts_count"></span>
                                 <div class="error-text small" x-show="run.error" x-text="run.error"></div>
                             </td>
                             <td class="nowrap" x-text="time(run.started)"></td>

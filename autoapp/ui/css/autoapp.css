@@ -522,3 +522,9 @@ body.embedded main { padding-top: 12px; }
 .wf-step-list > li { margin: 4px 0; }
 .wf-step-uses, .wf-step-uses ul { list-style: none; margin: 2px 0 2px 16px; padding: 0; }
 .wf-step-uses .no-value { color: var(--failure); }
+
+/* The Restarts box on a run's pages (docs/WORKFLOWS_PHASE7.md, step 5-3) */
+.restarts { margin: 0.5rem 0 1rem; }
+.restart-list { margin: 0.25rem 0 0; padding-left: 1.5rem; }
+.restart-list .restart { margin-bottom: 0.5rem; }
+.restart-detail { margin: 0.15rem 0 0; padding-left: 1.25rem; }

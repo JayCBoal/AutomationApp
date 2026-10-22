@@ -2,7 +2,7 @@
 
 The seventh phase of [WORKFLOWS.md](WORKFLOWS.md) ("Implementation in phases"): **a failed run can be picked up where it stopped, or restarted in whole or in part, from one Rerun ▸ menu, and every choice is on record.** It answers the restart half of shortcoming 2 ([PROJECT_GOALS.md](PROJECT_GOALS.md) goal 2): in RunMyJobs a failed chain is restarted by hand, step by step, with nothing saying what the failed step had already done.
 
-Status: **PLAN AGREED 2026-10-20; building on branch `workflows-phase7`: steps 0 to 4b built; step 5 planned (see "Built so far").** Every question was answered by the owner (see "Settled by the owner"); proposals 1 to 13 stand as written. Decisions are D136 to D142 in WORKFLOW_DECISIONS.md. The plan is for a separate building session.
+Status: **PLAN AGREED 2026-10-20; building on branch `workflows-phase7`: steps 0 to 5 built (step 5a and Part 2 not); see "Built so far").** Every question was answered by the owner (see "Settled by the owner"); proposals 1 to 13 stand as written. Decisions are D136 to D142 in WORKFLOW_DECISIONS.md. The plan is for a separate building session.
 
 ## Starting point
 
@@ -92,7 +92,13 @@ Designed, not built: the Rerun ▸ menu; Resume; Restart from beginning; Advance
   - **Not in step 5:** Step 5a (a Reaction's Resume of a workflow); Advanced (Part 2); the demonstrator sample (step 7); the Succeeded-workflow reopen.
   - **Recommended extra, small, test only:** close the gap noted in step 4b with one end-to-end test of an edit reaching a job inside a reopened frame, since step 5 touches the same path (the audit and the record list the same edits). It adds no behaviour.
   - **For the owner, if they want it otherwise before building:** (a) Reaction reruns shown in the Restarts list, merged at read time (proposed) versus operator choices only; (b) the "Restarted ×N" wording above and that it replaces "attempt N" in Job History; (c) the workflow-Reaction edge above.
-- **Left for Part 2 (the owner, 2026-10-20):** whether a control file is kept or removed after a job succeeds (the only use is "run from a chosen step" on a succeeded job), and whether to snapshot the resolved `${...}` values. Until then a control file stays as long as its log.
+- **Step 5 (records), built (2026-10-21), decisions D152 to D155.** As planned, in four slices:
+  - 5-1 (`engine/runner.py`): the control file goes when the run Succeeded and no Reaction changed that, with the file of the attempt it picked up; the job-log lines reworded. Tests: `test_control_file_removal.py` (including the workflow-Reaction edge, through the rerun plan). Four existing tests that read a *successful* run's file now read a failed one or the log.
+  - 5-2: `RunRestarts` (model, `SQL/migrate_restarts.py`, DDL and diagrams regenerated; `autoapp_dev` backed up to `demo/output/autoapp_dev_before_run_restarts.sql` and migrated); `app/run_restarts.py` writes the row and the `JOB_RESUMED` / `JOB_RESTARTED` Audit row after the runner has started (so a refused request writes nothing) and builds the merged list; `restarts` on `GET /runs/{id}`, `restarts_count` and `restarts_words` on the run lists. Tests: `test_run_restarts.py`.
+  - 5-3: the Restarts box and "Restarted N times" on `run.html`, `log.html` and `workflow.html`; "Restarted ×N" in Job History. Tests: `test_ui_restarts.py`.
+  - The 4b test gap is closed: an edit to a frame's variable reaches the job inside the reopened frame (`test_run_restarts.py`).
+  - Decided while building: a Restart of a workflow lists no items (all of them run again); a job's attempt number in its History row counts attempts before it (Restarted ×N) even if an earlier restart was made before the table existed, but the hover and the list then show only what was recorded; the Number stored for a job on its own is the attempt it starts minus one, while the list shown numbers the merged entries in time order; a Resume that picked up from attempt 1 leaves attempt 1's file in place if the resume itself failed (only the file picked up from goes, when the new run Succeeds), so a chain that has failed twice and then succeeded leaves the first attempt's file until its log is removed.
+- **Left for Part 2 (the owner, 2026-10-20):** whether to keep a control file after a job succeeds (step 5 removes it; the only use of keeping it would be "run from a chosen step" on a succeeded job), and whether to snapshot the resolved `${...}` values.
 
 ## Proposals to settle with the owner
 

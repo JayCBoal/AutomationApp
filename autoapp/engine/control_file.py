@@ -93,8 +93,9 @@ class ControlWriter:
 class ControlRecord:
     """A control file read back: what an earlier attempt finished, and where it stopped."""
 
-    def __init__(self, records: List[Dict[str, Any]]):
+    def __init__(self, records: List[Dict[str, Any]], path: Optional[Path] = None):
         self.records = records
+        self.path = path                                   # the file it was read from, so a successful pick-up can remove it
         self._last: Dict[tuple, Dict[str, Any]] = {}       # the latest record about each thing
         self._files: Dict[str, Dict[str, Dict[str, Any]]] = {}
         for record in records:
@@ -109,7 +110,7 @@ class ControlRecord:
                 records.append(json.loads(line))
             except ValueError:
                 continue
-        return cls(records)
+        return cls(records, path)
 
     def _learn(self, record: Dict[str, Any]) -> None:
         event, key = record.get("e"), record.get("key")

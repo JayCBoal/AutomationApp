@@ -181,11 +181,13 @@ def _plain(kept: Dict[str, Any], edits: Dict[str, str], where: str) -> List[str]
     return problems
 
 
-def audit(db: Session, tree: TreePlan, choices: Dict[str, Any]) -> None:
+def audit(db: Session, tree: TreePlan, choices: Dict[str, Any]) -> List[str]:
     """
     One JOB_RESUMED_WITH_EDITS row for each job whose own values were edited, and one for each workflow whose own or
-    use variables were edited, under that workflow. By name, old and new value, never a secret.
+    use variables were edited, under that workflow. By name, old and new value, never a secret. Returns every
+    sentence written, for the run's restart record.
     """
+    every: List[str] = []
     runs = dict(_workflows(tree))
     picks = {p.path: p for p in tree.picks}
     for path, edit in choices["levels"].items():
@@ -195,11 +197,15 @@ def audit(db: Session, tree: TreePlan, choices: Dict[str, Any]) -> None:
         said += [f"Resumed '{run.JobKey}' with variable {n} of use '{use}' changed from '{kept['uses'][use][n]['value']}' to '{v}'."
                  for use, names in sorted(edit["uses"].items()) for n, v in sorted(names.items())]
         _add(db, run.JobKey, said)
+        every += said
     for path, edits in choices["jobs"].items():
         pick = picks[path]
-        _add(db, pick.job_key, [f"Resumed '{pick.job_key}' with {k} changed from '{pick.record.values[k]['value']}' to '{v}'."
-                                for k, v in sorted(edits.items())])
+        said = [f"Resumed '{pick.job_key}' with {k} changed from '{pick.record.values[k]['value']}' to '{v}'."
+                for k, v in sorted(edits.items())]
+        _add(db, pick.job_key, said)
+        every += said
     db.commit()
+    return every
 
 
 def _add(db: Session, job_key: str, said: List[str]) -> None:

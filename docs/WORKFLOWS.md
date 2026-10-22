@@ -225,6 +225,7 @@ What a cancelled or killed job ends as: see Reason, below.
     - Example, Run SQL (one statement in a transaction, committed at the end only if `Commit` is on): could not connect, or the server rejected the statement (rolled back): not done. The connection dropped or timed out after sending, above all during the commit: unknown. In MariaDB and MySQL, DDL (`CREATE`, `ALTER`, `DROP`) commits on its own, so a failure after it is unknown.
     - Reactions' automatic reruns obey the same rule: an unknown failure is not retried; the job holds instead and says why.
   - flow control: an If whose branch had begun keeps that branch; a For Each File reuses attempt 1's list of files (to be recorded) and skips the passes done; a While picks up at its pass;
+  - **the record is a control file, removed when the run Succeeds** (with the file of the attempt it picked up), and every Resume or Restart an operator asks for is kept in a Restarts list on the run, joined by the Reactions' reruns, and in the Audit Log (Phase 7, step 5; D152 to D155);
   - the run's spool, written as it goes, is the record for a killed runner and a failure of the code alike (the owner's control file is "the spool, read back"); when the last operation is not known to have finished, it counts as unknown or partly done, as above.
 
 ### The diagram and the editor (topic 6, 2026-10-17)

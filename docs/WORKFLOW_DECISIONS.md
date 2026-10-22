@@ -685,3 +685,22 @@ Compiled 2026-10-18, from the design record and Phases 1 to 4.
 **D151. Edited values are checked before the run reopens, and each edit is recorded as `JOB_RESUMED_WITH_EDITS` in the Audit Log, one row for each edited job and one for each workflow or frame whose own or use variables were edited.** A secret cannot be edited and never appears in a row. Refresh or Edit with a Restart is refused (422).
 - *Why:* D142; an edit that changes what a job does is something the operator may have to explain later, by name, without exposing a secret.
 - *Status:* Built (Phase 7, step 4b). *Source:* WORKFLOWS_PHASE7.md, step 4b.
+
+**D152. A job's control file is removed when its run Succeeded and no Reaction changed that outcome, and the file of the attempt it picked up goes with it.** A failed, killed or Reaction-overridden run keeps its file; a Restart leaves earlier attempts' files where they are until their logs are removed. Removal never fails a run.
+- *Why:* a control file is only for picking up a run that did not finish; once the run Succeeded there is nothing to pick up, and the job logs keep the history. The new file holds copies of the earlier attempt's records, so the earlier one is no longer needed.
+- *Known edge, accepted:* a job inside a workflow that Succeeded and which a *workflow* Reaction then counts as failed has already lost its file (the job runner cannot know). Resume of it says in plain words that there is no record to pick up from and offers Restart from the beginning. *Considered:* leaving removal to the workflow runner after the item's Reactions are settled; rejected because it needs a second place that removes files.
+- *Status:* Built (Phase 7, step 5-1). *Source:* WORKFLOWS_PHASE7.md, step 5.
+
+**D153. Each Resume or Restart an operator asks for is recorded in a new table, `RunRestarts`, written by the API when the request is made, and in the Audit Log as `JOB_RESUMED` or `JOB_RESTARTED`.** One row of each for each request, under the job key of the run reopened, "by web interface". The row holds the earlier attempt it went on from, the items touched with what each got, the choices made on steps of unknown effect, whether values were refreshed, and the edits by name with old and new value (never a secret). The `JOB_RESUMED_WITH_EDITS` rows stay as they were. A refused request writes nothing.
+- *Why:* the runner never writes the database (D40), and nothing a workflow acts on may depend on telemetry; the API already knows the request and the plan when it starts the runner. `RunID` is text, not a link, so the record survives like the job log does.
+- *Considered:* the runner writing the record (breaks D40); only the Audit Log (it is for definitions, hard to list by run); recording in the spool (telemetry may arrive late or never).
+- *Status:* Built (Phase 7, step 5-2). *Source:* WORKFLOWS_PHASE7.md, step 5.
+
+**D154. A Reaction's rerun is not copied into `RunRestarts`; the run's Restarts list merges the Reaction events in when it is read, labelled "a Reaction".** For a job on its own the list is that of the whole chain of attempts, so the latest attempt's page shows all of them; a job inside a workflow has no list of its own, its workflow's run carries it.
+- *Why:* a Reaction rerun is already on record as a Reaction event with the attempt it judged; a second copy could disagree with it. The owner sees every time a run was run again, not only the manual ones.
+- *Considered:* operator choices only (a run that was retried twice by a Reaction would look as if it had run once more).
+- *Status:* Built (Phase 7, step 5-2), on the planning session's proposed default. *Source:* WORKFLOWS_PHASE7.md, step 5.
+
+**D155. Job History says "Restarted ×N" where it said "attempt N", with the how in the hover ("Resumed by you, then restarted by a Reaction").** N is the attempts before this one for a job, and the restarts listed for a reopened workflow run. The run pages say "Restarted N times" and carry the Restarts box.
+- *Why:* the owner asked for this wording (step 4a note); "attempt N" says nothing about how the run came to be run again.
+- *Status:* Built (Phase 7, step 5-3), on the planning session's proposed default. *Source:* WORKFLOWS_PHASE7.md, step 5.

@@ -79,7 +79,7 @@ def test_a_resumed_job_picks_up_its_own_record(sim, flow, run_flow, reopen, db):
     assert resumed.RunID != failed.RunID and resumed.Attempt == 2
     assert resumed.SchedulerInstanceID.endswith(".2")
     log = open_log(resumed)
-    assert f"Picking up run {failed.RunID}" in log
+    assert "Resumed from attempt 1: no step had finished; step 1 runs again." in log
 
 
 def open_log(run):

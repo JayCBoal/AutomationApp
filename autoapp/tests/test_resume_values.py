@@ -71,7 +71,6 @@ def test_a_refresh_reads_changed_variables_again_and_the_log_says_which_changed(
     log = log_of(tmp_path, second)
     assert "Region US prefix x-US" in log
     assert "Refreshed Region: it was 'EU', it is now 'US'." in log
-    assert control_of(tmp_path, second).values["Region"] == {"value": "US"}
 
 
 def test_an_edit_replaces_one_value_and_leaves_the_others_as_they_were(valued, db, attempt, tmp_path):
@@ -96,7 +95,6 @@ def test_a_secret_is_read_again_by_a_resume(valued, db, attempt, tmp_path):
     second, resumed = attempt("RES", "--resume-run-id", first)
 
     assert resumed.returncode == 0, resumed.stderr
-    assert control_of(tmp_path, second).values["Token"] == {"secret": True}
     assert "token ********" in log_of(tmp_path, second)
 
 

@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import Audit, Job, JobRun
-from app import rerun_tree, rerun_values
+from app import rerun_tree, rerun_values, run_restarts
 from app.rerun_values import LevelEdit, ValueChange, ValueLevel, ValueShown
 from app.routers.launches import LaunchOut, start_runner
 from engine import job_log, reopen, run_values
@@ -238,30 +238,47 @@ def rerun(run_id: str, payload: RerunRequest, request: Request, db: Session = De
     if _in_a_workflow(run):
         return _reopen(db, request, plan, kind, level, payload)
     extra = ["--run-number", str(run.RunNumber), "--attempt", str(run.Attempt + 1)]
+    edits: List[str] = []
     if kind == "resume":
         extra += _resume_arguments(plan, payload.unknown_step)
-        extra += _value_arguments(db, run, payload)
+        arguments, edits = _value_arguments(db, run, payload)
+        extra += arguments
     elif payload.refresh_values or payload.edits:
         raise HTTPException(422, "Values can be refreshed or edited for a Resume; a restart reads them all again.")
-    return start_runner(request, run.JobKey, run.SchedulerInstanceID, level, run.BusinessDate, extra,
-                        scheduler=run.SchedulerName or "AutoApp UI")
+    launch = start_runner(request, run.JobKey, run.SchedulerInstanceID, level, run.BusinessDate, extra,
+                          scheduler=run.SchedulerName or "AutoApp UI")
+    _record(db, plan, run.JobKey, kind, launch.run_id, run.Attempt, {"": payload.unknown_step or ""}, payload.refresh_values, edits)
+    return launch
+
+
+def _record(db: Session, plan: RerunPlan, job_key: str, kind: str, run_id: str, number: int, chosen: Dict[str, str],
+            refreshed: bool, edits: List[str]) -> None:
+    """The restart record and the Audit Log row for a request that has been started (nothing is written for a refused one)."""
+    kind = kind.upper()
+    details = run_restarts.details_for(plan, kind, chosen, refreshed, edits)
+    said = [run_restarts.headline(plan, job_key, kind, details)] + ([f"{i}." for i in details["items"]] if kind == "RESUME" else [])
+    run_restarts.record(db, job_key, run_id, kind, number, plan.scope or "", details, said)
 
 
 def _reopen(db: Session, request: Request, plan: RerunPlan, kind: str, level: str, payload: RerunRequest) -> LaunchOut:
     """Starts the workflow runner on the run at the top, reopened: the same run ID, the next go at it."""
     top = _find(db, plan.reopens_run_id)
-    values = _workflow_values(db, top, plan, kind, payload)
+    values, edits = _workflow_values(db, top, plan, kind, payload)
     extra = ["--run-number", str(top.RunNumber), "--attempt", str(top.Attempt), "--reopen", kind]
     if plan.scope:
         extra += ["--reopen-scope", plan.scope]
+    decisions: Dict[str, str] = {}
     if kind == "resume":
         if not plan.can_resume:
             raise HTTPException(409, plan.resume_problem)
         decisions = _decisions(plan, payload.decisions)
         extra += ["--rerun-decisions", json.dumps(decisions)] if decisions else []
         extra += values
-    return start_runner(request, top.JobKey, top.SchedulerInstanceID, level, top.BusinessDate, extra,
-                        scheduler=top.SchedulerName or "AutoApp UI", run_id=top.RunID)
+    number = run_restarts.next_number(db, top.RunID)
+    launch = start_runner(request, top.JobKey, top.SchedulerInstanceID, level, top.BusinessDate, extra,
+                          scheduler=top.SchedulerName or "AutoApp UI", run_id=top.RunID)
+    _record(db, plan, top.JobKey, kind, top.RunID, number, decisions, payload.refresh_values, edits)
+    return launch
 
 
 def _decisions(plan: RerunPlan, chosen: Dict[str, str]) -> Dict[str, str]:
@@ -287,11 +304,11 @@ def _resume_arguments(plan: RerunPlan, unknown_step: Optional[str]) -> List[str]
     return arguments + (["--count-as-done", step.key] if unknown_step == COUNT_AS_DONE else [])
 
 
-def _value_arguments(db: Session, run: JobRun, payload: RerunRequest) -> List[str]:
+def _value_arguments(db: Session, run: JobRun, payload: RerunRequest):
     """Refresh or edit the earlier attempt's values; an edit is recorded in the Audit Log, by name and never a secret."""
     arguments = ["--refresh-values"] if payload.refresh_values else []
     if not payload.edits:
-        return arguments
+        return arguments, []
     record, _ = find_earlier_attempt(db, run.RunID)
     problems = run_values.edit_problems(record.values, payload.edits)
     if problems:
@@ -302,14 +319,14 @@ def _value_arguments(db: Session, run: JobRun, payload: RerunRequest) -> List[st
     db.add(Audit(MasterObject_id=job.MasterObject_id if job else None, Action="JOB_RESUMED_WITH_EDITS",
                  PerformedBy="web interface", Details=json.dumps({"changes": changes})))
     db.commit()
-    return arguments + ["--edit-values", json.dumps(payload.edits)]
+    return arguments + ["--edit-values", json.dumps(payload.edits)], changes
 
 
-def _workflow_values(db: Session, top: JobRun, plan: RerunPlan, kind: str, payload: RerunRequest) -> List[str]:
-    """Refresh or edit the values of a workflow's Resume; edits are checked, then recorded in the Audit Log."""
+def _workflow_values(db: Session, top: JobRun, plan: RerunPlan, kind: str, payload: RerunRequest):
+    """Refresh or edit the values of a workflow's Resume; edits are checked, then recorded in the Audit Log. Returns (arguments, edits made)."""
     wanted = payload.refresh_values or payload.level_edits or payload.job_edits or payload.edits
     if not wanted:
-        return []
+        return [], []
     if kind != "resume":
         raise HTTPException(422, "Values can be refreshed or edited for a Resume; a restart reads them all again.")
     if payload.edits:
@@ -320,8 +337,8 @@ def _workflow_values(db: Session, top: JobRun, plan: RerunPlan, kind: str, paylo
     choices, problems = rerun_values.check_edits(tree, payload.level_edits, payload.job_edits)
     if problems:
         raise HTTPException(422, " ".join(problems))
-    arguments = ["--refresh-values"] if payload.refresh_values else []
+    arguments, said = (["--refresh-values"] if payload.refresh_values else []), []
     if payload.level_edits or payload.job_edits:
-        rerun_values.audit(db, tree, choices)
+        said = rerun_values.audit(db, tree, choices)
         arguments += ["--edit-values", json.dumps(choices)]
-    return arguments
+    return arguments, said

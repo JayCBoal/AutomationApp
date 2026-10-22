@@ -198,7 +198,7 @@ An endpoint has no direction. The same folder can be a destination for one job a
 
 ### Audits
 
-`Audits` is for changes to definitions: who changed which job, endpoint or variable, and when. It is not used for job runs.
+`Audits` is for changes to definitions: who changed which job, endpoint or variable, and when, and the restart choices made on runs (Resume and Restart). It is not used for job runs.
 
 **Built:** creating, changing and deleting a job each write an audit row saying in words what changed (`app/job_store.py`). There are no user accounts yet, so every change is recorded as made by "web interface".
 

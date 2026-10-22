@@ -4,6 +4,20 @@ Notable structural, schema and design changes to AutoApp, newest first. Line-by-
 
 ---
 
+## 2026-10-21
+
+### Workflows, Phase 7, step 5: the records of a rerun
+
+Plan: [WORKFLOWS_PHASE7.md](WORKFLOWS_PHASE7.md). Decisions D152 to D155 in [WORKFLOW_DECISIONS.md](WORKFLOW_DECISIONS.md).
+
+- **Schema:** a new table, `RunRestarts` (`SQL/migrate_restarts.py` adds it; nothing existing changes).
+- **Changed (control file):** a job's control file is removed when the run Succeeded and no Reaction changed that, together with the file of the attempt it picked up. A job inside a workflow that a workflow Reaction counts as failed has no file to resume from: Resume says so and offers Restart.
+- **Changed (job log):** "Picking up run ..." is now "Resumed from attempt 1: steps 1 to 3 had finished; step 4 runs again." and, for a Restart, "Restarted from the beginning (attempt 2); attempt 1 failed."
+- **Added (records):** each Resume or Restart asked for in the web interface writes a restart record and an Audit Log row (`JOB_RESUMED`, `JOB_RESTARTED`). `GET /api/v1/runs/{id}` gains `restarts` (the operator's and the Reactions' reruns, merged), and the run lists gain `restarts_count` and `restarts_words`.
+- **Added (pages):** a *Restarts* box and "Restarted N times" on the Run Job, log and workflow run pages. Job History reads "Restarted ×N" in place of "attempt N", with the how as a hover.
+
+---
+
 ## 2026-10-19
 
 ### Workflows, Phase 6: embedded and shared workflows (frames)

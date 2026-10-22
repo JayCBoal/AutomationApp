@@ -31,6 +31,7 @@ import sys
 import time
 import uuid
 from datetime import date, datetime
+from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from sqlalchemy.orm import Session
@@ -119,8 +120,7 @@ def run_job(db: Session, job_key: str, instance_id: str, spool_dir: str,
             scope_engine.build_context()
             control.write("job", run_id=telemetry.run_id, job_key=job_key, started=scope_engine.started.isoformat(),
                           business_date=business_date.isoformat() if business_date else None)
-            if resume:
-                job_log.summary(f"Picking up run {resume_run_id}: the steps it finished are not run again.")
+            _log_how_it_started(resume, attempt, count_as_done)
             if scope_engine.working_folder:
                 os.makedirs(scope_engine.working_folder, exist_ok=True)
             job_log.debug(f"Working folder: {scope_engine.working_folder}")
@@ -149,7 +149,55 @@ def run_job(db: Session, job_key: str, instance_id: str, spool_dir: str,
             return _end(telemetry, own, "FAILED", code, failure_reason(e), str(e))
         finally:
             control.close()
-        return _finish(job_key, executor.job_return_code, success_codes, telemetry, own)
+        exit_code = _finish(job_key, executor.job_return_code, success_codes, telemetry, own)
+        if exit_code == 0 and return_codes.matches(executor.job_return_code or 0, success_codes):
+            remove_control_files(control.path, resume)      # it Succeeded, and no Reaction changed that
+        return exit_code
+
+
+def remove_control_files(own_path: Optional[Path], resume: Optional[ControlRecord]) -> None:
+    """
+    A run that Succeeded has nothing left to pick up: its control file goes, and so does the file of the attempt
+    it picked up (this one holds copies of its records, and the job logs keep the history). A failed, killed or
+    Reaction-overridden run keeps its file. Never fails the run: a file that is gone already, or cannot be removed,
+    goes with its log in any case.
+    """
+    for path in (own_path, resume.path if resume else None):
+        try:
+            if path is not None:
+                path.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+def _log_how_it_started(resume: Optional[ControlRecord], attempt: int, count_as_done: Optional[str]) -> None:
+    """Says in the job log whether this attempt picks up an earlier one or starts again from the beginning."""
+    earlier = f"attempt {attempt - 1}" if attempt > 1 else "the earlier attempt"
+    if resume is None:
+        if attempt > 1:
+            job_log.summary(f"Restarted from the beginning (attempt {attempt}); {earlier} failed.")
+        return
+    job_log.summary(f"Resumed from {earlier}: {_what_was_finished(resume)}")
+    failure = resume.open_failure()
+    if failure and failure.get("operator_decides") and failure.get("key") != count_as_done:
+        job_log.summary(f"Step {failure['step']} '{failure.get('title')}' may have changed something before it "
+                        f"failed: run again, as chosen.")
+
+
+def _what_was_finished(resume: ControlRecord) -> str:
+    """"steps 1 to 3 had finished; step 4 runs again.", in the words the job log uses."""
+    failure = resume.open_failure()
+    numbers = sorted({int(r["key"].split("|")[0]) for r in resume.ended_steps() if r["key"].split("|")[0].isdigit()})
+    if failure is None:
+        return "all steps had finished."
+    again = f"step {failure['step']} runs again."
+    if not numbers:
+        return f"no step had finished; {again}"
+    if len(numbers) == 1:
+        return f"step {numbers[0]} had finished; {again}"
+    if numbers == list(range(numbers[0], numbers[-1] + 1)):
+        return f"steps {numbers[0]} to {numbers[-1]} had finished; {again}"
+    return f"steps {', '.join(str(n) for n in numbers)} had finished; {again}"
 
 
 def _log_values(resume: ControlRecord, now: Dict[str, dict], refreshed: bool, edits: Dict[str, str],

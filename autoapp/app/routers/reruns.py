@@ -23,7 +23,8 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import Audit, Job, JobRun
-from app import rerun_tree, rerun_values, run_restarts
+from app import rerun_values, run_restarts
+from engine import reopen_tree as rerun_tree
 from app.rerun_values import LevelEdit, ValueChange, ValueLevel, ValueShown
 from app.routers.launches import LaunchOut, start_runner
 from engine import job_log, reopen, run_values

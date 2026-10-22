@@ -1,7 +1,8 @@
 """
 What Rerun would do to a workflow run (docs/WORKFLOWS_PHASE7.md, step 3): which run to reopen, which items
 go on from where they stopped or start again, and what stops it. The rules for each item are engine/reopen.py's,
-the same the workflow runner follows, so the plan is what the run will do.
+the same the workflow runner follows, so the plan is what the run will do. It lives in the engine because a
+Reaction asks it too (automatic_problem): the one rule for "can this run be picked up".
 
 A run is chosen as a whole, or by one failed job or frame inside it. Either way the run that is reopened is the
 one at the top: it is the runner of the whole tree, and the frames between it and the item chosen are
@@ -15,7 +16,7 @@ from sqlalchemy.orm import Session
 from app.models import Job, JobRun, WorkflowRunItem
 from engine import reopen
 from engine.control_file import ControlRecord
-from engine.runner import find_earlier_attempt
+from engine.runner import automatic_resume_problem, find_earlier_attempt
 
 
 @dataclass
@@ -28,6 +29,7 @@ class Pick:
     child: Optional[JobRun]
     record: Optional[ControlRecord] = None
     problem: Optional[str] = None
+    status: str = ""
 
     def goes_on(self) -> bool:
         return self.action in (reopen.PICK_UP, reopen.ROUTE)
@@ -102,7 +104,7 @@ def walk(db: Session, run: JobRun, kind: str, scope: Optional[str]) -> List[Pick
         action = reopen.action_for(row.Status, child is not None, row.Path, kind, scope)
         if action == reopen.UNTOUCHED:
             continue
-        pick = Pick(row.Path, row.JobKey, action, row.Attempt, child)
+        pick = Pick(row.Path, row.JobKey, action, row.Attempt, child, status=row.Status)
         picks.append(pick)
         if pick.goes_on() and child is not None:
             _look_inside(db, pick, kind, scope, picks)
@@ -147,3 +149,26 @@ def _resume_problem(db: Session, plan: TreePlan) -> Optional[str]:
 def _missing_at_top(db: Session, plan: TreePlan) -> List[str]:
     missing = missing_items(db, plan.top)
     return [_missing_words(plan.top, missing)] if missing else []
+
+
+def automatic_problem(db: Session, run: JobRun) -> Optional[str]:
+    """
+    Why a Reaction may not Resume this workflow run, in words, or None when it may. The run is reopened as
+    the operator's Resume would (walk), and one refusal refuses all of it: the workflow was edited, nothing
+    failed or was left unrun, or a failed job or a job in a failed frame has no usable record or has a step
+    whose effect is not known (automatic_resume_problem, as for a job on its own).
+    """
+    problems = [_missing_words(run, missing_items(db, run))] if missing_items(db, run) else []
+    picks = walk(db, run, reopen.RESUME, None)
+    for pick in picks:
+        if pick.problem:
+            problems.append(f"'{pick.path}': {pick.problem}")
+        elif pick.status == "FAILED" and pick.child is None:
+            problems.append(f"'{pick.path}': the job left no record of its run, so there is nothing to pick up.")
+        elif pick.goes_on() and pick.child is not None and pick.child.JobType != "WORKFLOW":
+            why = automatic_resume_problem(pick.record, None)
+            if why:
+                problems.append(f"'{pick.path}': {why}")
+    if not problems and not picks:
+        problems.append(f"Nothing in '{run.JobKey}' failed or was left unrun, so there is nothing to pick up.")
+    return " ".join(problems) or None

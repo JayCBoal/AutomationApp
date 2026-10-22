@@ -4,6 +4,19 @@ Notable structural, schema and design changes to AutoApp, newest first. Line-by-
 
 ---
 
+## 2026-10-22
+
+### Workflows, Phase 7, step 5a: a Reaction resumes a workflow
+
+Plan: [WORKFLOWS_PHASE7.md](WORKFLOWS_PHASE7.md). Decisions D156 to D158 in [WORKFLOW_DECISIONS.md](WORKFLOW_DECISIONS.md).
+
+- **Changed (Reactions):** *Resume from failure* on a workflow, run on its own or a frame inside another, picks up the jobs that failed and starts those that did not run; it was always a Restart before (D148 replaced in part). It is passed over, with the reason, if any one job cannot be picked up, and the next Reaction that holds decides.
+- **Changed (code):** the reopen plan moved from `app/rerun_tree.py` to `engine/reopen_tree.py`, with `automatic_problem` for Reactions.
+- **Fixed (job log):** a rerun in the same process no longer writes lines to the log files of earlier attempts; a workflow's own Reaction messages now appear in its log.
+- **Changed (pages):** the Reactions box help text no longer says a workflow is always run again.
+
+---
+
 ## 2026-10-21
 
 ### Workflows, Phase 7, step 5: the records of a rerun

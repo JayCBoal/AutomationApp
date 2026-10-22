@@ -10,6 +10,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
 from pydantic import BaseModel, Field
+from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
 from app.models import Audit, Job, JobRun, ReactionEvent, RunRestart
@@ -127,7 +128,9 @@ def _from_row(row: RunRestart) -> RestartOut:
 def _from_reactions(db: Session, run: JobRun, chain: List[JobRun]) -> List[RestartOut]:
     """The Reaction events that ran an item or the job again, as list entries."""
     if run.JobType == "WORKFLOW":
-        condition = ReactionEvent.WorkflowRun_id == run.id
+        # a workflow's items' events name it; its own Reaction's name only the run itself
+        condition = or_(ReactionEvent.WorkflowRun_id == run.id,
+                        and_(ReactionEvent.JobRun_id == run.id, ReactionEvent.WorkflowRun_id.is_(None)))
     else:
         condition = ReactionEvent.JobRun_id.in_([r.id for r in chain])
     events = (db.query(ReactionEvent).filter(condition, ReactionEvent.Action.in_(("RERUN", "RERUN_FROM")),

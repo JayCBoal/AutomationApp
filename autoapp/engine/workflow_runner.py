@@ -50,7 +50,7 @@ from app.models import (ConditionCheck, Job, JobRun, ReactionEvent, WorkflowPrer
                         WorkflowRunItem, utcnow)
 from engine import frames
 from engine.frames import tree_top
-from engine import conditions, job_log, log_files, outside, reopen, settings, workflow_conditions, workflow_vars
+from engine import conditions, job_log, log_files, outside, reopen, reopen_tree, settings, workflow_conditions, workflow_vars
 from engine.outside_state import Context, Outside
 from engine.prerequisites import FINAL, HOLDS, NEVER, TIMED_OUT, WAIT, SKIPPED_OPTIONAL, prerequisite_state
 from engine.reactions import LIMITED, Act, OwnReactions, Rule, judge, read_rules, start_workflow
@@ -302,7 +302,8 @@ class WorkflowRunner:
         code = self._return_code(status)
         counted = status
         if self.own is not None and reason != "KILLED":
-            counted = self.own.after(status, code, self._own_event)
+            self.own.run_id = self.run_id
+            counted = self.own.after(status, code, self._own_event, lambda: reopen_tree.automatic_problem(self.db, self.record))
         self.record.Status, self.record.Reason, self.record.ErrorMessage = counted, reason, error
         self.record.StatusBeforeOverride = status if counted != status else None
         self.record.ReturnCode = code
@@ -322,6 +323,7 @@ class WorkflowRunner:
     def _own_event(self, act: Act, result: str, message: str) -> None:
         self.db.add(ReactionEvent(JobRun_id=self.record.id, ReactionAction_id=act.id, Action=act.action,
                                   Result=result, Message=message))
+        (job_log.warning if result == "LIMIT_REACHED" else job_log.summary)(message)
 
     def _conclude(self) -> int:
         """Succeeded, unless a failure went unhandled or jobs were cancelled; or as its Succeeds when says."""
@@ -936,11 +938,13 @@ class WorkflowRunner:
         return f"Skipped ({why}): {', '.join(p.name for p in skipped) or 'nothing not yet started'}."
 
     def _cannot_resume(self, planned: Planned, child: Optional[JobRun], act: Act) -> Optional[str]:
-        """Why a Rerun this job that resumes cannot, in words, or None. A workflow is always run again from the beginning."""
-        if not act.resumes or planned.job_type == "WORKFLOW":
+        """Why a Rerun this job or frame that resumes cannot, in words, or None. A frame is judged as a whole (reopen_tree)."""
+        if not act.resumes:
             return None
         if child is None:
             return "the job left no record of its run, so there is nothing to pick up. Choose Restart from the beginning."
+        if planned.job_type == "WORKFLOW":
+            return reopen_tree.automatic_problem(self.db, child)
         from engine.runner import automatic_resume_problem, find_earlier_attempt
         return automatic_resume_problem(*find_earlier_attempt(self.db, child.RunID))
 
@@ -958,9 +962,11 @@ class WorkflowRunner:
         chain[0].start_after = time.time() + act.wait_seconds
         used = self.times_used[(planned.row.Path, act.id)]
         wait = f" after {act.wait_seconds} s" if act.wait_seconds else ""
-        resumed = act.resumes and planned.job_type != "WORKFLOW" and planned.row.child_run is not None
+        resumed = act.resumes and planned.row.child_run is not None
         if resumed:
             planned.resume_from = planned.row.child_run.RunID
+            if planned.job_type == "WORKFLOW":
+                planned.reopen_kind = reopen.RESUME         # the frame is reopened as its own run (step 3)
         return (f"Rerunning {', '.join(p.name for p in chain)}{' from where it failed' if resumed else ''}{wait} "
                 f"(rerun {used} of at most {act.max_times}).")
 

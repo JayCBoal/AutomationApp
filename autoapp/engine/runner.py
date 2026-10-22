@@ -439,8 +439,12 @@ def run_with_reactions(db: Session, args) -> int:
         if own is None or own.rerun is None:
             return exit_code
         time.sleep(own.rerun.wait_seconds)
-        resume_run_id = own.run_id if own.rerun.resumes and not (job and job.JobType == "WORKFLOW") else None
-        run_id, attempt, count_as_done, reopen = None, attempt + 1, None, None
+        is_workflow = job is not None and job.JobType == "WORKFLOW"
+        resume_run_id = own.run_id if own.rerun.resumes and not is_workflow else None
+        # a workflow that resumes is its same run reopened; a restart is a new run under the same instance ID
+        run_id, reopen = (own.run_id, "resume") if own.rerun.resumes and is_workflow else (None, None)
+        attempt, count_as_done = attempt + 1, None
+        args.reopen_scope, args.rerun_decisions = None, None
         refresh_values, value_edits, drop_values = False, None, None
         db.expire_all()
 

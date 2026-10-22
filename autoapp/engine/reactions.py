@@ -160,8 +160,7 @@ class OwnReactions:
               resume_problem: Optional[Callable[[], Optional[str]]] = None) -> str:
         """
         Judges how the job ended; returns the status it ends with. record(act, result, message) keeps each.
-        resume_problem says why this run cannot be picked up, or None if it can; a run that has none to
-        give (a workflow) is always run again from the beginning.
+        resume_problem says why this run cannot be picked up, or None if it can.
         """
         self.rerun = None
         problem = resume_problem() if resume_problem and any(r.resumes for rule in self.rules for r in rule.actions) else None

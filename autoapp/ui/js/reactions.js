@@ -197,7 +197,8 @@
                     ? "Restart from the beginning runs every step again, as a new attempt."
                     : "Resume from failure keeps the steps that finished and runs the rest. If a step failed and "
                       + "AutoApp cannot tell whether it changed anything, nothing is rerun and the job stays failed. "
-                      + "A workflow is always run again from the beginning.";
+                      + "On a workflow it picks up the jobs that failed and starts those that did not run, and is "
+                      + "passed over if any one of them cannot be picked up.";
             },
 
             reactionChoices(section, inWorkflow) {

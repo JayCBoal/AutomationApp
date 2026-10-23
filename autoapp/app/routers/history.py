@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session, aliased
 
 from app.database import get_db
 from app.log_agent import log_note, run_log
+from app.run_restarts import RestartOut, restarts_for, summary_for
 from app.models import (Audit, ConditionCheck, JobRun, Operation, ReactionEvent, WorkflowPrerequisiteCheck,
                         WorkflowRunItem, utcnow)
 from engine import conditions, log_files
@@ -55,6 +56,8 @@ class RunOut(BaseModel):
     status_before_override: Optional[str] = None
     file_count: Optional[int] = None
     bytes: Optional[int] = None
+    restarts_count: int = Field(0, description="How many times it was run again (Job History says Restarted ×N)")
+    restarts_words: Optional[str] = Field(None, description="How, in words: Resumed by you, then restarted by a Reaction")
 
 
 @router.get("/api/v1/runs", response_model=List[RunOut])
@@ -135,6 +138,7 @@ def _describe_runs(db: Session, runs) -> List[RunOut]:
     for run in runs:
         out = _describe(run, counts.get(run.id, (0, 0)), _has_log(run), parents.get(run.ParentRun_id))
         out.child_count = children.get(run.id, 0)
+        out.restarts_count, out.restarts_words = summary_for(db, run)
         described.append(out)
     return described
 
@@ -206,7 +210,7 @@ class OutsideWaitOut(BaseModel):
     attempt: int
     kind: str
     target: Optional[str] = None
-    result: str = Field(..., description="WAITING, HOLDS, TIMED_OUT, SKIPPED or NOT_NEEDED")
+    result: str = Field(..., description="WAITING, HOLDS, TIMED_OUT, SKIPPED, NOT_NEEDED or RELEASED (an operator ignored it for one restart)")
     used_run_id: Optional[str] = Field(None, description="The run of the other workflow it used")
     seen_status: Optional[str] = Field(None, description=(
         "How what it waits for stood when last looked at: the other job's status, or SUCCESS or WAITING"))
@@ -242,6 +246,7 @@ class RunDetail(RunOut):
     reactions: List[ReactionEventOut] = []
     conditions: List[ConditionCheckOut] = []
     outside_waits: List[OutsideWaitOut] = []
+    restarts: List[RestartOut] = Field([], description="Each time the run was run again, by an operator or a Reaction")
 
 
 @router.get("/api/v1/runs/{run_id}", response_model=RunDetail)
@@ -257,11 +262,14 @@ def get_run(run_id: str, db: Session = Depends(get_db)):
     total, failed = (db.query(func.count(Operation.id), func.sum(case((Operation.OpStatus == "FAILED", 1), else_=0)))
                      .filter(Operation.JobRun_id == run.id).one())
     parent = db.get(JobRun, run.ParentRun_id).RunID if run.ParentRun_id and db.get(JobRun, run.ParentRun_id) else None
-    return RunDetail(**_describe(run, (total or 0, int(failed or 0)), _has_log(run), parent).model_dump(),
+    described = _describe(run, (total or 0, int(failed or 0)), _has_log(run), parent)
+    described.restarts_count, described.restarts_words = summary_for(db, run)
+    return RunDetail(**described.model_dump(),
                      log=run_log(run), log_note=log_note(run),
                      items=_run_items(db, run), cancel_requested=run.CancelRequestedDateTime is not None,
                      kill_requested=run.KillRequestedDateTime is not None, reactions=_reaction_events(db, run),
-                     conditions=_condition_checks(db, run), outside_waits=_outside_waits(db, run))
+                     conditions=_condition_checks(db, run), outside_waits=_outside_waits(db, run),
+                     restarts=restarts_for(db, run))
 
 
 def _reaction_events(db: Session, run: JobRun) -> List[ReactionEventOut]:

@@ -167,6 +167,9 @@ Designed with the owner and built in RunMyFiles on 2026-10-16, then brought over
 15. **What a job inside a frame waited for outside, in a run's pane.** The outside waits of a frame's jobs are kept on the frame's own run and are not shown on the top run's pane. Phase 6, 2026-10-20.
 16. **Update the mockup (`ui/mockup_workflow.html`) to match the real frames,** after comparing the two. Phase 6, 2026-10-20.
 17. **A job waiting for a job in a frame that never started** waits out its patience (D130). It could end Not run at once when the frame is known not to start. Phase 6, 2026-10-20.
+18. **A prerequisite can test any final status,** Skipped, Not run, Disabled and Bypassed included (today: Succeeded, Failed, Ended, return codes). Gives Skipped its own handler, as WORKFLOWS.md topic 1 says. Owner, 2026-10-22, during Phase 7 step 6b.
+
+19. **Keep how each run's `${...}` values resolved, for the audit trail (D160).** For any run, so someone investigating why a job behaved as it did on one occasion can see them; secrets never stored. Left out of Phase 7 because nothing in restarts needs it (the control file holds the values a Resume uses) and it must not slow a job (the telemetry principle). Where it is kept and shown is still to plan. 2026-10-22.
 
 ## Done
 

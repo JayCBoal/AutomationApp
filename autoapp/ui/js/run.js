@@ -8,6 +8,7 @@
  *     GET  /api/v1/launches/{launch_id}     whether the runner process is still going
  *     GET  /api/v1/runs/{run_id}            the run as recorded, with its job log so far
  *     POST /api/v1/runs/{run_id}/kill       Kill (a workflow: Kill and Cancel)
+ *     (Rerun ▸ is in rerun.js)
  */
 const LOG_LEVELS = ["DETAIL", "SUMMARY", "DEBUG", "SILENT"];
 const POLL_MS = 1000;
@@ -43,6 +44,11 @@ function followRun() {
                 this.error = e.message;
             }
         },
+
+        ...rerunDialog(),
+
+        /** A run's status, with "(effect unknown)" for a failure whose step could not say what it did. */
+        statusWords(run) { return run.status === "FAILED" && run.reason === "EFFECT_UNKNOWN" ? "Failed (effect unknown)" : run.status; },
 
         killWords(run) { return run && run.job_type === "WORKFLOW" ? "Kill and Cancel" : "Kill"; },
 
@@ -158,7 +164,20 @@ function runPage() {
             }
             this.instanceId = "";
             this.busy = false;
-            // Follow the runner until it has finished and its last records have arrived
+            this.follow();
+        },
+
+        /** A rerun is a new launch: follow it as a run started here. */
+        afterRerun(launch) {
+            this.launch = launch;
+            this.run = null;
+            this.runMissing = false;
+            this.following = true;
+            this.follow();
+        },
+
+        /** Follows the runner until it has finished and its last records have arrived. */
+        follow() {
             this.poll(async () => {
                 this.launch = await AutoApp.get("/launches/" + encodeURIComponent(this.launch.launch_id));
                 // Asked for only once the runner has recorded it, so the page never asks for a run not there yet
@@ -172,7 +191,7 @@ function runPage() {
         get outcome() {
             if (!this.launch) return "";
             if (this.launch.state === "RUNNING" || (this.run && this.run.status === "RUNNING")) return "Running...";
-            if (this.run) return this.run.status === "SUCCESS" ? "Succeeded" : "Failed";
+            if (this.run) return this.run.status === "SUCCESS" ? "Succeeded" : this.statusWords(this.run).replace("FAILED", "Failed");
             return this.launch.exit_code === 0 ? "Succeeded" : "Failed before it could record the run";
         },
         get outcomeClass() {
@@ -200,6 +219,9 @@ function runLogPage() {
         ...followRun(),
         runId,
         error: "",
+
+        /** A rerun is a new run: its log page is the one to follow. */
+        afterRerun(launch) { location.href = "log.html?" + new URLSearchParams({ run: launch.run_id }); },
 
         async init() {
             // A scheduler knows the run by its own instance ID: log.html?job_key=...&instance_id=...

@@ -12,7 +12,7 @@ from app.catalog import sync_catalog
 from app.database import get_db
 from app.log_agent import remove_old_logs
 from app.routers import (
-    conditions, definitions, endpoints, history, jobs, launches, lookups, operations, registry, schedulers, settings,
+    conditions, definitions, endpoints, history, jobs, launches, lookups, operations, registry, reruns, schedulers, settings,
     step_types, telemetry, variables
 )
 from app.schema_check import out_of_date_message, schema_problems
@@ -118,6 +118,7 @@ for router in definitions.routers:
 app.include_router(variables.router)
 app.include_router(settings.router)
 app.include_router(launches.router)
+app.include_router(reruns.router)
 app.include_router(conditions.router)
 
 

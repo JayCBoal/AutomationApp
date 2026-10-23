@@ -7,6 +7,7 @@
     <link rel="icon" href="data:,">
     <link rel="stylesheet" href="css/autoapp.css">
     <script src="js/common.js"></script>
+    <script src="js/rerun.js"></script>
     <script src="js/run.js"></script>
     <script defer src="vendor/alpine-3.17.4.min.js"></script>
 </head>
@@ -159,9 +160,33 @@
             <div class="steps-head">
                 <h2 class="section" style="margin-top: 0">The run</h2>
                 <span class="status" id="run-outcome" :class="outcomeClass" x-text="outcome"></span>
+                <span class="muted small" id="restarted-count" x-show="run && run.restarts_count > 0" x-cloak
+                      :title="run && run.restarts_words" x-text="run ? 'Restarted ' + run.restarts_count + (run.restarts_count === 1 ? ' time' : ' times') : ''"></span>
                 <span class="muted small" x-show="launch.exit_code !== null" x-text="'exit code ' + launch.exit_code"></span>
                 <button type="button" class="secondary danger" id="kill-button" x-show="run && run.status === 'RUNNING'"
                         @click="kill()" x-text="killWords(run)"></button>
+                <button type="button" class="secondary" id="rerun-button" x-show="canRerun(run)" @click="openRerun()">Rerun &#9656;</button>
+            </div>
+            <div data-rerun-panel></div>
+            <div class="restarts" id="restarts-box" x-show="run && run.restarts && run.restarts.length" x-cloak>
+                <h3 class="section">Restarts</h3>
+                <ol class="restart-list">
+                    <template x-for="r in (run && run.restarts) || []" :key="r.number">
+                        <li class="restart">
+                            <strong x-text="r.words"></strong>
+                            <span class="muted small" x-text="' · ' + time(r.time) + ' · by ' + (r.by === 'web interface' ? 'you (web interface)' : r.by)"></span>
+                            <div class="small" x-show="r.scope" x-text="'Run again: ' + r.scope"></div>
+                            <ul class="small restart-detail">
+                                <template x-for="line in r.items" :key="line"><li x-text="line"></li></template>
+                                <template x-for="line in r.decisions" :key="line"><li x-text="line"></li></template>
+                                <li x-show="r.values_refreshed">Values were read again.</li>
+                                <template x-for="line in r.edits" :key="line"><li x-text="line"></li></template>
+                                <template x-for="line in r.released" :key="line"><li x-text="line"></li></template>
+                                <li x-show="r.message" x-text="r.message"></li>
+                            </ul>
+                        </li>
+                    </template>
+                </ol>
             </div>
             <p class="small"><code id="run-command" x-text="launch.command"></code></p>
             <p class="small" x-show="run">

@@ -207,6 +207,7 @@ classDiagram
         +string(30) Action
         +int MaxTimes
         +int WaitSeconds
+        +string(10) RerunMode
         +int TargetItem_id
         +int TargetJob_MasterObject_id
     }
@@ -220,6 +221,16 @@ classDiagram
         +string(20) Result
         +text Message
         +datetime EventDateTime
+    }
+    class RunRestart {
+        +int id
+        +string(36) RunID
+        +int Number
+        +string(10) Kind
+        +string(1000) Scope
+        +string(100) PerformedBy
+        +datetime ChosenDateTime
+        +text Details
     }
     class SettingValue {
         +string(100) SettingKey
@@ -339,6 +350,7 @@ classDiagram
     Job "1" --> "*" JobStep : steps
     Job "1" --> "*" Reaction : reactions
     Job "1" --> "*" WorkflowItem : items
+    Job "1" --> "*" Job : embedded
     Job "1" --> "*" WorkflowPrerequisite : waiters
     JobRun "*" --> "0..1" Job : job
     JobRun "1" --> "*" Operation : operations

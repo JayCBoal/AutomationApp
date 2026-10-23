@@ -49,16 +49,40 @@ def test_reactions_are_made_on_the_job_page_and_read_in_words(page, jobs, db):
     # Only what a job can do on its own is offered
     offered = box.locator(".reaction-action").first.locator("option").all_inner_texts()
     assert offered == ["Count as succeeded", "Count as failed", "Rerun this job"]
+    # A new Rerun resumes from the failure, unless the other is chosen
+    mode = box.locator(".reaction-mode").first
+    assert mode.input_value() == "RESUME"
+    assert mode.locator("option").all_inner_texts() == ["Resume from failure", "Restart from the beginning"]
+    assert "stays failed" in box.locator(".reaction-mode-help").first.inner_text()
 
     page.locator("#submit-button").click()
     page.locator("#save-notice").wait_for()
 
     assert box.locator(".reaction-list li").all_inner_texts() == [
-        "When its return code is 8: rerun this job, at most 2 times.", "When it fails: count as succeeded."]
+        "When its return code is 8: rerun this job from where it failed, at most 2 times.",
+        "When it fails: count as succeeded."]
     db.expire_all()
     load = db.query(Job).filter(Job.JobKey == "LOAD").one()
     assert [(r.WhenTest, r.WhenReturnCodes, [a.Action for a in r.actions]) for r in load.reactions] == [
         ("RC", "8", ["RERUN"]), ("FAILED", None, ["COUNT_AS_SUCCEEDED"])]
+    assert load.reactions[0].actions[0].RerunMode == "RESUME"
+
+
+def test_a_rerun_can_be_chosen_to_restart_from_the_beginning(page, jobs, db):
+    jobs()
+    page.goto("/ui/job.html?key=LOAD")
+    page.locator("#edit-button").click()
+    box = page.locator("#reactions-panel")
+    box.locator(".add-reaction").first.click()
+    box.locator(".reaction-mode").first.select_option("RESTART")
+    assert "runs every step again" in box.locator(".reaction-mode-help").first.inner_text()
+    page.locator("#submit-button").click()
+    page.locator("#save-notice").wait_for()
+
+    assert box.locator(".reaction-list li").all_inner_texts() == [
+        "When it fails: rerun this job from the beginning, at most 1 time."]
+    db.expire_all()
+    assert db.query(ReactionAction).one().RerunMode == "RESTART"
 
 
 def test_a_use_shows_its_jobs_reactions_and_can_override_them_and_be_disabled_here(page, jobs, db):

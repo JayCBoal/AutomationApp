@@ -19,7 +19,7 @@ from typing import Dict, List
 
 from engine import job_log
 from engine.handlers.base_handler import BaseHandler
-from engine.step_catalog import BOOLEAN, DEST, INTEGER, LOCATION, NUMBER, SOURCE, STRING, Output, Param
+from engine.step_catalog import BOOLEAN, DEST, INTEGER, LOCATION, NUMBER, SOURCE, STRING, NOT_DONE, PARTLY_DONE, Output, Param
 from engine.telemetry_client import utc_now_iso
 
 ALLOW_NO_FILES = Param("AllowNoFiles", BOOLEAN, default="False",
@@ -52,6 +52,7 @@ def plural(count: int, word: str) -> str:
 
 class DeleteFilesHandler(BaseHandler):
     CODE = "DELETE_FILES"
+    FAILURE_KNOWLEDGE = PARTLY_DONE
     NAME = "Delete Files"
     DESCRIPTION = "Removes files, for example to clear a working folder or to keep only recent archives"
 
@@ -72,8 +73,9 @@ class DeleteFilesHandler(BaseHandler):
             cutoff = time.time() - older_than * 86400
             files = [f for f in files if os.path.getmtime(f) < cutoff]
         extra = f" older than {plural(older_than, 'day')}" if older_than is not None else ""
-        self.outputs["FileCount"] = 0
-        if not files:
+        carried = self.journal.finished_earlier()       # files an earlier attempt of this step already deleted
+        self.outputs["FileCount"] = len(carried)
+        if not files and not carried:
             return nothing_matched(pattern, params["AllowNoFiles"], result, extra)
 
         for path in files:
@@ -84,15 +86,17 @@ class DeleteFilesHandler(BaseHandler):
                 self.record_file_operation("DELETE", "FAILED", path, None, size, error=str(e), started_at=started_at)
                 job_log.error(f"Could not delete '{path}': {e}")
                 raise
+            self.journal.end(path, None, size)
             self.record_file_operation("DELETE", "SUCCESS", path, None, size, started_at=started_at)
             self.outputs["FileCount"] += 1
             job_log.detail(f"Deleted '{path}' ({size} bytes)")
-        result["details"]["summary"].append(f"Deleted {plural(len(files), 'file')}.")
+        result["details"]["summary"].append(f"Deleted {plural(self.outputs['FileCount'], 'file')}.")
         return result
 
 
 class CheckFilesHandler(BaseHandler):
     CODE = "CHECK_FILES"
+    FAILURE_KNOWLEDGE = NOT_DONE
     NAME = "Check Files"
     DESCRIPTION = "Fails the job unless the files look right: how many there are, none empty, none too old"
 
@@ -156,6 +160,7 @@ def archive_path(dest: str, archive_name) -> str:
 
 class ZipFilesHandler(BaseHandler):
     CODE = "ZIP_FILES"
+    FAILURE_KNOWLEDGE = NOT_DONE            # the archive is written under another name and renamed whole
     NAME = "Zip Files"
     DESCRIPTION = "Packs files into one .zip archive"
 
@@ -233,6 +238,7 @@ class ZipFilesHandler(BaseHandler):
 
 class UnzipFilesHandler(BaseHandler):
     CODE = "UNZIP_FILES"
+    FAILURE_KNOWLEDGE = PARTLY_DONE         # the journal says which files came out; a run picked up does the rest
     NAME = "Unzip Files"
     DESCRIPTION = "Takes the files out of one or more .zip archives"
 
@@ -257,7 +263,8 @@ class UnzipFilesHandler(BaseHandler):
             Path(dest).mkdir(parents=True, exist_ok=True)
         root = os.path.abspath(dest)
 
-        count = 0
+        carried = self.journal.finished_earlier()       # files an earlier attempt of this step already took out
+        count = self.outputs["FileCount"] = len(carried)
         for archive in archives:
             try:
                 zipped = zipfile.ZipFile(archive)
@@ -269,6 +276,8 @@ class UnzipFilesHandler(BaseHandler):
                 # Check every name before taking anything out
                 for member in members:
                     target = os.path.abspath(os.path.join(root, member.filename))
+                    if self.journal.previous(self._member_source(archive, member)):
+                        continue                            # the earlier attempt started it: dealt with below
                     if os.path.commonpath([root, target]) != root:
                         raise ValueError(f"'{member.filename}' in '{os.path.basename(archive)}' would be written outside "
                                          f"the destination folder, so the archive was not opened.")
@@ -277,13 +286,18 @@ class UnzipFilesHandler(BaseHandler):
                 for member in members:
                     started_at = utc_now_iso()
                     target = os.path.abspath(os.path.join(root, member.filename))
+                    source = self._member_source(archive, member)
+                    if self._done_in_earlier_attempt(source, target, member):
+                        continue
                     try:
                         Path(target).parent.mkdir(parents=True, exist_ok=True)
+                        self.journal.begin(source, target, member.file_size)
                         with zipped.open(member) as inside, open(target, "wb") as out:
                             shutil.copyfileobj(inside, out)
                         size = os.path.getsize(target)
                         if size != member.file_size:
                             raise IOError(f"'{member.filename}' came out a different size from the archive.")
+                        self.journal.end(source, target, size)
                     except Exception as e:
                         self.record_file_operation("UNZIP", "FAILED", archive, target, archive_size,
                                                    error=str(e), started_at=started_at)
@@ -297,3 +311,25 @@ class UnzipFilesHandler(BaseHandler):
         result["details"]["summary"].append(
             f"Unzipped {plural(count, 'file')} from {plural(len(archives), 'archive')}.")
         return result
+
+    @staticmethod
+    def _member_source(archive: str, member) -> str:
+        """How the control file names a file inside an archive."""
+        return f"{archive}!{member.filename}"
+
+    def _done_in_earlier_attempt(self, source: str, target: str, member) -> bool:
+        """
+        Whether the earlier attempt took this file out, whole: it noted it done, or began it and the file
+        is there at the archive's size. A file it began and did not finish is taken out again.
+        """
+        earlier = self.journal.previous(source)
+        if earlier is None:
+            return False
+        if earlier["e"] == "file_end" or (os.path.isfile(target) and os.path.getsize(target) == member.file_size):
+            if earlier["e"] != "file_end":
+                self.journal.end(source, target, member.file_size)
+                self.outputs["FileCount"] += 1
+            job_log.detail(f"Skipped '{member.filename}': the earlier attempt already took it out.")
+            return True
+        return False
+

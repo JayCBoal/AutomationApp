@@ -72,6 +72,7 @@ AutoApp's long-term features, beyond workflows. Each item is something RunMyJobs
 
 ### Scheduling: one model, and an explanation
 
+- **All discussion around scheduling is tracked in [SCHEDULING.md](SCHEDULING.md).**
 - **In RunMyJobs:** Time Windows and Advanced Schedules (once Submit Frames) are powerful and flexible, but complex.
   - It is often hard to work out how to build a particular schedule.
   - It is hard to understand how a given combination behaves. The UI shows the resulting dates but not how it got to them.

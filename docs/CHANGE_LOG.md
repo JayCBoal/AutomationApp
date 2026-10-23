@@ -4,6 +4,53 @@ Notable structural, schema and design changes to AutoApp, newest first. Line-by-
 
 ---
 
+## 2026-10-22
+
+### Workflows, Phase 7, step 7: the restarts sample and loose ends
+
+Plan: [WORKFLOWS_PHASE7.md](WORKFLOWS_PHASE7.md). Decisions D174 to D176 in [WORKFLOW_DECISIONS.md](WORKFLOW_DECISIONS.md).
+
+- **Added (sample):** `DEV-RESTARTS_SAMPLE` in the seed and in `autoapp_dev` (backup `demo/output/autoapp_dev_before_restarts_sample.sql`): Load, Post (the two earlier samples as shared jobs), Reconcile (an embedded workflow whose Balance fails once and whose Reaction resumes it), Notify and Report. A rehearsed walk-through is in the seed comment. Tests: `tests/test_restarts_sample.py`.
+- **Added (Simulate):** `FailUntilAttempt`, so a step can fail on the first attempt only; steps are now given their job's attempt number.
+- **Changed (pages):** a workflow run that Succeeded shows *Rerun ▸* with *Advanced…* only (D176); the values heading reads "The values the items restarted here use" in Advanced.
+- **Changed (Advanced):** items at the top of the workflow that did not run now run when their waits are met, with a *Leave Not run* choice (D177), so bypassing a failed job carries the run on.
+- **Changed (diagram):** the ×2 and the Reactions icon (the circular arrow) sit at the right of a box's first line instead of in a row above it, so a box with only these is no taller.
+- **Moved:** the snapshot of resolved `${...}` values (D160) is TO-DO 19, not part of Phase 7.
+
+### Workflows, Phase 7, step 6: Advanced… on the Rerun panel
+
+Plan: [WORKFLOWS_PHASE7.md](WORKFLOWS_PHASE7.md). Decisions D161 to D173 in [WORKFLOW_DECISIONS.md](WORKFLOW_DECISIONS.md).
+
+- **Added (pages):** *Advanced…* beside Resume and Restart from beginning. For a workflow run: every item with Leave / Resume / Restart / Bypass / Don't run, or the shortcuts *From the jobs chosen, and everything that waits for them* and *Only the jobs chosen* (with a warning that what follows may be out of date), a tick to ignore a wait for this restart only, and *Start the automatic retry counts again from zero*. For a job on its own: *Start here* and *Skip* on each top-level step, with a warning when a step that copies or deletes files will do it again. The panel says what the run will do before *Run* is pressed; the `${...}` values list is the one Resume uses.
+- **Added (API):** `GET rerun-plan` takes `items`, `ignore` and `reset_counts` (JSON) so the panel can preview an item-by-item choice.
+- **Changed (records):** the Restarts list and the Audit Log say "Bypassed 'Post'." and "Did not run 'Report'.".
+- **Not yet:** Advanced on a Succeeded run is accepted by the API (D161) but the Rerun button appears only on a Failed run. *(Done in step 7, below.)*
+
+### Workflows, Phase 7, step 5a: a Reaction resumes a workflow
+
+Plan: [WORKFLOWS_PHASE7.md](WORKFLOWS_PHASE7.md). Decisions D156 to D158 in [WORKFLOW_DECISIONS.md](WORKFLOW_DECISIONS.md).
+
+- **Changed (Reactions):** *Resume from failure* on a workflow, run on its own or a frame inside another, picks up the jobs that failed and starts those that did not run; it was always a Restart before (D148 replaced in part). It is passed over, with the reason, if any one job cannot be picked up, and the next Reaction that holds decides.
+- **Changed (code):** the reopen plan moved from `app/rerun_tree.py` to `engine/reopen_tree.py`, with `automatic_problem` for Reactions.
+- **Fixed (job log):** a rerun in the same process no longer writes lines to the log files of earlier attempts; a workflow's own Reaction messages now appear in its log.
+- **Changed (pages):** the Reactions box help text no longer says a workflow is always run again.
+
+---
+
+## 2026-10-21
+
+### Workflows, Phase 7, step 5: the records of a rerun
+
+Plan: [WORKFLOWS_PHASE7.md](WORKFLOWS_PHASE7.md). Decisions D152 to D155 in [WORKFLOW_DECISIONS.md](WORKFLOW_DECISIONS.md).
+
+- **Schema:** a new table, `RunRestarts` (`SQL/migrate_restarts.py` adds it; nothing existing changes).
+- **Changed (control file):** a job's control file is removed when the run Succeeded and no Reaction changed that, together with the file of the attempt it picked up. A job inside a workflow that a workflow Reaction counts as failed has no file to resume from: Resume says so and offers Restart.
+- **Changed (job log):** "Picking up run ..." is now "Resumed from attempt 1: steps 1 to 3 had finished; step 4 runs again." and, for a Restart, "Restarted from the beginning (attempt 2); attempt 1 failed."
+- **Added (records):** each Resume or Restart asked for in the web interface writes a restart record and an Audit Log row (`JOB_RESUMED`, `JOB_RESTARTED`). `GET /api/v1/runs/{id}` gains `restarts` (the operator's and the Reactions' reruns, merged), and the run lists gain `restarts_count` and `restarts_words`.
+- **Added (pages):** a *Restarts* box and "Restarted N times" on the Run Job, log and workflow run pages. Job History reads "Restarted ×N" in place of "attempt N", with the how as a hover.
+
+---
+
 ## 2026-10-19
 
 ### Workflows, Phase 6: embedded and shared workflows (frames)

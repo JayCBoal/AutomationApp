@@ -104,28 +104,39 @@ def launch(payload: LaunchRequest, request: Request, db: Session = Depends(get_d
     if db.query(JobRun.id).filter(JobRun.JobKey == job_key, JobRun.SchedulerInstanceID == instance_id).first():
         raise HTTPException(409, f"Job '{job_key}' has already run as instance '{instance_id}'. "
                                  f"Give another instance ID, or leave it blank for a new one.")
+    return start_runner(request, job_key, instance_id, level, payload.business_date)
 
-    run_id = str(uuid.uuid4())
+
+def start_runner(request: Request, job_key: str, instance_id: str, level: str, business_date: Optional[date],
+                 extra: Optional[List[str]] = None, scheduler: str = SCHEDULER_NAME,
+                 run_id: Optional[str] = None) -> LaunchOut:
+    """
+    Starts the runner for a job as a scheduler would, and remembers the launch. extra: more arguments for
+    the runner (a rerun passes --attempt, --resume-run-id and the like). run_id: the run to go on under, for
+    a workflow run that is reopened; otherwise a new one.
+    """
+    extra = extra or []
+    run_id = run_id or str(uuid.uuid4())
     api_url = str(request.base_url).rstrip("/")
     working_root = os.environ.get("AUTOAPP_WORKING_ROOT")
     command = [sys.executable, "-m", "engine.runner", "--job-key", job_key, "--instance-id", instance_id,
-               "--log-level", level, "--scheduler", SCHEDULER_NAME, "--api-url", api_url,
+               "--log-level", level, "--scheduler", scheduler, "--api-url", api_url,
                "--spool-dir", os.environ.get("AUTOAPP_SPOOL_DIR") or str(AUTOAPP_DIR / "spool"), "--run-id", run_id]
     if working_root:
         command += ["--working-root", working_root]
-    if payload.business_date:
-        command += ["--business-date", payload.business_date.isoformat()]
+    if business_date:
+        command += ["--business-date", business_date.isoformat()]
 
     output = tempfile.NamedTemporaryFile(prefix="autoapp_launch_", suffix=".log", delete=False)
     try:
-        process = subprocess.Popen(command, cwd=AUTOAPP_DIR, stdout=output, stderr=subprocess.STDOUT,
+        process = subprocess.Popen(command + extra, cwd=AUTOAPP_DIR, stdout=output, stderr=subprocess.STDOUT,
                                    stdin=subprocess.DEVNULL)
     finally:
         output.close()
 
     shown = " ".join(["python3", "-m", "engine.runner", "--job-key", job_key, "--instance-id", instance_id,
                       "--log-level", level]
-                     + (["--business-date", payload.business_date.isoformat()] if payload.business_date else []))
+                     + (["--business-date", business_date.isoformat()] if business_date else []) + extra)
     entry = _Launch(str(uuid.uuid4()), run_id, job_key, instance_id, shown, process, output.name)
     with _lock:
         _launches[entry.launch_id] = entry

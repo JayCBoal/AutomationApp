@@ -59,7 +59,7 @@ A header with the RunMyFiles name and the page title, and a navigation bar on ev
 | Endpoint Search / Detail | search, detail | Replaces Source and Delivery pages | **Built.** See below |
 | Operations Log | search | Mockup, changed | **Built.** The file trace; see below |
 | Job History | search | Mockup | **Built.** Reads `JobRuns`: one row per run, with status and error |
-| Audit Log | search | Mockup | **Built.** Read-only. Changes to definitions: who changed what, and when |
+| Audit Log | search | Mockup | **Built.** Read-only. Changes to definitions, and the restart choices made on runs: who changed what, and when |
 | Async Parent Process Search / Detail | search, detail | Mockup | Deferred until asynchronous processes are rebuilt |
 | Step Type Detail | detail | Mentioned in the design document, no mockup | **Not planned.** Step types are seen where they matter, in the job editor |
 | Tag Search / Detail | search, detail | Not in the mockup | **Built.** The shared search and detail pages. Every other detail page, and the job editor, has a Tags panel; every search page has a Tag box |

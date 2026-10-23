@@ -20,7 +20,7 @@ A secret is kept by name only, never its value: each job reads its current value
 import json
 from dataclasses import dataclass, field
 from datetime import date
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from sqlalchemy.orm import Session
 
@@ -180,3 +180,64 @@ def _owners(workflow: Job) -> list:
     while found[-1].owner is not None:
         found.append(found[-1].owner)
     return found
+
+
+def level_of(choices: Dict[str, Any], workflow_path: Optional[str]) -> Dict[str, Any]:
+    """
+    What the operator changed in the workflow at workflow_path (None for the run's own workflow) from a Resume's
+    edits: {"workflow": {name: value}, "uses": {use name: {name: value}}}. The edits hold every level, by path
+    ("" for the run's own workflow), and a workflow passes all of them down to the frames it reopens.
+    """
+    return (choices.get("levels") or {}).get(workflow_path or "", {})
+
+
+def dropped_names(choices: Dict[str, Any], workflow_path: Optional[str], use_name: str) -> List[str]:
+    """
+    The names a resumed job must read again because a workflow above it, or its use, changed them: the variables
+    changed in any workflow at or above the job's, and the use's own.
+    """
+    names = set()
+    here = (workflow_path or "").split("/") if workflow_path else []
+    for path, level in (choices.get("levels") or {}).items():
+        parts = path.split("/") if path else []
+        if parts == here[:len(parts)]:
+            names.update(level.get("workflow", {}))
+    names.update(level_of(choices, workflow_path).get("uses", {}).get(use_name, {}))
+    return sorted(names)
+
+
+def apply_choices(kept: Dict[str, Any], fresh: Optional[Dict[str, Any]], level: Dict[str, Any]) -> List[str]:
+    """
+    A Resume's choices for the workflow's kept variables: fresh (the values as they read now) replaces the
+    plain values, then the operator's edits go over them. Secrets are never replaced or edited here; each job
+    reads their current value as it starts. Returns the log lines, one for each value that now reads differently.
+    """
+    said: List[str] = []
+    if fresh is not None:
+        _replace(kept.setdefault("workflow", {}), fresh.get("workflow", {}), "workflow variable", said)
+        for use, entries in fresh.get("uses", {}).items():
+            _replace(kept.setdefault("uses", {}).setdefault(use, {}), entries, f"variable of use '{use}'", said)
+    _edit(kept.setdefault("workflow", {}), level.get("workflow", {}), "workflow variable", said)
+    for use, edits in level.get("uses", {}).items():
+        _edit(kept.setdefault("uses", {}).setdefault(use, {}), edits, f"variable of use '{use}'", said)
+    return said
+
+
+def _replace(kept: Dict[str, Any], now: Dict[str, Any], what: str, said: List[str]) -> None:
+    for name, entry in now.items():
+        was = kept.get(name)
+        if "value" in entry and was is not None and "value" in was and was["value"] != entry["value"]:
+            said.append(f"Refreshed {what} {name}: it was '{was['value']}', it is now '{entry['value']}'.")
+        kept[name] = entry
+    for name in [n for n in kept if n not in now]:
+        del kept[name]
+
+
+def _edit(kept: Dict[str, Any], edits: Dict[str, str], what: str, said: List[str]) -> None:
+    for name, value in edits.items():
+        was = kept.get(name)
+        if was is None or "value" not in was:
+            said.append(f"Not edited: {name} is not a plain {what} of this run.")
+            continue
+        said.append(f"Edited {what} {name}: it was '{was['value']}', the operator set '{value}'.")
+        kept[name] = {"value": value}

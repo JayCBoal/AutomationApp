@@ -62,6 +62,8 @@ class ScopeResolutionEngine:
         environment: Optional[Dict[str, str]] = None,
         business_date: Optional[date] = None,
         workflow: Optional[Any] = None,
+        started: Optional[datetime] = None,
+        pinned: Optional[Dict[str, str]] = None,
     ):
         """
         environment: the environment variables a run has, which the runner passes. None
@@ -69,6 +71,9 @@ class ScopeResolutionEngine:
         cannot know what a scheduler will set, so ${ENV:...} is left for the run to fill in.
         business_date: the date the run is for, if the scheduler gave one.
         workflow: for a job in a workflow, what the workflow gives it (engine.workflow_vars.Levels).
+        started: the moment every date placeholder shows, where it is not now: a resumed run keeps the first attempt's.
+        pinned: values a placeholder shows instead of the one it would resolve to, by what engine/run_values.py
+        calls the key (a resumed run's values as the first attempt had them, or as the operator edited them).
         """
         self.db = db
         self.job_id = job_id
@@ -77,6 +82,10 @@ class ScopeResolutionEngine:
         self.environment = dict(environment) if environment is not None else None
         self.business_date = business_date
         self.workflow = workflow
+        self._started_given = started
+        self.pinned: Dict[str, str] = dict(pinned or {})
+        self.used: Dict[str, bool] = {}     # the keys the placeholders resolved so far named, for a resume to keep
+        self._in_endpoint = False           # inside an endpoint's path and pattern, whose values are its own
 
         # Isolated scope caches for targeted lookup
         self.scoped_vars: Dict[str, Dict[str, Any]] = {
@@ -131,7 +140,7 @@ class ScopeResolutionEngine:
 
     def build_context(self) -> Dict[str, Any]:
         """Populates scope caches and eager-merges the execution context dictionary."""
-        now = datetime.now()
+        now = self._started_given or datetime.now()
         self.started = now      # every date placeholder in the run shows this one moment
         # ${BUSINESS_DATE:...} shows the date the run is for, at midnight; the run's own date if none was given
         self.business_day = datetime.combine(self.business_date or now.date(), time())
@@ -214,9 +223,11 @@ class ScopeResolutionEngine:
         endpoint_tags = tag_vars.inherited(self.db, endpoint.MasterObject_id)
         self.scoped_vars["ENDPOINT"], self.conflicts["ENDPOINT"] = endpoint_tags.plain(), endpoint_tags.conflicts
         self.resolved_cascade, self.resolved_conflicts = self._merge_cascade()
+        self._in_endpoint = True
         try:
             yield
         finally:
+            self._in_endpoint = False
             variables, conflicts, self.resolved_cascade, self.resolved_conflicts = saved
             self.scoped_vars.update(variables)
             self.conflicts.update(conflicts)
@@ -304,6 +315,19 @@ class ScopeResolutionEngine:
 
         return text
 
+    def _noted(self, key: str, value: Any) -> Any:
+        """A resolved value, or the pinned one; the key is remembered as used (not inside an endpoint's own values)."""
+        if self._in_endpoint:
+            return value
+        self.used[key] = True
+        return self.pinned.get(key, value)
+
+    def _environment_value(self, match) -> str:
+        name = match.group(1)
+        if name not in self.environment:
+            return self.pinned.get(f"ENV:{name}", match.group(0)) if not self._in_endpoint else match.group(0)
+        return str(self._noted(f"ENV:{name}", self.environment[name]))
+
     def _interpolate_once(self, text: str) -> str:
         """Single substitution pass; unknown placeholders are left in place."""
         # 0. Dates: ${DATE:yyyyMMdd}. A mask that is not understood raises ValueError.
@@ -311,9 +335,7 @@ class ScopeResolutionEngine:
         text = self.BUSINESS_DATE_PATTERN.sub(
             lambda match: format_date(match.group(1), self.business_day, name="BUSINESS_DATE"), text)
         if self.environment is not None:
-            text = self.ENV_PATTERN.sub(
-                lambda match: str(self.environment[match.group(1)]) if match.group(1) in self.environment
-                else match.group(0), text)
+            text = self.ENV_PATTERN.sub(lambda match: self._environment_value(match), text)
 
         # 1. Resolve Explicit Targeted Syntax: ${SCOPE:TargetName.VarName}
         def replace_explicit_target(match):
@@ -333,6 +355,8 @@ class ScopeResolutionEngine:
         def replace_explicit_scope(match):
             scope_key, var_name = match.group(1), match.group(2)
             val = self.scoped_vars.get(scope_key, {}).get(var_name)
+            if val is not None:
+                val = self._noted(f"{scope_key}.{var_name}", val)
             if val is None and var_name in self.conflicts.get(scope_key, {}):
                 raise ValueError(self.conflicts[scope_key][var_name].message())
             return str(val) if val is not None else match.group(0)
@@ -350,7 +374,7 @@ class ScopeResolutionEngine:
             if var_key in self.resolved_conflicts:
                 raise ValueError(self.resolved_conflicts[var_key].message())
             if var_key in self.resolved_cascade:
-                return str(self.resolved_cascade[var_key])
+                return str(self._noted(var_key, self.resolved_cascade[var_key]))
 
             return match.group(0)
 

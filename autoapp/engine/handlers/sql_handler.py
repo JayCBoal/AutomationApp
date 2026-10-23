@@ -25,10 +25,17 @@ from sqlalchemy.pool import NullPool
 
 from engine import job_log
 from engine.handlers.base_handler import BaseHandler
-from engine.step_catalog import BOOLEAN, DEST, LOCATION, STRING, TEXT, Param
+from engine.step_catalog import BOOLEAN, DEST, LOCATION, NOT_DONE, PARTLY_DONE, STRING, TEXT, UNKNOWN, Param, WhatItKnew
 from engine.telemetry_client import utc_now_iso
 
 STATEMENT_KEPT = 2000      # characters of the statement kept in the operation record
+
+# How far a statement got, in order, for what_failed_step_knew()
+BEFORE, CONNECTING, SENDING, COMMITTING, FINISHED = "before", "connecting", "sending", "committing", "finished"
+
+# MySQL and MariaDB error numbers for a connection that was lost or never made
+CONNECTION_LOST_CODES = (2002, 2003, 2006, 2013, 2014, 2055)
+DDL_WORDS = ("CREATE", "ALTER", "DROP", "TRUNCATE", "RENAME")
 
 
 def safe_url(url: str) -> str:
@@ -43,8 +50,24 @@ def plural(count: int, word: str) -> str:
     return f"{count} {word}{'' if count == 1 else 's'}"
 
 
+def connection_was_lost(error: SQLAlchemyError) -> bool:
+    """Whether the database connection dropped, rather than the server refusing the statement."""
+    code = getattr(getattr(error, "orig", None), "args", (None,))[0]
+    return bool(getattr(error, "connection_invalidated", False)) or code in CONNECTION_LOST_CODES
+
+
+def commits_by_itself(statement: str, url: str) -> bool:
+    """MySQL and MariaDB commit a CREATE, ALTER, DROP, TRUNCATE or RENAME as they run it, whatever Commit says."""
+    words = statement.split(None, 1)
+    return bool(words) and words[0].upper() in DDL_WORDS and make_url(url).get_backend_name() in ("mysql", "mariadb")
+
+
 class RunSqlHandler(BaseHandler):
     CODE = "RUN_SQL"
+    FAILURE_KNOWLEDGE = UNKNOWN         # unless what_failed_step_knew() can tell from how far it got
+    stage = BEFORE
+    connection_lost = False
+    changes_may_be_saved = False
     NAME = "Run SQL"
     DESCRIPTION = "Runs one SQL statement; a query's rows can be written to a CSV file"
 
@@ -62,6 +85,31 @@ class RunSqlHandler(BaseHandler):
         Param("Overwrite", BOOLEAN, default="False", description="Replace a result file of the same name"),
         Param("CreateFolder", BOOLEAN, default="True", description="Create the result file's folder if it does not exist"),
     )
+
+    def what_failed_step_knew(self, error: Exception) -> WhatItKnew:
+        """Not done when the statement never reached the database or was refused; unknown when it may have run."""
+        if self.stage in (BEFORE, CONNECTING):
+            return WhatItKnew(NOT_DONE, "it could not reach the database, so nothing was sent")
+        if self.stage == COMMITTING:
+            return WhatItKnew(UNKNOWN, "it failed while committing, so it is not known whether the rows were saved")
+        if self.stage == FINISHED:
+            return self._failed_after_the_statement()
+        if self.changes_may_be_saved:
+            return WhatItKnew(UNKNOWN, "the database commits this kind of statement as it runs it, "
+                                       "so it is not known whether it took effect")
+        if not isinstance(error, Exception):
+            return WhatItKnew(NOT_DONE, "it was stopped before it committed, so the database rolled its changes back")
+        if self.connection_lost:
+            return WhatItKnew(UNKNOWN, "the connection dropped after the statement was sent, "
+                                       "so it is not known whether it ran")
+        return WhatItKnew(NOT_DONE, "the database refused the statement and rolled it back")
+
+    def _failed_after_the_statement(self) -> WhatItKnew:
+        """The statement itself finished; what failed was writing its result file."""
+        if not self.changes_may_be_saved:
+            return WhatItKnew(NOT_DONE, "the statement ran but its changes were rolled back")
+        return WhatItKnew(PARTLY_DONE, "the statement ran and its changes were saved, but the result file was not "
+                                       "written; running it again would make the changes twice", cannot_finish=True)
 
     def describe(self, resolved_params: Dict[str, Any]) -> List[str]:
         """As for any step, but never with the database password, whether or not it came from a secret."""
@@ -104,20 +152,25 @@ class RunSqlHandler(BaseHandler):
 
         job_log.detail(f"Running on {hidden}:\n\t{statement}")
         rows, columns, affected = [], [], None
+        self.stage, self.changes_may_be_saved = CONNECTING, commits_by_itself(statement, url)
         try:
             with engine.connect() as connection:
                 with connection.begin() as transaction:
+                    self.stage = SENDING
                     cursor = connection.exec_driver_sql(statement)
                     if cursor.returns_rows:
                         columns = list(cursor.keys())
                         rows = cursor.fetchall()
                     else:
                         affected = cursor.rowcount
+                    self.stage = COMMITTING if commit else FINISHED
                     if commit:
                         transaction.commit()
                     else:
                         transaction.rollback()
+            self.stage, self.changes_may_be_saved = FINISHED, commit
         except SQLAlchemyError as e:
+            self.connection_lost = connection_was_lost(e)
             reason = str(getattr(e, "orig", None) or e).splitlines()[0]
             raise RuntimeError(failed(reason)) from None
         finally:

@@ -10,7 +10,8 @@ runner for a job in a workflow.
     Count as), so no entry's actions change what a later one sees.
   - What happens next (NEXT): in order, the first entry that holds decides. An entry whose
     rerun has used up its "at most N times" is passed over, and the next that holds decides
-    ("rerun twice, then count as failed").
+    ("rerun twice, then count as failed"). So is one that cannot be carried out (a Resume
+    after a failure whose effect is unknown, docs/WORKFLOWS_PHASE7.md, proposal 13).
   - Also (ALSO): every entry that holds fires its side effects.
 """
 import subprocess
@@ -19,13 +20,14 @@ import uuid
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, List, Optional
+from typing import Callable, List, Optional, Tuple
 
 from engine import return_codes
 
 AUTOAPP_DIR = Path(__file__).resolve().parents[1]
 REACTION_SCHEDULER = "AutoApp reaction"
 
+RESTART, RESUME = "RESTART", "RESUME"
 LIMITED = ("RERUN", "RERUN_FROM")
 SIDE_EFFECTS = ("START_WORKFLOW",)
 ONLY_IN_WORKFLOWS = ("RERUN_FROM", "SKIP", "SKIP_BRANCH", "KILL_WORKFLOW")
@@ -47,10 +49,16 @@ class Act:
     wait_seconds: int = 0
     target_item: Optional[str] = None       # a job in the workflow, by its name there
     target_job: Optional[str] = None        # the workflow START_WORKFLOW starts, by its key
+    mode: str = RESTART                     # RERUN: from the beginning, or from where the job failed
 
     def words(self) -> str:
         target = self.target_item or self.target_job
-        return WORDS[self.action] + (f" '{target}'" if target else "")
+        return WORDS[self.action] + (f" '{target}'" if target else "") + (
+            " from where it failed" if self.action == "RERUN" and self.mode == RESUME else "")
+
+    @property
+    def resumes(self) -> bool:
+        return self.action == "RERUN" and self.mode == RESUME
 
 
 @dataclass
@@ -71,6 +79,7 @@ class Verdict:
     decisions: List[Act] = field(default_factory=list)
     side_effects: List[Act] = field(default_factory=list)
     used_up: List[Act] = field(default_factory=list)        # reruns passed over: their limit was reached
+    not_fired: List[Tuple[Act, str]] = field(default_factory=list)  # passed over because they cannot be carried out: why
     deciding: Optional[Rule] = None
 
     def first(self, *actions: str) -> Optional[Act]:
@@ -86,7 +95,8 @@ def read_rules(job, item=None) -> List[Rule]:
 def _act(action) -> Act:
     return Act(action.id, action.Action, max_times=action.MaxTimes or 1, wait_seconds=action.WaitSeconds or 0,
                target_item=action.target_item.ItemName if action.target_item else None,
-               target_job=action.target_job.JobKey if action.target_job else None)
+               target_job=action.target_job.JobKey if action.target_job else None,
+               mode=action.RerunMode or RESTART)
 
 
 def holds(rule: Rule, status: str, code: Optional[int]) -> bool:
@@ -101,8 +111,12 @@ def holds(rule: Rule, status: str, code: Optional[int]) -> bool:
 
 
 def judge(rules: List[Rule], status: str, code: Optional[int], times_used: Callable[[Act], int],
-          in_workflow: bool) -> Verdict:
-    """What happens after a job ended with status and code. times_used says how often a rerun already ran."""
+          in_workflow: bool, cannot: Optional[Callable[[Act], Optional[str]]] = None) -> Verdict:
+    """
+    What happens after a job ended with status and code. times_used says how often a rerun already ran.
+    cannot says why an action cannot be carried out now (None if it can): a Resume with nothing to
+    resume from. Such an entry is passed over as one at its limit is.
+    """
     verdict = Verdict()
     for rule in rules:
         if not holds(rule, status, code):
@@ -115,6 +129,10 @@ def judge(rules: List[Rule], status: str, code: Optional[int], times_used: Calla
         used_up = [a for a in decisions if a.action in LIMITED and times_used(a) >= a.max_times]
         if used_up:
             verdict.used_up += used_up
+            continue
+        refused = [(a, cannot(a)) for a in decisions if cannot and cannot(a)]
+        if refused:
+            verdict.not_fired += refused
             continue
         if decisions:
             verdict.decisions = sorted(decisions, key=lambda a: ORDER.index(a.action))
@@ -133,21 +151,34 @@ class OwnReactions:
         self.rules, self.options = rules, options
         self.used: Counter = Counter()
         self.rerun: Optional[Act] = None        # set when the job is to run again
+        self.run_id: Optional[str] = None       # the run just judged, which a Resume picks up
+        self.control_path: Optional[Path] = None    # its control file,
+        self.record = None                      # read back when a Resume is judged (engine.control_file.ControlRecord),
+        self.totals: Tuple[int, int] = (0, 0)   # and the files and bytes it delivered: the next attempt need not wait for the database
 
-    def after(self, status: str, code: Optional[int], record: Callable[[Act, str, str], None]) -> str:
-        """Judges how the job ended; returns the status it ends with. record(act, result, message) keeps each."""
+    def after(self, status: str, code: Optional[int], record: Callable[[Act, str, str], None],
+              resume_problem: Optional[Callable[[], Optional[str]]] = None) -> str:
+        """
+        Judges how the job ended; returns the status it ends with. record(act, result, message) keeps each.
+        resume_problem says why this run cannot be picked up, or None if it can.
+        """
         self.rerun = None
-        verdict = judge(self.rules, status, code, lambda act: self.used[act.id], in_workflow=False)
+        problem = resume_problem() if resume_problem and any(r.resumes for rule in self.rules for r in rule.actions) else None
+        cannot = (lambda act: problem if act.resumes else None) if resume_problem else None
+        verdict = judge(self.rules, status, code, lambda act: self.used[act.id], in_workflow=False, cannot=cannot)
         for act in verdict.used_up:
             record(act, "LIMIT_REACHED", f"{act.words().capitalize()} has already run {act.max_times} time(s), "
                                          f"its limit, so the next Reaction that holds applies.")
+        for act, why in verdict.not_fired:
+            record(act, "NOT_FIRED", f"{act.words().capitalize()} was not carried out: {why}")
         counted = status
         for act in verdict.decisions:
             if act.action == "RERUN":
                 self.used[act.id] += 1
                 self.rerun = act
                 wait = f" after {act.wait_seconds} s" if act.wait_seconds else ""
-                record(act, "TOOK_EFFECT", f"Rerunning the job{wait} (rerun {self.used[act.id]} of at most "
+                how = "from where it failed" if act.resumes and resume_problem else "from the beginning"
+                record(act, "TOOK_EFFECT", f"Rerunning the job {how}{wait} (rerun {self.used[act.id]} of at most "
                                            f"{act.max_times}), as its Reactions say.")
             else:
                 counted = "SUCCESS" if act.action == "COUNT_AS_SUCCEEDED" else "FAILED"

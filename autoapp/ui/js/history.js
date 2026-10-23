@@ -8,6 +8,7 @@
  *     GET /api/v1/runs?tree=true            every run of every job, runs inside listed workflow runs left out
  *     GET /api/v1/runs?parent=<run ID>      the runs inside a workflow run, for unfolding it
  *     GET /api/v1/audits    every change to a definition
+ *     Rerun ▸ on a failed run: rerun.js
  */
 function utcCriteria(values) {
     return { ...values, date_from: AutoApp.localInputToUtc(values.date_from), date_to: AutoApp.localInputToUtc(values.date_to) };
@@ -21,7 +22,17 @@ function jobHistory() {
         path: "/runs", noun: "run", order: "newest first", toApi: values => ({ ...utcCriteria(values), tree: true }),
     });
     const searchRuns = search.search;
-    const page = Object.assign(search, {
+    const page = Object.assign(search, rerunDialog(), {
+        rerunRow: null,     // the run whose Rerun ▸ was opened
+
+        /** A rerun is a new attempt: its page is the workflow's run, or the job's log. */
+        async afterRerun(launch) {
+            const row = this.rerunRow;
+            if (row && row.job_type === "WORKFLOW") await this.waitUntilRunning(launch);
+            location.href = row && row.job_type === "WORKFLOW"
+                ? "workflow.html?" + new URLSearchParams({ key: row.job_key, run: launch.run_id })
+                : "log.html?" + new URLSearchParams({ run: launch.run_id });
+        },
         unfolded: {},       // a workflow run's ID: the runs inside it, once it is unfolded
         init() { this.startSearch(); },
 

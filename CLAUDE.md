@@ -45,6 +45,7 @@ Notes for Claude Code on this project. The why behind the project is in docs/PRO
   - help text and a live preview in the editor;
   - operation records, so the trace sees its files;
   - masked secrets in its log lines;
+  - its answer to `FAILURE_KNOWLEDGE` (not done, partly done or unknown when it fails), which a Resume relies on;
   - tests and a CHANGE_LOG entry.
 - **Plain words in anything a user sees.** Errors say what went wrong and what to do next, in the app's existing style ("No files matched ..."). No Python jargon in pages or logs.
 - **Short functions, built from named helpers.**

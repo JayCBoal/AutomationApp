@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 
 from app.models import JobRun, utcnow
 from engine import log_files, settings
+from engine.control_file import control_name
 
 
 class LocalAgent:
@@ -45,6 +46,9 @@ class LocalAgent:
         if path is None:
             return
         path.unlink(missing_ok=True)
+        control = self._path(control_name(log_file))
+        if control is not None:
+            control.unlink(missing_ok=True)         # the record a resume reads goes with the log
         if path.parent != self.folder and path.parent.is_dir() and not any(path.parent.iterdir()):
             path.parent.rmdir()
 

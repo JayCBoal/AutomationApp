@@ -29,6 +29,25 @@ _TRUE, _FALSE = ("true", "yes", "y", "1"), ("false", "no", "n", "0")
 NUMBER = "NUMBER"
 
 
+# What a failed step knew about its own effect, so a later attempt can pick up (docs/WORKFLOWS_PHASE7.md, proposal 3)
+NOT_DONE = "NOT_DONE"           # it changed nothing, so it is safe to run again
+PARTLY_DONE = "PARTLY_DONE"     # it did part of its work and knows which part, so a later attempt can do the rest
+UNKNOWN = "UNKNOWN"             # it is not known whether it changed anything; an operator decides
+
+
+@dataclass(frozen=True)
+class WhatItKnew:
+    """What a failed step knew about its effect: one of the three answers, and why, in plain words."""
+    answer: str
+    why: str = ""
+    cannot_finish: bool = False     # partly done, but a later attempt cannot do the rest by itself
+
+    @property
+    def operator_decides(self) -> bool:
+        """Whether an operator must choose what happens to this step, and no automatic Resume may."""
+        return self.answer == UNKNOWN or self.cannot_finish
+
+
 def holds_run_value(value: Any) -> bool:
     """Whether a stored value has a %{...}, which only the run can fill in."""
     return isinstance(value, str) and "%{" in value

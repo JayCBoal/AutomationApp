@@ -12,6 +12,8 @@ Rules, checked on saving:
     workflow around the job, so only a use in a workflow offers them.
   - Rerun from… names a job this one waits for, directly or not; Skip… another job in the
     workflow. A rerun runs at most 1 to 100 times, after a wait of 0 to 86400 seconds.
+  - Rerun this job is RESTART (from the beginning) or RESUME (from where it failed, the default for a
+    new one); a Reaction saved before the choice existed reads as RESTART.
   - Start a workflow names a workflow, which must not be the one the Reaction is in, nor use it.
 """
 from typing import Dict, List, Optional, Set
@@ -25,6 +27,7 @@ from engine.reactions import LIMITED, ONLY_IN_WORKFLOWS, SIDE_EFFECTS, WORDS
 
 MAX_TIMES, MAX_WAIT = 100, 86400
 DECISIONS = tuple(ReactionAction.DECISIONS)
+DEFAULT_MODE = "RESUME"             # for a Rerun this job saved without a choice; saved ones keep theirs
 
 
 class ReactionError(Exception):
@@ -34,6 +37,7 @@ class ReactionError(Exception):
 def describe(reactions: List[Reaction]) -> List[ReactionIO]:
     return [ReactionIO(section=r.Section, when=r.WhenTest, return_codes=r.WhenReturnCodes,
                        actions=[ReactionActionIO(action=a.Action, max_times=a.MaxTimes, wait_seconds=a.WaitSeconds,
+                                                 mode=(a.RerunMode or "RESTART") if a.Action == "RERUN" else None,
                                                  target=a.target_item.ItemName if a.target_item else None,
                                                  workflow=a.target_job.JobKey if a.target_job else None)
                                 for a in r.actions])
@@ -87,6 +91,9 @@ def _check_action(db, where, entry, act: ReactionActionIO, home, in_workflow, up
                             "offers it. Add it there.")
     if act.action in LIMITED:
         _check_limits(where, act)
+    if act.action == "RERUN" and act.mode is not None and act.mode not in ReactionAction.RERUN_MODES:
+        raise ReactionError(f"{where}: Rerun this job is RESTART (from the beginning) or RESUME (from where it "
+                            f"failed), not '{act.mode}'.")
     if act.action == "RERUN_FROM" and act.target not in upstream:
         raise ReactionError(f"{where}: Rerun from '{act.target or ''}' must name a job {own_name and repr(own_name)} "
                             "waits for, directly or not.")
@@ -138,6 +145,7 @@ def _action(db: Session, act: ReactionActionIO, position: int, items: Dict[str, 
     target = db.query(Job).filter(Job.JobKey == act.workflow.strip()).first() if act.workflow else None
     return ReactionAction(ActionOrder=position, Action=act.action, MaxTimes=act.max_times if limited else None,
                           WaitSeconds=(act.wait_seconds or 0) if limited else None,
+                          RerunMode=(act.mode or DEFAULT_MODE) if act.action == "RERUN" else None,
                           target_item=items.get(act.target) if act.action in ("RERUN_FROM", "SKIP") else None,
                           target_job=target if act.action == "START_WORKFLOW" else None)
 
@@ -146,6 +154,7 @@ def _normal(entry: ReactionIO) -> ReactionIO:
     """An entry as it would be saved, so an unchanged list is recognised."""
     actions = [ReactionActionIO(action=a.action, max_times=a.max_times if a.action in LIMITED else None,
                                 wait_seconds=(a.wait_seconds or 0) if a.action in LIMITED else None,
+                                mode=(a.mode or DEFAULT_MODE) if a.action == "RERUN" else None,
                                 target=a.target if a.action in ("RERUN_FROM", "SKIP") else None,
                                 workflow=a.workflow.strip() if a.action == "START_WORKFLOW" and a.workflow else None)
                for a in entry.actions]

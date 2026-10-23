@@ -9,6 +9,7 @@
  *     diagram.items:  [{ id, name, sub, kind ("JOB" or "WORKFLOW"), disabled (words, or null),
  *                        join ("ALL" or "ANY"), status (a run's state, or null), statusText,
  *                        disabledHere ("STOP", "PASS_THROUGH" or null), reactions (words, or null),
+ *                        attempt (in a run: how many times it has run, shown as ×2 from the second),
  *                        rule (its Custom rule, or null), changed (true: changed since it was last saved),
  *                        outside (null; or "JOB", "FILES", "TIME" or "NEEDED": a dashed box outside the workflow, see below),
  *                        href (outside: the page a click opens), owner (outside: the id of the box a click selects instead) }]
@@ -122,7 +123,6 @@ const WorkflowDiagram = (() => {
         if (item.disabledHere === "STOP") list.push(["disabled", "Disabled here: it stops here, and what needs it to succeed does not run"]);
         if (item.disabledHere === "PASS_THROUGH") list.push(["pass", "Disabled here to pass through: it counts as succeeded without running"]);
         if (item.changed) list.push(["changed", "Changed since it was last saved: Save keeps the change, Cancel drops it"]);
-        if (item.reactions) list.push(["reactions", item.reactions]);
         if (item.outside === "FILES") list.push(["files", "Files at an endpoint, on this server"]);
         if (item.outside === "TIME") list.push([item.calendar ? "calendar" : "clock", "A condition on the time"]);
         if (item.outside === "JOB") list.push(["workflow", "A job, or a whole workflow, outside this one"]);
@@ -138,21 +138,32 @@ const WorkflowDiagram = (() => {
         return item.status ? item.statusText : item.sub;
     }
 
+    /** ×2 and so on, beside the first line of the name: [text, tooltip], or null when the item ran once. */
+    function attemptMark(item) {
+        return item.attempt > 1 ? ["×" + item.attempt, `Run ${item.attempt} times in this run: see Job History for each attempt`] : null;
+    }
+
     function boxModel(item) {
         const lines = wrapName(item.name || "(no name yet)");
+        const attempts = attemptMark(item);
         const icons = markers(item);
         const sub = subLine(item);
         const subLines = sub ? wrapName(sub, SUB_MAX).length : 0;
         const external = item.outside ? tag(item.outside) : null;
-        const width = Math.max(MIN_WIDTH, ...lines.map(l => textWidth(l, NAME_FONT)),
+        const reactions = item.reactions ? ["reactions", item.reactions] : null;     // beside the name, with ×2
+        const beside = (reactions ? ICON + 4 : 0) + (attempts ? textWidth(attempts[0], SMALL_FONT) : 0);
+        const firstLine = textWidth(lines[0], NAME_FONT) + (beside ? ATTEMPT_GAP + beside : 0);
+        const width = Math.max(MIN_WIDTH, firstLine, ...lines.map(l => textWidth(l, NAME_FONT)),
                                icons.length * (ICON + 4) + (external ? textWidth(external, EXTERNAL_FONT) + 4 : 0),
                                sub ? Math.min(textWidth(sub, SMALL_FONT), SUB_MAX) : 0);
         const height = PAD + (icons.length ? ICON + 4 : 0) + lines.length * LINE + subLines * SUB_LINE + PAD;
         const indent = item.frame && item.folded ? FOLD_INDENT : 0;        // room for the arrow at the top left
-        return { lines, icons, sub, external, indent, width: Math.ceil(width + 2 * PAD + indent), height: Math.ceil(height + (indent && !icons.length ? ICON + 4 : 0)) };
+        return { lines, icons, attempts, reactions, sub, external, indent, width: Math.ceil(width + 2 * PAD + indent), height: Math.ceil(height + (indent && !icons.length ? ICON + 4 : 0)) };
     }
 
     // ---------- The graph elkjs lays out ----------
+
+    const ATTEMPT_GAP = 8;      // between the name and the ×2 beside it
 
     const FRAME_PADDING = "[top=40,left=14,bottom=14,right=14]";
     const FRAME_HEAD = 34, FOLD_INDENT = 22;
@@ -253,6 +264,8 @@ const WorkflowDiagram = (() => {
         } else if (name === "lock") {
             svg("rect", { x: 2.5, y: 6, width: 9, height: 6.5, rx: 1, ...stroke }, g);
             svg("path", { d: "M4.5 6V4.2a2.5 2.5 0 0 1 5 0V6", ...stroke }, g);
+        } else if (name.startsWith("attempts:")) {  // ×2: this item has been run more than once in the run
+            svg("text", { x: 7, y: 11, "text-anchor": "middle", fill: "currentColor", style: `font: ${SMALL_FONT}; font-weight: 700` }, g).textContent = "×" + name.slice(9);
         } else if (name === "reactions") {          // a circling arrow: what happens after it ends
             svg("path", { d: "M11.5 7a4.5 4.5 0 1 1-1.4-3.3", ...stroke }, g);
             svg("path", { d: "M10.6 1.2v2.9H7.7", ...stroke }, g);
@@ -386,6 +399,16 @@ const WorkflowDiagram = (() => {
             }
             y += ICON + 4;
         }
+        // At the right of the first line, so they add no height: the Reactions icon, then ×2 at the edge
+        let right = at.x + model.width - PAD;
+        if (model.attempts) {
+            const mark = svg("text", { class: "wf-attempts", x: right, y: y + 12, "text-anchor": "end", fill: css("--muted"),
+                                       style: `font: ${SMALL_FONT}; font-weight: 700` }, g);
+            mark.textContent = model.attempts[0];
+            tooltip(mark, model.attempts[1]);
+            right -= textWidth(model.attempts[0], SMALL_FONT) + 4;
+        }
+        if (model.reactions) icon(g, "reactions", right - ICON, y, css("--muted"), model.reactions[1]);
         for (const line of model.lines) {
             svg("text", { x: at.x + PAD, y: y + 12, fill: look.muted ? css("--muted") : css("--text"), style: `font: ${NAME_FONT}` }, g).textContent = line;
             y += LINE;
@@ -436,6 +459,18 @@ const WorkflowDiagram = (() => {
         g.addEventListener("pointerleave", () => x.setAttribute("opacity", selected ? 1 : 0));
     }
 
+    /** A line an operator ignored for the latest restart: two short strokes across it, about halfway along. */
+    function drawStrike(g, points, words) {
+        let length = 0;
+        for (let i = 1; i < points.length; i++) length += Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y);
+        const at = pointBack(points, length / 2);
+        const strike = svg("g", { class: "wf-line-ignored" }, g);
+        for (const shift of [-2.5, 2.5]) {
+            svg("path", { d: `M${at.x + shift - 4} ${at.y + 6}L${at.x + shift + 4} ${at.y - 6}`, stroke: css("--failure"), "stroke-width": 1.6 }, strike);
+        }
+        tooltip(strike, words);
+    }
+
     function drawLine(layer, edge, line, words, diagram, prefix) {
         const style = lineStyle(line.test);
         const selected = isSelected(diagram, "line", line.id);
@@ -456,6 +491,7 @@ const WorkflowDiagram = (() => {
             svg("text", { x: label.x + 5, y: label.y + 12, fill: style.color, style: `font: ${SMALL_FONT}` }, g).textContent = label.text;
             tooltip(g.lastChild, words);
         }
+        if (line.ignored && last) drawStrike(g, last, words);
         if (diagram.editing && last && line.test !== "RULE") drawRemover(g, last, words, selected, selected ? 3 : 1.6);
     }
 
@@ -704,6 +740,7 @@ const WorkflowDiagram = (() => {
         row(keySample("icon", "disabled", "key-i2-"), "Its job is disabled, or it is disabled here");
         row(keySample("icon", "pass", "key-i3-"), "Disabled here to pass through: counts as succeeded without running");
         row(keySample("icon", "reactions", "key-i4-"), "Has Reactions: what happens after it ends");
+        row(keySample("icon", "attempts:2", "key-i10-"), "Run more than once in this run (×2 is a second attempt, after a Rerun)");
         row(keySample("icon", "changed", "key-i6-"), "Outlined and marked so while editing: changed since the workflow was last saved");
         row(keySample("icon", "rule", "key-i5-"), "Starts by a Custom rule; point at it to read the rule. Dotted lines come from the jobs the rule names");
         row(Object.assign(document.createElement("span"), { className: "wf-any-sample", textContent: "ANY" }),

@@ -81,9 +81,23 @@ def configure(level: Optional[str] = None, secrets: Iterable[str] = ()) -> None:
     _logger.setLevel(level_number(level))
 
 
+def mask(text: str) -> str:
+    """The text with the values of secret variables replaced by ********, as in the log."""
+    for secret in _redact.secrets:
+        text = text.replace(secret, MASK)
+    return text
+
+
 def write_to(path: Path) -> None:
-    """From now on, also writes every line to this file, masked as on screen. Each line is written as it comes."""
+    """
+    From now on, also writes every line to this file, masked as on screen. Each line is written as it comes.
+    A process writes one run's file at a time: a run picked up again in the same process (a Reaction's rerun)
+    leaves the file of the one before.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
+    for handler in [h for h in _logger.handlers if isinstance(h, logging.FileHandler)]:
+        _logger.removeHandler(handler)
+        handler.close()
     _add(logging.FileHandler(path, encoding="utf-8"))
 
 

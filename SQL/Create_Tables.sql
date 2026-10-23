@@ -42,6 +42,7 @@ DROP TABLE IF EXISTS Audits;
 DROP TABLE IF EXISTS Applications;
 DROP TABLE IF EXISTS StepTypes;
 DROP TABLE IF EXISTS Settings;
+DROP TABLE IF EXISTS RunRestarts;
 DROP TABLE IF EXISTS MasterObjects;
 
 SET FOREIGN_KEY_CHECKS = 1;
@@ -55,6 +56,20 @@ CREATE TABLE `MasterObjects` (
 	`ModifiedBy` VARCHAR(100), 
 	PRIMARY KEY (id)
 )ENGINE=InnoDB CHARSET=utf8mb4 COLLATE utf8mb4_bin;
+
+CREATE TABLE `RunRestarts` (
+	id INTEGER NOT NULL AUTO_INCREMENT, 
+	`RunID` VARCHAR(36) NOT NULL, 
+	`Number` INTEGER NOT NULL, 
+	`Kind` VARCHAR(10) NOT NULL, 
+	`Scope` VARCHAR(1000) NOT NULL DEFAULT '', 
+	`PerformedBy` VARCHAR(100) NOT NULL DEFAULT 'web interface', 
+	`ChosenDateTime` DATETIME(6) NOT NULL, 
+	`Details` TEXT, 
+	PRIMARY KEY (id)
+)ENGINE=InnoDB CHARSET=utf8mb4 COLLATE utf8mb4_bin;
+
+CREATE INDEX `ix_RunRestarts_RunID` ON `RunRestarts` (`RunID`);
 
 CREATE TABLE `Settings` (
 	`SettingKey` VARCHAR(100) NOT NULL, 
@@ -446,6 +461,7 @@ CREATE TABLE `ReactionActions` (
 	`Action` VARCHAR(30) NOT NULL, 
 	`MaxTimes` INTEGER, 
 	`WaitSeconds` INTEGER, 
+	`RerunMode` VARCHAR(10), 
 	`TargetItem_id` INTEGER, 
 	`TargetJob_MasterObject_id` INTEGER, 
 	PRIMARY KEY (id), 

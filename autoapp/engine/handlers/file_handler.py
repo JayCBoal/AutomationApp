@@ -6,7 +6,7 @@ from pathlib import Path
 from engine import job_log
 from engine.handlers.base_handler import BaseHandler
 from engine.rename_mask import new_names
-from engine.step_catalog import BOOLEAN, DEST, LOCATION, NUMBER, SOURCE, STRING, Output, Param
+from engine.step_catalog import BOOLEAN, DEST, LOCATION, NUMBER, SOURCE, STRING, PARTLY_DONE, Output, Param
 from engine.telemetry_client import utc_now_iso
 
 
@@ -25,6 +25,7 @@ class FileOpHandler(BaseHandler):
     """
 
     CODE = "COPY_FILES"
+    FAILURE_KNOWLEDGE = PARTLY_DONE
     NAME = "Copy Files"
     DESCRIPTION = "Copies or moves files between a registered endpoint and the job's working folder"
 
@@ -78,8 +79,9 @@ class FileOpHandler(BaseHandler):
         # Resolve source files (supports glob patterns)
         matched_files = sorted(f for f in glob.glob(source_pattern) if os.path.isfile(f))
         job_log.debug(f"Files matching '{source_pattern}': {matched_files}")
-        self.outputs.update(FileCount=0, Bytes=0)
-        if not matched_files:
+        carried = self.journal.finished_earlier()       # files an earlier attempt of this step already did
+        self.outputs.update(FileCount=len(carried), Bytes=sum(r.get("size") or 0 for r in carried))
+        if not matched_files and not carried:
             if not allow_no_files:
                 # Finding nothing usually means something upstream is late or broken
                 raise FileNotFoundError(
@@ -101,9 +103,13 @@ class FileOpHandler(BaseHandler):
         names = [os.path.basename(f) for f in matched_files]
         renamed = new_names(rename_mask, names) if rename_mask else {name: name for name in names}
 
-        total_bytes = 0
+        already = {r["src"] for r in carried} | self._settle_unfinished(move)
+        total_bytes = self.outputs["Bytes"]
 
         for src_file in matched_files:
+            if src_file in already:
+                job_log.detail(f"Skipped '{src_file}': the earlier attempt already did it.")
+                continue
             filename = renamed[os.path.basename(src_file)]
             target = os.path.join(dest_path, filename) if dest_dir == Path(dest_path) else dest_path
 
@@ -113,6 +119,7 @@ class FileOpHandler(BaseHandler):
                 source_size = os.path.getsize(src_file)
                 if verify_checksum:
                     checksum = _sha256(src_file)
+                self.journal.begin(src_file, target, source_size, checksum)
 
                 if move:
                     shutil.move(src_file, target)
@@ -133,6 +140,7 @@ class FileOpHandler(BaseHandler):
                 job_log.error(f"Could not {op_type.lower()} '{src_file}' to '{target}': {e}")
                 raise
 
+            self.journal.end(src_file, target, dest_size, checksum)
             self.record_file_operation(op_type, "SUCCESS", src_file, target, source_size, dest_size,
                                        checksum, started_at=started_at)
             job_log.detail(f"{done} '{src_file}'\n\tto '{target}' ({dest_size} bytes)")
@@ -147,6 +155,28 @@ class FileOpHandler(BaseHandler):
             })
 
         result_data["bytes_transferred"] = total_bytes
-        result_data["details"]["summary"].append(f"{done} {len(matched_files)} file(s), {total_bytes} bytes.")
+        result_data["details"]["summary"].append(f"{done} {self.outputs['FileCount']} file(s), {total_bytes} bytes.")
 
         return result_data
+
+    def _settle_unfinished(self, move: bool) -> set:
+        """
+        Files the earlier attempt had begun but not noted as done. One whose copy is complete at its
+        destination (by size, and by checksum where it was recorded) is done: noted now, and for a move its
+        source removed. Any other is done again. Returns the sources settled as done.
+        """
+        settled = set()
+        for earlier in self.journal.unfinished_earlier():
+            dest = earlier.get("dest")
+            complete = dest and os.path.isfile(dest) and os.path.getsize(dest) == earlier.get("size") \
+                and (not earlier.get("checksum") or _sha256(dest) == earlier["checksum"])
+            if not complete:
+                job_log.detail(f"'{earlier['src']}' was being copied when the earlier attempt stopped; it is done again.")
+                continue
+            if move and os.path.isfile(earlier["src"]):
+                os.remove(earlier["src"])
+            self.journal.end(earlier["src"], dest, earlier["size"], earlier.get("checksum"))
+            self.outputs.update(FileCount=self.outputs["FileCount"] + 1, Bytes=self.outputs["Bytes"] + earlier["size"])
+            job_log.detail(f"'{earlier['src']}' had arrived complete when the earlier attempt stopped.")
+            settled.add(earlier["src"])
+        return settled

@@ -70,6 +70,10 @@
                                                     <option :value="choice" x-text="actionName(choice)" :selected="choice === a.action"></option>
                                                 </template>
                                             </select>
+                                            <select class="reaction-mode" x-show="a.action === 'RERUN'" x-model="a.mode" aria-label="How it runs again">
+                                                <option value="RESUME" :selected="a.mode === 'RESUME'">Resume from failure</option>
+                                                <option value="RESTART" :selected="a.mode === 'RESTART'">Restart from the beginning</option>
+                                            </select>
                                             <label x-show="isLimited(a)">at most <input type="number" class="reaction-times" min="1" max="100"
                                                    x-model.number="a.max_times" style="max-width: 70px"> times</label>
                                             <label x-show="isLimited(a)">after <input type="number" class="reaction-wait" min="0" max="86400"
@@ -87,6 +91,8 @@
                                                     @click="r.actions.splice(aIndex, 1)">Remove</button>
                                         </li>
                                     </template>
+                                    <li class="muted small reaction-mode-help" x-show="r.actions.some(a => a.action === 'RERUN')"
+                                        x-text="modeHelp(r)"></li>
                                     <li x-show="section === 'NEXT'"><button type="button" class="link small add-reaction-action"
                                             @click="addReactionAction(r)">+ And also…</button></li>
                                 </ul>
@@ -133,7 +139,8 @@
         return (list || []).map(r => ({
             uid: nextUid++, section: r.section, when: r.when, return_codes: r.return_codes || "",
             actions: r.actions.map(a => ({ uid: nextUid++, action: a.action, max_times: a.max_times ?? 1,
-                                           wait_seconds: a.wait_seconds ?? 0, target: a.target || "", workflow: a.workflow || "" })),
+                                           wait_seconds: a.wait_seconds ?? 0, target: a.target || "", workflow: a.workflow || "",
+                                           mode: a.mode || "RESUME" })),
         }));
     }
 
@@ -145,6 +152,7 @@
                 action: a.action,
                 max_times: LIMITED.includes(a.action) ? a.max_times : null,
                 wait_seconds: LIMITED.includes(a.action) ? (a.wait_seconds || 0) : null,
+                mode: a.action === "RERUN" ? (a.mode || "RESUME") : null,
                 target: ["RERUN_FROM", "SKIP"].includes(a.action) ? (a.target || null) : null,
                 workflow: a.action === "START_WORKFLOW" ? (a.workflow.trim() || null) : null,
             })),
@@ -157,7 +165,8 @@
 
     function actionWords(a) {
         if (a.action === "RERUN" || a.action === "RERUN_FROM") {
-            const from = a.action === "RERUN_FROM" ? `rerun from ${a.target || "(no job chosen)"}` : "rerun this job";
+            const from = a.action === "RERUN_FROM" ? `rerun from ${a.target || "(no job chosen)"}`
+                : a.mode === "RESTART" ? "rerun this job from the beginning" : "rerun this job from where it failed";
             const wait = a.wait_seconds ? `, after ${a.wait_seconds} seconds` : "";
             return `${from}, at most ${a.max_times} time${a.max_times === 1 ? "" : "s"}${wait}`;
         }
@@ -181,6 +190,17 @@
             actionName(action) { return ACTIONS[action]; },
             isLimited(a) { return LIMITED.includes(a.action); },
 
+            /** What the choice on a Rerun this job means, in words, for the entry it is in. */
+            modeHelp(r) {
+                const rerun = r.actions.find(a => a.action === "RERUN");
+                return rerun && rerun.mode === "RESTART"
+                    ? "Restart from the beginning runs every step again, as a new attempt."
+                    : "Resume from failure keeps the steps that finished and runs the rest. If a step failed and "
+                      + "AutoApp cannot tell whether it changed anything, nothing is rerun and the job stays failed. "
+                      + "On a workflow it picks up the jobs that failed and starts those that did not run, and is "
+                      + "passed over if any one of them cannot be picked up.";
+            },
+
             reactionChoices(section, inWorkflow) {
                 if (section === "ALSO") return ["START_WORKFLOW"];
                 return NEXT_ACTIONS.filter(a => inWorkflow || !ONLY_IN_WORKFLOWS.includes(a));
@@ -189,7 +209,7 @@
             addReaction(list, section) {
                 list.push({ uid: nextUid++, section, when: "FAILED", return_codes: "",
                             actions: [{ uid: nextUid++, action: section === "ALSO" ? "START_WORKFLOW" : "RERUN",
-                                        max_times: 1, wait_seconds: 0, target: "", workflow: "" }] });
+                                        max_times: 1, wait_seconds: 0, target: "", workflow: "", mode: "RESUME" }] });
             },
 
             removeReaction(list, r) { list.splice(list.indexOf(r), 1); },
@@ -204,7 +224,7 @@
             },
 
             addReactionAction(r) {
-                r.actions.push({ uid: nextUid++, action: "COUNT_AS_FAILED", max_times: 1, wait_seconds: 0, target: "", workflow: "" });
+                r.actions.push({ uid: nextUid++, action: "COUNT_AS_FAILED", max_times: 1, wait_seconds: 0, target: "", workflow: "", mode: "RESUME" });
             },
         };
     }

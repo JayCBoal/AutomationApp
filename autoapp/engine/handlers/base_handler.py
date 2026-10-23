@@ -3,7 +3,10 @@ import time
 from abc import ABC, abstractmethod
 from typing import Dict, Any, List, Optional, Tuple
 from engine import job_log
-from engine.step_catalog import CHOICE, LOCATION, NUMBER, STRING, Output, Param, normalize_parameters
+from engine.control_file import NullJournal
+from engine.step_catalog import (
+    CHOICE, LOCATION, NUMBER, STRING, UNKNOWN, Output, Param, WhatItKnew, normalize_parameters
+)
 from engine.telemetry_client import LocalSpoolTelemetryClient
 
 class BaseHandler(ABC):
@@ -44,6 +47,17 @@ class BaseHandler(ABC):
         """The LOCATION parameters, each mapped to its role: "source" or "dest"."""
         return {p.name: p.location_role.lower() for p in cls.parameters() if p.data_type == LOCATION}
 
+    # What a step of this type knew about its effect when it failed: NOT_DONE, PARTLY_DONE or UNKNOWN
+    # (engine/step_catalog.py). Every step type must say; one that does not counts as UNKNOWN, the
+    # safe answer, so a later attempt never runs again what may already have changed something.
+    # A step type whose answer depends on how it failed overrides what_failed_step_knew() as well.
+    FAILURE_KNOWLEDGE: Optional[str] = None
+    FAILURE_WHY = {
+        "NOT_DONE": "it failed before it changed anything",
+        "PARTLY_DONE": "it had done part of its work, and the record shows which part",
+        "UNKNOWN": "it failed in a way that does not show how far it got",
+    }
+
     # Whether the handler can reach Endpoints that live on a remote Site
     SUPPORTS_REMOTE_SITES = False
 
@@ -71,6 +85,9 @@ class BaseHandler(ABC):
     def __init__(self, step_config: Dict[str, Any], telemetry_client: LocalSpoolTelemetryClient):
         self.step_config = step_config
         self.step_id = step_config.get("StepID")
+        # Notes each file the step handles in the run's control file, and tells a resumed run what the
+        # earlier attempt did with each (engine/control_file.py)
+        self.journal = step_config.get("Journal") or NullJournal()
         self.telemetry = telemetry_client
         # This step type's own outputs, set as the step goes, so a step that fails still leaves them
         self.outputs: Dict[str, Any] = {}
@@ -97,6 +114,11 @@ class BaseHandler(ABC):
         Returns a dictionary describing what the step did.
         """
         pass
+
+    def what_failed_step_knew(self, error: Exception) -> WhatItKnew:
+        """What this step knew about its effect, given the error it failed with."""
+        answer = self.FAILURE_KNOWLEDGE or UNKNOWN
+        return WhatItKnew(answer, self.FAILURE_WHY[answer])
 
     def describe(self, resolved_params: Dict[str, Any]) -> List[str]:
         """

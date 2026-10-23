@@ -295,3 +295,46 @@ def test_the_frames_sample_runs_its_frames_in_order_and_reads_inside_them_by_pat
     assert "Loading for US" in log                                                    # Load's own REGION wins over the frame's
     enrich_log = "\n".join(run_log(db.query(JobRun).filter(JobRun.RunID == inner["Enrich"].child_run.RunID).one()))
     assert "Enriching for EU" in enrich_log
+
+
+def test_the_resume_sample_fails_at_the_empty_file_and_a_resume_copies_the_rest(
+        db, run_runner, load_spool, tmp_path):
+    """DEV-RESUME_SAMPLE (docs/WORKFLOWS_PHASE7.md): three files copied, then the empty fourth stops the job."""
+    from create_dev_db import create_restart_files
+    load_seed(db)
+    for root in db.query(Variable).filter(Variable.VarName == "Root"):
+        root.VarValue = root.VarValue.replace("/tmp/autoapp_sample", str(tmp_path))
+    folder = tmp_path / "legal_app" / "restarts_in"
+    create_restart_files(folder)
+
+    first = run_runner("DEV-RESUME_SAMPLE", "RS-1", "--run-id", "11111111-1111-1111-1111-111111111111")
+    assert first.returncode == 1
+    (folder / "restart_4.csv").write_text("row\n4\n")
+    load_spool()
+    second = run_runner("DEV-RESUME_SAMPLE", "RS-1", "--attempt", "2",
+                        "--resume-run-id", "11111111-1111-1111-1111-111111111111")
+
+    assert second.returncode == 0, second.stdout + second.stderr
+    copied = sorted(p.name for p in (tmp_path / "work" / "DEV-RESUME_SAMPLE" / "copied").iterdir())
+    assert copied == [f"restart_{n}.csv" for n in range(1, 6)]
+    load_spool()
+    db.expire_all()
+    runs = {r.Attempt: r for r in db.query(JobRun).filter(JobRun.JobKey == "DEV-RESUME_SAMPLE")}
+    assert (runs[1].Status, runs[1].FileCount, runs[2].Status, runs[2].FileCount) == ("FAILED", 3, "SUCCESS", 5)
+
+
+def test_the_unknown_sample_fails_with_its_effect_unknown_and_runs_on_when_counted_as_done(
+        db, run_runner, load_spool, tmp_path):
+    """DEV-UNKNOWN_SAMPLE: the Post step cannot say what it did; counting it as done lets the job finish."""
+    load_seed(db)
+    first = run_runner("DEV-UNKNOWN_SAMPLE", "UN-1", "--run-id", "22222222-2222-2222-2222-222222222222")
+    assert first.returncode == 1
+    load_spool()
+    db.expire_all()
+    failed = db.query(JobRun).filter(JobRun.JobKey == "DEV-UNKNOWN_SAMPLE").one()
+    assert (failed.Status, failed.Reason) == ("FAILED", "EFFECT_UNKNOWN")
+
+    second = run_runner("DEV-UNKNOWN_SAMPLE", "UN-1", "--attempt", "2",
+                        "--resume-run-id", "22222222-2222-2222-2222-222222222222", "--count-as-done", "2|")
+
+    assert second.returncode == 0, second.stdout + second.stderr

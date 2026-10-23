@@ -298,6 +298,7 @@ erDiagram
         string(30) Action "required"
         int MaxTimes
         int WaitSeconds
+        string(10) RerunMode
         int TargetItem_id FK
         int TargetJob_MasterObject_id FK
     }
@@ -359,6 +360,16 @@ erDiagram
         string(20) Result "required"
         text Message
         datetime EventDateTime "required"
+    }
+    RunRestarts {
+        int id PK
+        string(36) RunID "required"
+        int Number "required"
+        string(10) Kind "required"
+        string(1000) Scope "required"
+        string(100) PerformedBy "required"
+        datetime ChosenDateTime "required"
+        text Details
     }
     ConditionChecks {
         int id PK

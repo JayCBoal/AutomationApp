@@ -37,6 +37,7 @@ def test_a_job_run_again_lists_its_restarts_and_job_history_says_restarted(page,
 
     page.goto("/ui/history.html")
     wait_for_search(page)
+    page.locator(".restarted:visible").first.wait_for()     # the rows are drawn just after the search ends
     marks = page.locator(".restarted:visible").all_inner_texts()
     assert marks == ["Restarted ×1"]
     assert page.locator(".restarted:visible").get_attribute("title") == "Resumed by you"

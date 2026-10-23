@@ -8,7 +8,9 @@ by a shortcut that fills the list in.
 Each item named is picked up from where it failed (resume), started again from the beginning (restart), bypassed (it
 counts as succeeded without running) or not run (Skipped). A shortcut gives a failed item the action asked for when it
 can have it, and restarts all the others: only a failed item has a record to pick up from. Bypass or Don't run on the
-job chosen, with "from", lets what waits for it go on, or not. The rest of the run stays as it ended.
+job chosen, with "from", lets what waits for it go on, or not. The rest of the run stays as it ended, except the
+items at the top of the workflow that did not run: they have not ended, only not had their turn, so each is run again
+when its waits are met (like Resume) unless the operator says "leave" for it, or the shortcut is "only".
 """
 from typing import Dict, List, Optional, Tuple
 
@@ -18,6 +20,7 @@ from engine import reopen
 from engine.reopen_tree import TreePlan, downstream
 
 FROM, ONLY = "from", "only"
+LEAVE = "leave"         # an item that did not run, left as it is: not an action, it only stops the default
 ACTIONS = (reopen.RESUME, reopen.RESTART) + reopen.PASS_OVER
 
 
@@ -28,11 +31,13 @@ def named_items(db: Session, plan: TreePlan, shortcut: Optional[str], chosen: Li
         return {}, "Choose 'from' (the jobs and what waits for them) or 'only' (just the jobs chosen)."
     if chosen_as not in ACTIONS:
         return {}, "Choose whether the jobs chosen are resumed, restarted, bypassed or not run."
-    wrong = [path for path, what in explicit.items() if what not in ACTIONS]
+    wrong = [path for path, what in explicit.items() if what not in ACTIONS and what != LEAVE]
     if wrong:
         return {}, f"For '{wrong[0]}', choose resume, restart, bypass or dont_run."
     items = dict(explicit)
     items.update(_asked_for(plan, chosen, chosen_as))
+    left = {path for path, what in items.items() if what == LEAVE}
+    items = {path: what for path, what in items.items() if what != LEAVE}
     problem = _inside_each_other(items)
     if problem:
         return {}, problem
@@ -40,7 +45,16 @@ def named_items(db: Session, plan: TreePlan, shortcut: Optional[str], chosen: Li
         items.update(_following(db, plan, list(items), chosen_as))
     if not items:
         return {}, "Choose at least one item to run again."
+    if shortcut != ONLY:
+        items.update(_waiting_their_turn(plan, items, left))
     return items, None
+
+
+def _waiting_their_turn(plan: TreePlan, items: Dict[str, str], left: set) -> Dict[str, str]:
+    """The top-level items that did not run and were not named or left alone: each starts again, as it would on a Resume."""
+    return {item.path: reopen.RESTART for item in plan.choices
+            if item.depth == 0 and item.status == "NOT_RUN" and item.path not in items and item.path not in left
+            and not any(path.startswith(item.path + "/") for path in items)}
 
 
 def waits_problem(tree: TreePlan, items: Dict[str, str], ignore: Dict[str, List[str]]) -> Optional[str]:

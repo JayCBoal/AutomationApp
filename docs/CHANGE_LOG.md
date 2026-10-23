@@ -6,6 +6,17 @@ Notable structural, schema and design changes to AutoApp, newest first. Line-by-
 
 ## 2026-10-22
 
+### Workflows, Phase 7, step 7: the restarts sample and loose ends
+
+Plan: [WORKFLOWS_PHASE7.md](WORKFLOWS_PHASE7.md). Decisions D174 to D176 in [WORKFLOW_DECISIONS.md](WORKFLOW_DECISIONS.md).
+
+- **Added (sample):** `DEV-RESTARTS_SAMPLE` in the seed and in `autoapp_dev` (backup `demo/output/autoapp_dev_before_restarts_sample.sql`): Load, Post (the two earlier samples as shared jobs), Reconcile (an embedded workflow whose Balance fails once and whose Reaction resumes it), Notify and Report. A rehearsed walk-through is in the seed comment. Tests: `tests/test_restarts_sample.py`.
+- **Added (Simulate):** `FailUntilAttempt`, so a step can fail on the first attempt only; steps are now given their job's attempt number.
+- **Changed (pages):** a workflow run that Succeeded shows *Rerun ▸* with *Advanced…* only (D176); the values heading reads "The values the items restarted here use" in Advanced.
+- **Changed (Advanced):** items at the top of the workflow that did not run now run when their waits are met, with a *Leave Not run* choice (D177), so bypassing a failed job carries the run on.
+- **Changed (diagram):** the ×2 and the Reactions icon (the circular arrow) sit at the right of a box's first line instead of in a row above it, so a box with only these is no taller.
+- **Moved:** the snapshot of resolved `${...}` values (D160) is TO-DO 19, not part of Phase 7.
+
 ### Workflows, Phase 7, step 6: Advanced… on the Rerun panel
 
 Plan: [WORKFLOWS_PHASE7.md](WORKFLOWS_PHASE7.md). Decisions D161 to D173 in [WORKFLOW_DECISIONS.md](WORKFLOW_DECISIONS.md).
@@ -13,7 +24,7 @@ Plan: [WORKFLOWS_PHASE7.md](WORKFLOWS_PHASE7.md). Decisions D161 to D173 in [WOR
 - **Added (pages):** *Advanced…* beside Resume and Restart from beginning. For a workflow run: every item with Leave / Resume / Restart / Bypass / Don't run, or the shortcuts *From the jobs chosen, and everything that waits for them* and *Only the jobs chosen* (with a warning that what follows may be out of date), a tick to ignore a wait for this restart only, and *Start the automatic retry counts again from zero*. For a job on its own: *Start here* and *Skip* on each top-level step, with a warning when a step that copies or deletes files will do it again. The panel says what the run will do before *Run* is pressed; the `${...}` values list is the one Resume uses.
 - **Added (API):** `GET rerun-plan` takes `items`, `ignore` and `reset_counts` (JSON) so the panel can preview an item-by-item choice.
 - **Changed (records):** the Restarts list and the Audit Log say "Bypassed 'Post'." and "Did not run 'Report'.".
-- **Not yet:** Advanced on a Succeeded or Cancelled run is accepted by the API (D161) but the Rerun button still appears only on a Failed run.
+- **Not yet:** Advanced on a Succeeded run is accepted by the API (D161) but the Rerun button appears only on a Failed run. *(Done in step 7, below.)*
 
 ### Workflows, Phase 7, step 5a: a Reaction resumes a workflow
 

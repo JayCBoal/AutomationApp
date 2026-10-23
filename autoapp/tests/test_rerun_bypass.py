@@ -130,3 +130,39 @@ def test_an_item_that_succeeded_cannot_be_bypassed_and_nothing_is_recorded(faile
     assert same.status_code == 202                      # a succeeded job may be left unrun; a not-run one too
     assert unknown.status_code in (409, 422)
     assert db.query(RunRestart).count() == 1
+
+
+# ---------- Items that did not run wait their turn ----------
+
+def test_bypassing_one_job_item_by_item_also_runs_what_did_not_run_because_of_it(failed, live_api):
+    plan = plan_of(live_api, failed, items=json.dumps({"Load": "bypass"}))
+
+    assert plan["named_items"] == {"Load": "bypass", "Report": "restart"}, plan
+    assert {i["path"]: i["what"] for i in plan["items"]}["Report"].startswith("runs again")
+
+
+def test_leave_not_run_keeps_the_item_as_it_is(failed, live_api):
+    plan = plan_of(live_api, failed, items=json.dumps({"Load": "bypass", "Report": "leave"}))
+
+    assert plan["named_items"] == {"Load": "bypass"} and plan["items_problem"] is None
+
+
+def test_only_the_jobs_chosen_leaves_what_did_not_run_alone(failed, live_api):
+    plan = plan_of(live_api, failed, shortcut="only", chosen="Load", chosen_as="restart")
+
+    assert plan["named_items"] == {"Load": "restart"}
+
+
+def test_choosing_only_leave_is_not_a_choice_to_run_anything(failed, live_api):
+    plan = plan_of(live_api, failed, items=json.dumps({"Report": "leave"}))
+
+    assert plan["named_items"] == {} and plan["items_problem"]
+
+
+def test_a_not_run_item_is_started_through_the_request_too(failed, live_api, db):
+    response = rerun(live_api, failed, items={"Load": "bypass"})
+    assert response.status_code == 202, response.text
+
+    _, run = follow(live_api, response.json())
+
+    assert run["status"] == "SUCCESS"      # Report ran, and Load counted as succeeded

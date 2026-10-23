@@ -2,7 +2,7 @@
 
 The seventh phase of [WORKFLOWS.md](WORKFLOWS.md) ("Implementation in phases"): **a failed run can be picked up where it stopped, or restarted in whole or in part, from one Rerun ▸ menu, and every choice is on record.** It answers the restart half of shortcoming 2 ([PROJECT_GOALS.md](PROJECT_GOALS.md) goal 2): in RunMyJobs a failed chain is restarted by hand, step by step, with nothing saying what the failed step had already done.
 
-Status: **PLAN AGREED 2026-10-20; building on branch `workflows-phase7`: steps 0 to 5a built (Part 2 not built); see "Built so far").** Every question was answered by the owner (see "Settled by the owner"); proposals 1 to 13 stand as written. Decisions are D136 to D142 in WORKFLOW_DECISIONS.md. The plan is for a separate building session.
+Status: **PLAN AGREED 2026-10-20; BUILT on branch `workflows-phase7` (steps 0 to 7, 2026-10-22; awaiting the owner's review before merge); see "Built so far".** Every question was answered by the owner (see "Settled by the owner"); proposals 1 to 13 stand as written. Decisions are D136 to D142 in WORKFLOW_DECISIONS.md. The plan is for a separate building session.
 
 ## Starting point
 
@@ -146,6 +146,8 @@ Designed, not built: the Rerun ▸ menu; Resume; Restart from beginning; Advance
   - **Step 6e, built (2026-10-22), D172 and D173.** *Advanced…* on the shared panel (`ui/js/rerun.js`): per-item actions, the two shortcuts and their warning, ignore a wait, reset counts, and for a job on its own Start here / Skip on each step; every choice is previewed by `GET rerun-plan` (now with `items`, `ignore`, `reset_counts`). Records say "Bypassed 'X'." / "Did not run 'X'.". Tests: `test_ui_rerun_advanced.py`. Not in 6e: the Rerun button on a Succeeded or Cancelled run (the API takes it); the values heading still says "Resume uses" when Advanced restarts items.
   - **Settled by the owner, 2026-10-22:** Succeeded and Cancelled runs may be reopened by Advanced; values apply to Restart as to Resume; Ignore a prerequisite lasts for one restart; step choices are top-level only; Skipped keeps its meaning and the operator's "move past it" is **Bypass**, with **Don't run** for the Skipped end.
 
+- **Step 7 (2026-10-22): the sample, loose ends and docs.** `DEV-RESTARTS_SAMPLE` is in the seed and `autoapp_dev` and runs through `tests/test_restarts_sample.py` (it fails at the empty file; Resume; Post counted as done; Reconcile's Balance fails once and its Reaction resumes the frame; Don't run with Ignore; Report alone). Simulate gained `FailUntilAttempt` (D174); the sample reuses the two earlier samples (D175); a Succeeded workflow run offers Advanced only (D176); the values heading names what Advanced restarts. D160 moved to TO-DO 19. Not built: the "Resume uses" wording for a job on its own is unchanged (it is true there).
+
 ## Proposals to settle with the owner
 
 1. **The control file is its own small file, not the operations spool and not the database.**
@@ -209,7 +211,7 @@ Designed, not built: the Rerun ▸ menu; Resume; Restart from beginning; Advance
     - The editor's Reaction row and its help text show the choice; the run page, job log and Reaction record say which was used.
     - A Resume by Reaction follows the same rules as the operator's (proposals 3, 4, 9); after "Failed (effect unknown)" it does not fire (proposal 3). *Rerun from…* stays a restart of the chain.
     - It needs a place to store the choice on the Reaction's action and a migration that works on SQLite and MariaDB and keeps `autoapp_dev`'s data.
-  - **Step 7 (sample, loose ends, docs, tests), plan drafted 2026-10-22, not built; for the owner to agree.** Decisions to be entered as D174 onward when built. Replaces "The sample (proposed)" below where they differ.
+  - **Step 7 (sample, loose ends, docs, tests), BUILT 2026-10-22 on the recommended answers to (a) to (d) below (the owner to confirm at review).** Decisions D174 to D176. Replaces "The sample (proposed)" below where they differ.
     - **7a. The sample, `DEV-RESTARTS_SAMPLE`.** One workflow that makes every restart choice something you can click. It reuses `DEV-RESUME_SAMPLE` and `DEV-UNKNOWN_SAMPLE` as shared jobs (no copies) and adds one embedded workflow and two small jobs:
       1. **Load** (`DEV-RESUME_SAMPLE`): copies five files, fails at the empty fourth. Shows **Resume** and the net file count.
       2. **Post** (`DEV-UNKNOWN_SAMPLE`, waits for Load): fails "effect unknown". Shows the question in the dialog and its three answers, and **Bypass** (count it as done by hand).
@@ -250,7 +252,9 @@ Part 2:
 6. **Advanced…** (proposal 10): the dialog and each choice, one at a time with its test: from a chosen job, only chosen jobs, mark as done, ignore a prerequisite, skip, different values, reset counts.
 7. **Sample, docs and tests.** CHANGE_LOG; WORKFLOWS.md (Phase 7 marked built, the restart sections tidied); the decision register (D43, D61, D74 to D76 to Built; new decisions); INTEGRATION.md unchanged; TO-DO tidied; CLAUDE.md gets the line about restart behaviour for new step types. Both suites side by side.
 
-## The sample (proposed): `DEV-RESTARTS_SAMPLE`
+## The sample: `DEV-RESTARTS_SAMPLE` (built; step 7a above replaces this first sketch)
+
+The sketch below is kept for what it was meant to show; the built sample is described in step 7a and walked through in the seed comment (SQL/Seed_Sample_Data.sql, section 12).
 
 A workflow shaped to show each choice, loaded into the seed and into `autoapp_dev`:
 

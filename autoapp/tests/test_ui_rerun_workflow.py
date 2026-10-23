@@ -82,11 +82,11 @@ def test_a_step_that_may_have_changed_something_is_decided_for_each_job_before_r
     assert page.locator("#rerun-resume").is_enabled()
 
 
-def test_a_run_that_is_running_or_succeeded_has_no_rerun_button(page, sim, flow):
-    flow("OK", [("Only", sim("ONLY"))])
-    page.goto("/ui/workflow.html?key=OK")
+def test_a_workflow_run_that_is_running_has_no_rerun_button(page, sim, flow):
+    flow("SLOW", [("Only", sim("ONLY", wait=8))])
+    page.goto("/ui/workflow.html?key=SLOW")
     page.locator("#run-button").click()
-    wait_for_status(page, "Succeeded")
+    wait_for_status(page, "Running")
     assert page.locator("#rerun-button").is_hidden()
 
 
@@ -115,3 +115,19 @@ def test_a_box_that_has_run_twice_is_marked_x2_on_the_diagram(failed_run, db):
     page.locator("#run-diagram svg").first.wait_for()
     marks.first.wait_for()
     assert marks.count() == 1                  # Load only; Report had not run before
+
+
+def test_the_x2_sits_to_the_right_of_the_name_and_adds_no_height(failed_run, db):
+    page = failed_run
+    fix(db, "LOAD")
+    page.locator("#rerun-button").click()
+    page.locator("#rerun-resume").click()
+    wait_for_status(page, "Succeeded")
+    page.locator("#view-diagram").click()
+    mark = page.locator("#run-diagram svg text.wf-attempts")
+    mark.first.wait_for()
+
+    name = page.locator("#run-diagram svg text", has_text="Load").first.bounding_box()
+    x2 = mark.first.bounding_box()
+
+    assert x2["x"] > name["x"] + name["width"] and abs((x2["y"] + x2["height"]) - (name["y"] + name["height"])) < 6

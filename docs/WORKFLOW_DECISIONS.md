@@ -270,7 +270,7 @@ Compiled 2026-10-18, from the design record and Phases 1 to 4.
 
 **D43. Downstream sees a job's net result**: resumed attempts add up; restarted from the beginning, only the latest counts; every attempt stays in Job History.
 - *Why:* what follows needs the job's actual outcome, not one attempt's.
-- *Status:* Designed (Phase 7). *Source:* WORKFLOWS.md, "Restarting".
+- *Status:* Built (Phase 7). *Source:* WORKFLOWS.md, "Restarting".
 
 ## Conditions
 
@@ -551,7 +551,7 @@ Compiled 2026-10-18, from the design record and Phases 1 to 4.
 
 **D76. Every failed step reports whether what it did is known**: not done, partly done and known, or unknown; Resume holds for an operator at an unknown step, and automatic reruns do not retry it.
 - *Why:* resuming blindly could repeat a payment or a partly committed SQL change; the handler knows from the error it caught.
-- *Status:* Designed (Phase 7). *Source:* WORKFLOWS.md, "Restarts".
+- *Status:* Built (Phase 7, steps 0 to 3a). *Source:* WORKFLOWS.md, "Restarts".
 
 ## The diagram and the editor
 
@@ -671,7 +671,7 @@ Compiled 2026-10-18, from the design record and Phases 1 to 4.
 **D148. A Resume by Reaction that cannot be carried out is passed over, like a rerun at its limit, and the next entry that holds decides.** It is recorded as NOT_FIRED, with the reason, in the Reaction record, the job log and the run page. It is passed over when: a step failed and could not say what it changed (or cannot finish by itself); every step had finished and the job failed on its return code (nothing to pick up); or the record of how far the run got is gone or on another host. A workflow is always run again from the beginning, whatever the choice says. *Replaced in part by D156 to D158: a workflow can be resumed by a Reaction too.*
 - *Why:* "stays failed" for an unknown failure must not be undone by an automatic retry, yet "rerun twice, then count as failed" should still work; treating it as used up gives both. Restart stays a choice for anyone who accepts the work being done again.
 - *Considered:* stopping all Reactions for that job (the job could not then be counted as succeeded by a later entry); firing a Restart instead (silently repeats work).
-- *Status:* Built (Phase 7, step 3a). *Source:* WORKFLOWS_PHASE7.md, proposal 13 and settled item 3.
+- *Status:* Built (Phase 7, step 3a); replaced in part by D156 and D157, which let a Reaction resume a workflow. *Source:* WORKFLOWS_PHASE7.md, proposal 13 and settled item 3.
 
 **D149. A workflow's Resume offers Use as they were / Refresh / Edit for its `${...}` values, one list for each level that can be edited.** The lists are the workflow's variables (the run at the top and each frame that is reopened), each use's variables, and what each resumed job read from its own levels (job, application, system and so on). Restart has no values choice: everything is read again.
 - *Why:* the owner's choice (step 4b). A value from the workflow or its use is shown once, where it is set, so one edit reaches every job that runs again; precedence still decides which level wins.
@@ -724,7 +724,7 @@ Compiled 2026-10-18, from the design record and Phases 1 to 4.
 
 **D160. The resolved `${...}` values are snapshotted with the run, as part of its audit trail.** For any run, whether or not it is ever resumed, the owner can see how each variable resolved on that occasion. Secrets are never stored (they are read again, as in Resume).
 - *Why:* the owner, 2026-10-22: someone investigating why a job behaved as it did on a particular occasion needs to know how its variables resolved for that instance. Needed whether or not Step 6 uses it.
-- *Status:* Decided, not built: where it is kept and shown (run page, log page, Resume's "Use as they were") is to be planned. *Source:* WORKFLOWS_PHASE7.md, "Left for Part 2".
+- *Status:* Decided, not built, and **not part of Phase 7** (step 7): nothing in restarts needs it, since the control file already holds the values a Resume uses, and it touches the telemetry principle (it must not slow a job). It is TO-DO 19; where it is kept and shown (run page, log page, Resume's "Use as they were") is to be planned there. *Source:* WORKFLOWS_PHASE7.md, "Left for Part 2".
 
 **D161. Advanced names an action for each item; "from a chosen job" and "only chosen jobs" are shortcuts that fill the list in.** The engine knows one idea: `items`, a map from an item's path to *resume* or *restart* (`engine/reopen.py`, `action_for`). An item named is picked up (a failed one with a record, when resume is asked) or started again; a workflow that holds a named item is reopened on the way; every other item stays as it ended. The shortcuts live in the server (`app/rerun_advanced.py`): *from* adds everything that waits for the jobs chosen, in their workflow and in each workflow around it; *only* adds nothing. A shortcut gives a failed item the action asked for when it can have it and restarts the rest (only a failed item has a record).
 - *Why:* the dialog's plan and the runner ask the same function, so what the dialog says is what the run does (as D144); one model underneath keeps 6b and 6c to adding actions, not new paths.
@@ -772,3 +772,16 @@ Compiled 2026-10-18, from the design record and Phases 1 to 4.
 **D173. The Restarts list and the Audit Log name the items passed over.** An item bypassed reads "Bypassed 'Post'." and one not run "Did not run 'Report'."; the Audit Log headline says "bypassed 'Post'" in the same sentence as the items run again. Waits ignored and a reset of the retry counts read as in 6c.
 - *Why:* "'Post' is bypassed: it counts as succeeded and does not run" is the plan's wording for the operator before choosing; afterwards the record should say what happened in one short phrase.
 - *Status:* Built (6e). *Source:* WORKFLOWS_PHASE7.md, step 6.
+
+**D174. A step can be told which attempt of its job it is in, and Simulate uses this to fail the first time only.** The runner gives the executor the attempt number (`--attempt`, 1 for a first run), the executor puts it in each step's configuration as `Attempt`, and Simulate's new `FailUntilAttempt` setting (with Fail) makes it fail only while the attempt is below that number. 0, the default, fails every time as before.
+- *Why:* the owner's sample needs a job that fails once and passes when the parent's Reaction resumes it, and nothing in a job could see its own attempt. A few lines, no new concept; the alternative (a file the operator creates) would make the second try fail too and could not show a Reaction that works. *Status:* Built (7a). *Source:* WORKFLOWS_PHASE7.md, step 7, question (a).
+
+**D175. `DEV-RESTARTS_SAMPLE` uses `DEV-RESUME_SAMPLE` and `DEV-UNKNOWN_SAMPLE` as shared jobs, not copies.** Load and Post are those jobs; Reconcile is an embedded workflow (Match, then Balance, which fails the first time) with its own Reaction *Rerun, Resume from failure, at most 2*; Notify and Report are small stand-ins. The walk-through is in the seed comment.
+- *Why:* one set of samples to keep in step; each restart choice then has a place to click. *Status:* Built (7a). *Source:* WORKFLOWS_PHASE7.md, step 7, question (b).
+
+**D176. A workflow run that Succeeded can be reopened by Advanced only, and the page offers just that.** *Rerun ▸* now shows on a Succeeded workflow run; Resume and Restart from beginning are disabled, and *Advanced…* works. The plan says so with `advanced_only`. A job on its own that Succeeded is never offered a rerun (D170's rule from step 5).
+- *Why:* the owner, 2026-10-22; the API already took a Succeeded workflow run (D161), and the page did not offer it. *Status:* Built (7b). *Source:* WORKFLOWS_PHASE7.md, step 7b.
+
+**D177. In Advanced, a top-level item that did not run waits its turn: it runs again when its waits are met, unless the operator chooses *Leave Not run*.** This is part of how Resume already treats such items, and it changes D161 for them: every other item not named still stays as it ended. It does not apply to the shortcut *Only the jobs chosen*, to items inside a workflow, or to a Failed or Skipped item. The server fills the default in (`app/rerun_advanced.py`, `_waiting_their_turn`), so the plan, the request and the run all see the same list; the engine is unchanged and `leave` never reaches it.
+- *Why:* the owner, 2026-10-22: Not run means it did not run, so it should not need to be restarted by hand after a Bypass of the job it waited for. Re-evaluating is harmless: a rule or wait that still does not hold ends Not run again. *Status:* Built. *Source:* WORKFLOWS_PHASE7.md, step 7.
+

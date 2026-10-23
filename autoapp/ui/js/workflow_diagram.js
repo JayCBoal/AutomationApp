@@ -123,8 +123,6 @@ const WorkflowDiagram = (() => {
         if (item.disabledHere === "STOP") list.push(["disabled", "Disabled here: it stops here, and what needs it to succeed does not run"]);
         if (item.disabledHere === "PASS_THROUGH") list.push(["pass", "Disabled here to pass through: it counts as succeeded without running"]);
         if (item.changed) list.push(["changed", "Changed since it was last saved: Save keeps the change, Cancel drops it"]);
-        if (item.reactions) list.push(["reactions", item.reactions]);
-        if (item.attempt > 1) list.push([`attempts:${item.attempt}`, `Run ${item.attempt} times in this run: see Job History for each attempt`]);
         if (item.outside === "FILES") list.push(["files", "Files at an endpoint, on this server"]);
         if (item.outside === "TIME") list.push([item.calendar ? "calendar" : "clock", "A condition on the time"]);
         if (item.outside === "JOB") list.push(["workflow", "A job, or a whole workflow, outside this one"]);
@@ -140,21 +138,32 @@ const WorkflowDiagram = (() => {
         return item.status ? item.statusText : item.sub;
     }
 
+    /** ×2 and so on, beside the first line of the name: [text, tooltip], or null when the item ran once. */
+    function attemptMark(item) {
+        return item.attempt > 1 ? ["×" + item.attempt, `Run ${item.attempt} times in this run: see Job History for each attempt`] : null;
+    }
+
     function boxModel(item) {
         const lines = wrapName(item.name || "(no name yet)");
+        const attempts = attemptMark(item);
         const icons = markers(item);
         const sub = subLine(item);
         const subLines = sub ? wrapName(sub, SUB_MAX).length : 0;
         const external = item.outside ? tag(item.outside) : null;
-        const width = Math.max(MIN_WIDTH, ...lines.map(l => textWidth(l, NAME_FONT)),
+        const reactions = item.reactions ? ["reactions", item.reactions] : null;     // beside the name, with ×2
+        const beside = (reactions ? ICON + 4 : 0) + (attempts ? textWidth(attempts[0], SMALL_FONT) : 0);
+        const firstLine = textWidth(lines[0], NAME_FONT) + (beside ? ATTEMPT_GAP + beside : 0);
+        const width = Math.max(MIN_WIDTH, firstLine, ...lines.map(l => textWidth(l, NAME_FONT)),
                                icons.length * (ICON + 4) + (external ? textWidth(external, EXTERNAL_FONT) + 4 : 0),
                                sub ? Math.min(textWidth(sub, SMALL_FONT), SUB_MAX) : 0);
         const height = PAD + (icons.length ? ICON + 4 : 0) + lines.length * LINE + subLines * SUB_LINE + PAD;
         const indent = item.frame && item.folded ? FOLD_INDENT : 0;        // room for the arrow at the top left
-        return { lines, icons, sub, external, indent, width: Math.ceil(width + 2 * PAD + indent), height: Math.ceil(height + (indent && !icons.length ? ICON + 4 : 0)) };
+        return { lines, icons, attempts, reactions, sub, external, indent, width: Math.ceil(width + 2 * PAD + indent), height: Math.ceil(height + (indent && !icons.length ? ICON + 4 : 0)) };
     }
 
     // ---------- The graph elkjs lays out ----------
+
+    const ATTEMPT_GAP = 8;      // between the name and the ×2 beside it
 
     const FRAME_PADDING = "[top=40,left=14,bottom=14,right=14]";
     const FRAME_HEAD = 34, FOLD_INDENT = 22;
@@ -390,6 +399,16 @@ const WorkflowDiagram = (() => {
             }
             y += ICON + 4;
         }
+        // At the right of the first line, so they add no height: the Reactions icon, then ×2 at the edge
+        let right = at.x + model.width - PAD;
+        if (model.attempts) {
+            const mark = svg("text", { class: "wf-attempts", x: right, y: y + 12, "text-anchor": "end", fill: css("--muted"),
+                                       style: `font: ${SMALL_FONT}; font-weight: 700` }, g);
+            mark.textContent = model.attempts[0];
+            tooltip(mark, model.attempts[1]);
+            right -= textWidth(model.attempts[0], SMALL_FONT) + 4;
+        }
+        if (model.reactions) icon(g, "reactions", right - ICON, y, css("--muted"), model.reactions[1]);
         for (const line of model.lines) {
             svg("text", { x: at.x + PAD, y: y + 12, fill: look.muted ? css("--muted") : css("--text"), style: `font: ${NAME_FONT}` }, g).textContent = line;
             y += LINE;

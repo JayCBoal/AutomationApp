@@ -149,7 +149,7 @@ def run_job(db: Session, job_key: str, instance_id: str, spool_dir: str,
                 raise ValueError(problem)
             executor = Executor(db, scope_engine, telemetry, telemetry.deliver, control=control, resume=resume,
                                 count_as_done=count_as_done, start_at=int(from_step) if from_step else None,
-                                skip=set(skip_steps or []))
+                                skip=set(skip_steps or []), attempt=attempt)
             executor.run_all(prepared_steps)
 
         except Killed:

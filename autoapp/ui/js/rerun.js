@@ -47,7 +47,8 @@ const RERUN_PANEL = `
                             <td x-show="!advShortcut">
                                 <select :aria-label="'What to do with ' + choice.path" :value="advItems[choice.path] || ''"
                                         @change="advSet(choice.path, $event.target.value)">
-                                    <option value="">Leave as it ended</option>
+                                    <option value="" x-text="advWaitsItsTurn(choice) ? 'Run when its waits are met' : 'Leave as it ended'">Leave as it ended</option>
+                                    <option value="leave" x-show="advWaitsItsTurn(choice)">Leave Not run</option>
                                     <option value="resume" :disabled="!choice.can_resume">Resume</option>
                                     <option value="restart">Restart from the beginning</option>
                                     <option value="bypass">Bypass (counts as succeeded)</option>
@@ -127,7 +128,7 @@ const RERUN_PANEL = `
             </fieldset>
             <template x-if="rerunPlan.can_resume && rerunPlan.values.length && !rerunPlan.value_levels.length">
             <fieldset id="rerun-values">
-                <p class="small">The values Resume uses for the job&rsquo;s \${...} placeholders:</p>
+                <p class="small"><span x-text="valuesWho()"></span> for the job&rsquo;s \${...} placeholders:</p>
                 <label><input type="radio" name="rerun-values" value="as_were" x-model="valuesChoice"> Use as they were</label>
                 <label><input type="radio" name="rerun-values" value="refresh" x-model="valuesChoice"> Refresh</label>
                 <label><input type="radio" name="rerun-values" value="edit" x-model="valuesChoice"> Edit</label>
@@ -155,7 +156,7 @@ const RERUN_PANEL = `
             </template>
             <template x-if="rerunPlan.can_resume && rerunPlan.value_levels.length">
             <fieldset id="rerun-levels">
-                <p class="small">The values Resume uses for the \${...} placeholders of the workflow and its jobs:</p>
+                <p class="small"><span x-text="valuesWho()"></span> for the \${...} placeholders of the workflow and its jobs:</p>
                 <label><input type="radio" name="rerun-level-values" value="as_were" x-model="valuesChoice"> Use as they were</label>
                 <label><input type="radio" name="rerun-level-values" value="refresh" x-model="valuesChoice"> Refresh</label>
                 <label><input type="radio" name="rerun-level-values" value="edit" x-model="valuesChoice"> Edit</label>
@@ -196,7 +197,7 @@ const RERUN_PANEL = `
                 <button type="button" class="secondary" id="rerun-restart" x-show="!advancedOn" @click="rerun('restart')"
                         :disabled="rerunBusy || !rerunPlan.can_restart">Restart from beginning</button>
                 <button type="button" class="secondary" id="rerun-advanced-open" x-show="!advancedOn" @click="openAdvanced()"
-                        :disabled="rerunBusy || Boolean(rerunPlan.refusal)">Advanced&hellip;</button>
+                        :disabled="rerunBusy || (Boolean(rerunPlan.refusal) && !rerunPlan.advanced_only)">Advanced&hellip;</button>
                 <button type="button" class="primary" id="rerun-advanced-run" x-show="advancedOn" @click="rerun('advanced')"
                         :disabled="rerunBusy || !advancedReady()">Run</button>
                 <button type="button" class="secondary" id="rerun-advanced-back" x-show="advancedOn" @click="closeAdvanced()">Back</button>
@@ -235,8 +236,11 @@ function rerunDialog() {
         advSkip: [],                // a job on its own: the steps to skip
         advAsked: 0,                // which preview is the latest, so a slow one cannot overwrite a newer one
 
-        /** A run that failed can be run again; the server says whether, and why not. */
-        canRerun(run) { return Boolean(run) && run.status === "FAILED"; },
+        /** A run that failed can be run again, and a workflow run that succeeded by Advanced only; the server says whether, and why not. */
+        canRerun(run) {
+            if (!run) return false;
+            return run.status === "FAILED" || (run.status === "SUCCESS" && run.job_type === "WORKFLOW" && !run.parent_run_id);
+        },
 
         async openRerun(runId) {
             this.error = "";
@@ -253,6 +257,8 @@ function rerunDialog() {
             }
             this.$nextTick(() => document.getElementById("rerun-panel")?.scrollIntoView({ block: "nearest" }));
         },
+        /** Who the values are for: Resume, or whatever Advanced restarts. */
+        valuesWho() { return this.advancedOn ? "The values the items restarted here use" : "The values Resume uses"; },
         closeRerun() { this.rerunPlan = null; this.basePlan = null; this.advancedOn = false; },
 
         resetAdvanced() {
@@ -326,10 +332,15 @@ function rerunDialog() {
             this.advRefresh();
         },
 
+        /** An item at the top that did not run: unless left alone it runs when its waits are met, as on a Resume. */
+        advWaitsItsTurn(choice) { return choice.status === "NOT_RUN" && choice.depth === 0; },
+
         /** An item that no longer runs again has no wait left to ignore. */
         advDropIgnored() {
             for (const path of Object.keys(this.advIgnore)) {
-                if (!["resume", "restart"].includes(this.advItems[path])) delete this.advIgnore[path];
+                const choice = this.rerunPlan.choices.find(c => c.path === path);
+                const runs = ["resume", "restart"].includes(this.advItems[path]) || (choice && this.advWaitsItsTurn(choice) && !this.advItems[path]);
+                if (!runs) delete this.advIgnore[path];
             }
         },
 

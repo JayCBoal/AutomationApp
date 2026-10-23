@@ -704,3 +704,77 @@ INSERT INTO JobStepParameters (JobStep_id, ParameterName, ParameterValue) VALUES
 (52, 'EffectUnknown',  'True'),
 (52, 'FailMessage',    'The connection dropped while posting'),
 (53, 'Messages',       'Posting is done');
+
+-- ----------------------------------------------------------------------------
+-- 12. A sample of every restart choice (docs/WORKFLOWS_PHASE7.md): DEV-RESTARTS_SAMPLE. It uses the two jobs
+--     above as shared jobs, so there is one set of samples to keep in step, and adds an embedded workflow and
+--     three small jobs. Rehearsed walk-through (Run Job, then Job History):
+--      1. Run it. Load copies three files and fails at the empty fourth; everything after it is Not run.
+--      2. Put something in restart_4.csv (the legal application's restarts_in folder). Rerun, Resume: Load does
+--         only the rest, the net file count is five, and Post runs and fails "effect unknown".
+--      3. Rerun on Post asks what to do with the unknown step. Choose "Count it as done" (Bypass), or Edit the
+--         values and set POST_FAILS to False to run it again.
+--      4. Reconcile runs: Balance fails the first time, and Reconcile's own Reaction resumes the frame (wait 2
+--         seconds, at most twice), so Match is not run again. The diagram shows x2; the run's Restarts list
+--         says "by a Reaction".
+--      5. Notify and Report run. To try the rest, rerun with Advanced...: choose Don't run on Notify and
+--         Ignore a prerequisite on Report, or From a chosen job at Report.
+--      6. Edit values on a Resume: Report reads ${REGION}; change it for the rerun only.
+-- ----------------------------------------------------------------------------
+INSERT INTO MasterObjects (id, ObjectType) VALUES
+(58, 'JOB'), (59, 'JOB'), (60, 'JOB'), (61, 'JOB'), (62, 'JOB'), (63, 'JOB');
+
+INSERT INTO Jobs (MasterObject_id, JobKey, JobType, Description) VALUES
+(58, 'DEV-RESTARTS_SAMPLE', 'WORKFLOW', 'Sample workflow: Resume, Bypass, Don''t run, Ignore a prerequisite and Advanced from a chosen job');
+INSERT INTO Jobs (MasterObject_id, JobKey, JobType, Description, Owner_MasterObject_id) VALUES
+(59, 'DEV-RESTARTS_SAMPLE.Reconcile', 'WORKFLOW', 'Embedded: Match then Balance; Balance fails the first time', 58);
+INSERT INTO Jobs (MasterObject_id, JobKey, Description, Owner_MasterObject_id) VALUES
+(60, 'DEV-RESTARTS_SAMPLE.Reconcile.Match',   'Embedded: matches the postings', 59),
+(61, 'DEV-RESTARTS_SAMPLE.Reconcile.Balance', 'Embedded: balances them; fails the first time only', 59);
+INSERT INTO Jobs (MasterObject_id, JobKey, Description) VALUES
+(62, 'DEV-SIM-RESTARTS_NOTIFY', 'Stand-in: tells the team the posting is done'),
+(63, 'DEV-SIM-RESTARTS_REPORT', 'Stand-in: reports for a region once Reconcile and Notify are done');
+
+INSERT INTO Variables (MasterObject_id, VarName, VarValue, Description) VALUES
+(58, 'REGION', 'EU', 'The region the report is for');
+
+INSERT INTO JobSteps (id, Job_MasterObject_id, StepType_id, StepOrder, StepTitle, StepName)
+SELECT 54, 60, id, 1, 'Match', 'Match' FROM StepTypes WHERE Code = 'SIMULATE';
+INSERT INTO JobSteps (id, Job_MasterObject_id, StepType_id, StepOrder, StepTitle, StepName)
+SELECT 55, 61, id, 1, 'Balance', 'Balance' FROM StepTypes WHERE Code = 'SIMULATE';
+INSERT INTO JobSteps (id, Job_MasterObject_id, StepType_id, StepOrder, StepTitle, StepName)
+SELECT 56, 62, id, 1, 'Notify', 'Notify' FROM StepTypes WHERE Code = 'SIMULATE';
+INSERT INTO JobSteps (id, Job_MasterObject_id, StepType_id, StepOrder, StepTitle, StepName)
+SELECT 57, 63, id, 1, 'Report', 'Report' FROM StepTypes WHERE Code = 'SIMULATE';
+
+INSERT INTO JobStepParameters (JobStep_id, ParameterName, ParameterValue) VALUES
+(54, 'Messages',         'Matching the postings'),
+(55, 'Messages',         'Balancing the postings'),
+(55, 'Fail',             'True'),
+(55, 'FailUntilAttempt', '2'),
+(55, 'FailMessage',      'The totals do not balance yet'),
+(56, 'Messages',         'Telling the team the posting is done'),
+(57, 'Messages',         'Reporting for ${REGION}');
+
+INSERT INTO WorkflowItems (id, Workflow_MasterObject_id, ItemName, Job_MasterObject_id, JoinRule, StartRule, ItemOrder, ReactionsOverridden) VALUES
+(35, 58, 'Load',      56, 'ALL', NULL, 1, 0),
+(36, 58, 'Post',      57, 'ALL', NULL, 2, 0),
+(37, 58, 'Reconcile', 59, 'ALL', NULL, 3, 1),
+(38, 58, 'Notify',    62, 'ALL', NULL, 4, 0),
+(39, 58, 'Report',    63, 'ALL', NULL, 5, 0),
+(40, 59, 'Match',     60, 'ALL', NULL, 1, 0),
+(41, 59, 'Balance',   61, 'ALL', NULL, 2, 0);
+
+INSERT INTO WorkflowPrerequisites (id, Item_id, TargetItem_id, Test, ReturnCodes) VALUES
+(30, 36, 35, 'SUCCESS', NULL),
+(31, 37, 36, 'SUCCESS', NULL),
+(32, 38, 36, 'SUCCESS', NULL),
+(33, 39, 37, 'SUCCESS', NULL),
+(34, 39, 38, 'SUCCESS', NULL),
+(35, 41, 40, 'SUCCESS', NULL);
+
+-- Reconcile's Reaction: if it fails, resume it (not start it over), after 2 seconds, at most twice
+INSERT INTO Reactions (id, Job_MasterObject_id, Item_id, Section, ReactionOrder, WhenTest, WhenReturnCodes) VALUES
+(6, NULL, 37, 'NEXT', 1, 'FAILED', NULL);
+INSERT INTO ReactionActions (id, Reaction_id, ActionOrder, Action, MaxTimes, WaitSeconds, RerunMode, TargetItem_id) VALUES
+(6, 6, 1, 'RERUN', 2, 2, 'RESUME', NULL);

@@ -126,3 +126,41 @@ def test_the_restarts_list_and_audit_log_say_which_item_was_bypassed(failed_run,
     assert "Bypassed 'Load'." in page.locator("#restarts-box").inner_text()
     said = " ".join(a.Details for a in db.query(Audit).filter(Audit.Action == "JOB_RERUN_ADVANCED"))
     assert "bypassed 'Load'" in said
+
+
+def test_a_workflow_that_succeeded_offers_advanced_only(page, sim, flow):
+    flow("WF", [("Extract", sim("EXTRACT")), ("Load", sim("LOAD"), ["Extract"])])
+    page.goto("/ui/workflow.html?key=WF")
+    page.locator("#run-button").click()
+    wait_for_status(page, "Succeeded")
+
+    page.locator("#rerun-button").click()
+    page.locator("#rerun-advanced-open").wait_for()
+
+    assert page.locator("#rerun-resume").is_disabled() and page.locator("#rerun-restart").is_disabled()
+    page.locator("#rerun-advanced-open").click()
+    page.locator("#rerun-advanced").wait_for()
+    row(page, "Load").locator("select").select_option("restart")
+    page.wait_for_function("() => document.querySelector('#rerun-advanced-run').disabled === false")
+    page.locator("#rerun-advanced-run").click()
+    page.wait_for_function("() => document.querySelector('#run-items')?.textContent.includes('attempt 2')", timeout=60000)
+
+
+
+def test_an_item_that_did_not_run_waits_its_turn_unless_it_is_left_not_run(failed_run):
+    page = failed_run
+    open_advanced(page)
+    report = row(page, "Report").locator("select")
+
+    assert report.locator("option:checked").inner_text() == "Run when its waits are met"
+    assert row(page, "Extract").locator("option:checked").inner_text() == "Leave as it ended"
+    row(page, "Load").locator("select").select_option("bypass")
+    page.wait_for_function("() => document.querySelector('#rerun-items')?.textContent.includes('Report')")
+
+    report.select_option("leave")
+    page.wait_for_function("() => !document.querySelector('#rerun-items').textContent.includes('Report')")
+    report.select_option("")
+    page.wait_for_function("() => document.querySelector('#rerun-items').textContent.includes('Report')")
+    page.locator("#rerun-advanced-run").click()
+
+    wait_for_status(page, "Succeeded")      # Report ran: the whole workflow succeeded

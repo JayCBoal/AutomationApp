@@ -43,7 +43,8 @@ class JobFailed(Exception):
 class Executor:
     def __init__(self, db: Session, scope_engine: ScopeResolutionEngine, telemetry: LocalSpoolTelemetryClient,
                  after_step: Callable[[], None], control=None, resume: Optional[ControlRecord] = None,
-                 count_as_done: Optional[str] = None, start_at: Optional[int] = None, skip: Optional[Set[str]] = None):
+                 count_as_done: Optional[str] = None, start_at: Optional[int] = None, skip: Optional[Set[str]] = None,
+                 attempt: int = 1):
         self.db, self.scope_engine, self.telemetry = db, scope_engine, telemetry
         self.after_step = after_step            # sends what the step recorded
         self.control = control or NullControl() # what this run keeps so a later attempt can pick up (engine/control_file.py)
@@ -51,6 +52,7 @@ class Executor:
         self.count_as_done = count_as_done      # the key of a step the operator says to count as done, not run again
         self.start_at = start_at                # Advanced: the top-level step the run starts at; unfinished ones before it are passed over
         self.skip = skip or set()               # Advanced: numbers of top-level steps not to run
+        self.attempt = attempt                  # which attempt of the job this is; a step may be told (Simulate's FailUntilAttempt)
         self.context = RunContext()
         self.loops: List[LoopFolder] = []       # the folders of the For Each File loops the run is inside
         self.passes: List[Tuple[str, str]] = [] # each of those loops' pass: ("File 2 of 5: a.csv", "2")
@@ -224,7 +226,7 @@ class Executor:
             "PassLabel": ", ".join(label for label, _ in self.passes) or None,
             "StepType": step.step_type.TypeName, "Title": step.Title, "RawParams": raw_params,
             "SourceEndpointID": resolved.source_endpoint_id, "DestEndpointID": resolved.dest_endpoint_id,
-            "Journal": Journal(self.control, self.resume, self._key(prepared)),
+            "Journal": Journal(self.control, self.resume, self._key(prepared)), "Attempt": self.attempt,
         }
 
     def _label(self, prepared: PreparedStep) -> str:

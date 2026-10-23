@@ -70,3 +70,16 @@ def test_refresh_shows_a_workflow_value_that_now_reads_differently(valued, db):
     changes = page.locator(".rerun-level[data-kind=workflow] .rerun-level-changes")
     assert "Region" in changes.inner_text() and "EU" in changes.inner_text() and "US" in changes.inner_text()
     assert "Extract" in page.locator("#rerun-kept-jobs").inner_text()
+
+
+def test_the_values_heading_names_what_advanced_restarts(valued):
+    page = valued
+    assert "Resume uses" in page.locator("#rerun-levels > p").first.inner_text()
+    page.locator("#rerun-advanced-open").click()
+    page.locator("#rerun-advanced").wait_for()
+    page.locator("#rerun-choices tr[data-path='Load'] select").select_option("restart")
+    page.locator("#rerun-levels").wait_for()
+
+    heading = page.locator("#rerun-levels > p").first.inner_text()
+
+    assert "items restarted here" in heading and "Resume uses" not in heading

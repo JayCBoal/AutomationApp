@@ -73,6 +73,8 @@ class RerunPlan(BaseModel):
     can_restart: bool
     can_resume: bool
     refusal: Optional[str] = Field(None, description="Why neither can be done, in words")
+    advanced_only: bool = Field(False, description=(
+        "A run that Succeeded: Resume and Restart are refused, but Advanced can still run items of it again"))
     resume_problem: Optional[str] = Field(None, description="Why Resume cannot be done, in words; Restart can")
     steps_finished: int = 0
     step_to_decide: Optional[StepToDecide] = Field(
@@ -179,6 +181,7 @@ def make_workflow_plan(db: Session, run: JobRun) -> RerunPlan:
     plan = RerunPlan(run_id=run.RunID, job_key=run.JobKey, attempt=run.Attempt, can_restart=tree.refusal is None,
                      can_resume=False, refusal=tree.refusal, scope=tree.scope, reopens_run_id=tree.top.RunID)
     if tree.refusal:
+        plan.advanced_only = tree.top.Status == "SUCCESS" and rerun_tree.make_advanced_plan(db, run).refusal is None
         return plan
     plan.can_resume, plan.resume_problem = tree.resume_problem is None, tree.resume_problem
     plan.items = [ItemPlan(path=p.path, job_key=p.job_key, what=_what(p)) for p in tree.picks]

@@ -160,7 +160,7 @@ def test_an_ignore_that_makes_no_sense_is_refused_and_nothing_is_recorded(sim, f
     first = blocked_run(sim, flow, live_api)
 
     no_such_wait = rerun(live_api, first, items={"Load": "restart"}, ignore={"Load": ["Zed"]})
-    not_run_again = rerun(live_api, first, items={"A": "restart"}, ignore={"Load": ["A"]})
+    not_run_again = rerun(live_api, first, items={"A": "restart", "Load": "leave"}, ignore={"Load": ["A"]})
     passed_over = rerun(live_api, first, items={"Load": "bypass"}, ignore={"Load": ["A"]})
     unknown_item = rerun(live_api, first, items={"Load": "restart"}, ignore={"Nope": ["A"]})
 

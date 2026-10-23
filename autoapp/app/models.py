@@ -535,6 +535,13 @@ class Reaction(Base):
 
     SECTIONS = ("NEXT", "ALSO")
     TESTS = ("SUCCESS", "FAILED", "ENDED", "RC")
+    # The Whens of Phase 8, judged while the run goes on (docs/WORKFLOWS_PHASE8.md). Not yet accepted by the
+    # Reactions API: they are added to TESTS when the workflow runner can judge them.
+    TIME_TESTS = ("NOT_STARTED_BY", "NOT_ENDED_BY", "RUNS_LONGER_THAN")
+    # How WhenTimeKind gives the time: CLOCK (a time of day, WhenClockTime), AFTER_START (WhenMinutes after the
+    # run, or for a job in a workflow the workflow, started), AFTER_READY (WhenMinutes after the job's own
+    # prerequisites were met), LENGTH (WhenMinutes), HISTORY (WhenPercent over the average of its last WhenRunCount runs)
+    TIME_KINDS = ("CLOCK", "AFTER_START", "AFTER_READY", "LENGTH", "HISTORY")
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     Job_MasterObject_id = Column(Integer, ForeignKey('Jobs.MasterObject_id', ondelete='CASCADE'), nullable=True, index=True)
@@ -544,6 +551,12 @@ class Reaction(Base):
     WhenTest = Column(String(20), nullable=False, default="FAILED", server_default="FAILED")
     WhenReturnCodes = Column(String(100), nullable=True)
     WhenCondition = Column(Text, nullable=True)
+    # Only for a time When (NOT_STARTED_BY, NOT_ENDED_BY, RUNS_LONGER_THAN): how its time is given
+    WhenTimeKind = Column(String(12), nullable=True)
+    WhenClockTime = Column(String(5), nullable=True)
+    WhenMinutes = Column(Integer, nullable=True)
+    WhenPercent = Column(Integer, nullable=True)
+    WhenRunCount = Column(Integer, nullable=True)
 
     actions = relationship("ReactionAction", backref="reaction", cascade="all, delete-orphan",
                            passive_deletes=True, order_by="ReactionAction.ActionOrder")
@@ -557,12 +570,14 @@ class ReactionAction(Base):
     and everything between it and this job, at most MaxTimes), SKIP (TargetItem), SKIP_BRANCH (what
     waits for this job), KILL_WORKFLOW. A side effect changes nothing in the run: START_WORKFLOW
     (TargetJob). RERUN_FROM, SKIP, SKIP_BRANCH and KILL_WORKFLOW only make sense on a use.
+    MARK_AS_LATE and NOTIFY (Alert) are side effects too (Phase 8).
     """
     __tablename__ = 'ReactionActions'
 
     DECISIONS = ("COUNT_AS_SUCCEEDED", "COUNT_AS_FAILED", "RERUN", "RERUN_FROM", "SKIP", "SKIP_BRANCH", "KILL_WORKFLOW")
     SIDE_EFFECTS = ("START_WORKFLOW",)
     ONLY_IN_WORKFLOWS = ("RERUN_FROM", "SKIP", "SKIP_BRANCH", "KILL_WORKFLOW")
+    TIME_SIDE_EFFECTS = ("MARK_AS_LATE", "NOTIFY")
     RERUN_MODES = ("RESTART", "RESUME")
 
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -576,9 +591,90 @@ class ReactionAction(Base):
     TargetItem_id = Column(Integer, ForeignKey('WorkflowItems.id', ondelete='CASCADE'), nullable=True)
     # The workflow START_WORKFLOW starts; a workflow named here cannot be deleted
     TargetJob_MasterObject_id = Column(Integer, ForeignKey('Jobs.MasterObject_id', ondelete='RESTRICT'), nullable=True)
+    # NOTIFY only: the alert that says who is told and what; an alert named here cannot be deleted
+    Alert_id = Column(Integer, ForeignKey('Alerts.id', ondelete='RESTRICT'), nullable=True)
+    # NOTIFY only: do not send when a job this one waited for was late (its own alert already told people)
+    SkipIfCauseLate = Column(Boolean, nullable=False, default=False, server_default=false())
 
     target_item = relationship("WorkflowItem", foreign_keys=[TargetItem_id])
     target_job = relationship("Job", foreign_keys=[TargetJob_MasterObject_id])
+    alert = relationship("Alert", foreign_keys=[Alert_id])
+
+
+class Alert(Base):
+    """
+    Who is told, and what they are told, when a Reaction's Notify fires (docs/WORKFLOWS_PHASE8.md). The Message and
+    Subject may use the same %{...} and ${...} values a step can, plus the run's facts. Jobs and workflows name it
+    from ReactionActions.Alert_id; that is its "used by" list.
+    """
+    __tablename__ = 'Alerts'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    Name = Column(String(100), nullable=False, unique=True)
+    Description = Column(String(256), nullable=True)
+    Subject = Column(String(255), nullable=False)
+    Message = Column(Text, nullable=False)
+    CreatedDateTime = Column(PreciseDateTime, nullable=False, default=lambda: utcnow())
+    UpdatedDateTime = Column(PreciseDateTime, nullable=True, onupdate=lambda: utcnow())
+
+    recipients = relationship("AlertRecipient", backref="alert", cascade="all, delete-orphan",
+                              passive_deletes=True, order_by="AlertRecipient.RecipientOrder")
+
+
+class AlertRecipient(Base):
+    """One email address an alert is sent to."""
+    __tablename__ = 'AlertRecipients'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    Alert_id = Column(Integer, ForeignKey('Alerts.id', ondelete='CASCADE'), nullable=False, index=True)
+    RecipientOrder = Column(Integer, nullable=False, default=1, server_default=text('1'))
+    Address = Column(String(255), nullable=False)
+
+
+class AlertDelivery(Base):
+    """
+    One message to send, in the outbox: Notify adds it as PENDING, and a sender inside the server sends it by SMTP and
+    records SENT, or FAILED with the reason after its tries (Attempts). Notify never waits for it, so a job never waits
+    for a mail server. Everything the message needs is copied here as text, so it outlives the alert being edited or
+    deleted. RunID and WorkflowPath say which run it came from; IsTest is the Alerts page's Send a test.
+    """
+    __tablename__ = 'AlertDeliveries'
+
+    STATUSES = ("PENDING", "SENT", "FAILED")
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    Alert_id = Column(Integer, ForeignKey('Alerts.id', ondelete='SET NULL'), nullable=True, index=True)
+    AlertName = Column(String(100), nullable=False)
+    RunID = Column(String(36), nullable=True, index=True)
+    WorkflowPath = Column(String(1000), nullable=True)
+    Recipients = Column(Text, nullable=False)
+    Subject = Column(String(255), nullable=False)
+    Body = Column(Text, nullable=False)
+    IsTest = Column(Boolean, nullable=False, default=False, server_default=false())
+    Status = Column(String(10), nullable=False, default="PENDING", server_default="PENDING", index=True)
+    Attempts = Column(Integer, nullable=False, default=0, server_default=text('0'))
+    LastError = Column(Text, nullable=True)
+    CreatedDateTime = Column(PreciseDateTime, nullable=False, default=lambda: utcnow())
+    NextAttemptDateTime = Column(PreciseDateTime, nullable=True)
+    SentDateTime = Column(PreciseDateTime, nullable=True)
+
+
+class MailSetting(Base):
+    """
+    Where the sender sends mail: one row (id 1). Always SMTP; in development Host points at the test mail server
+    (mail_sink). The login, if the server needs one, is a Credential, so its secret is kept as every secret is.
+    """
+    __tablename__ = 'MailSettings'
+
+    id = Column(Integer, primary_key=True)
+    Host = Column(String(255), nullable=False)
+    Port = Column(Integer, nullable=False, default=25, server_default=text('25'))
+    SenderAddress = Column(String(255), nullable=False)
+    UseTls = Column(Boolean, nullable=False, default=False, server_default=false())
+    Credential_MasterObject_id = Column(Integer, ForeignKey('Credentials.MasterObject_id', ondelete='SET NULL'),
+                                        nullable=True)
+
+    credential = relationship("Credential", foreign_keys=[Credential_MasterObject_id])
 
 
 # ============================================================================
@@ -634,6 +730,11 @@ class JobRun(Base):
     # A workflow run's variables, fixed as it starts (engine/workflow_vars.py): its own and its tags',
     # and each use's, as JSON. A secret is kept by name only, never its value
     WorkflowVariables = Column(Text, nullable=True)
+    # Marked as late: when the first missed deadline was noticed, why, and what it was waiting for (see
+    # docs/WORKFLOWS_PHASE8.md). A record, not a status; it stays after the job catches up
+    LateDateTime = Column(PreciseDateTime, nullable=True)
+    LateReason = Column(Text, nullable=True)
+    LateCause = Column(Text, nullable=True)
 
     job = relationship("Job")
     operations = relationship("Operation", back_populates="run", cascade="all, delete-orphan",
@@ -668,6 +769,13 @@ class WorkflowRunItem(Base):
     Attempt = Column(Integer, nullable=False, default=0, server_default=text('0'))
     StartedDateTime = Column(PreciseDateTime, nullable=True)
     EndedDateTime = Column(PreciseDateTime, nullable=True)
+    # When the item's own prerequisites were met: "within N minutes of being ready" counts from here
+    ReadyDateTime = Column(PreciseDateTime, nullable=True)
+    # Marked as late: when the first missed deadline was noticed, why, and what it was waiting for (see
+    # docs/WORKFLOWS_PHASE8.md). A record, not a status; it stays after the job catches up
+    LateDateTime = Column(PreciseDateTime, nullable=True)
+    LateReason = Column(Text, nullable=True)
+    LateCause = Column(Text, nullable=True)
 
     child_run = relationship("JobRun", foreign_keys=[ChildRun_id])
 
@@ -677,12 +785,13 @@ class ReactionEvent(Base):
     A Reaction's action that fired after a job ended, or would have but had reached its limit
     (Result TOOK_EFFECT or LIMIT_REACHED). The record behind "at most N times", counted within
     a workflow run, and what the run view and the job log show. JobRun is the attempt it was
-    judged on; Action and Message are kept as text, so they survive the Reaction being edited.
+    judged on, empty when the job never started (a time When such as NOT_STARTED_BY: the item's path and the
+    workflow run say where it belongs); Action and Message are kept as text, so they survive the Reaction being edited.
     """
     __tablename__ = 'ReactionEvents'
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    JobRun_id = Column(Integer, ForeignKey('JobRuns.id', ondelete='CASCADE'), nullable=False, index=True)
+    JobRun_id = Column(Integer, ForeignKey('JobRuns.id', ondelete='CASCADE'), nullable=True, index=True)
     WorkflowRun_id = Column(Integer, ForeignKey('JobRuns.id', ondelete='CASCADE'), nullable=True, index=True)
     WorkflowPath = Column(String(1000), nullable=True)
     ReactionAction_id = Column(Integer, ForeignKey('ReactionActions.id', ondelete='SET NULL'), nullable=True)

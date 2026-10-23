@@ -29,6 +29,7 @@ DROP TABLE IF EXISTS ConditionChecks;
 DROP TABLE IF EXISTS WorkflowItems;
 DROP TABLE IF EXISTS TagAssignments;
 DROP TABLE IF EXISTS Sites;
+DROP TABLE IF EXISTS MailSettings;
 DROP TABLE IF EXISTS JobSteps;
 DROP TABLE IF EXISTS JobRuns;
 DROP TABLE IF EXISTS Variables;
@@ -40,12 +41,27 @@ DROP TABLE IF EXISTS Entities;
 DROP TABLE IF EXISTS Credentials;
 DROP TABLE IF EXISTS Audits;
 DROP TABLE IF EXISTS Applications;
+DROP TABLE IF EXISTS AlertRecipients;
+DROP TABLE IF EXISTS AlertDeliveries;
 DROP TABLE IF EXISTS StepTypes;
 DROP TABLE IF EXISTS Settings;
 DROP TABLE IF EXISTS RunRestarts;
 DROP TABLE IF EXISTS MasterObjects;
+DROP TABLE IF EXISTS Alerts;
 
 SET FOREIGN_KEY_CHECKS = 1;
+
+CREATE TABLE `Alerts` (
+	id INTEGER NOT NULL AUTO_INCREMENT, 
+	`Name` VARCHAR(100) NOT NULL, 
+	`Description` VARCHAR(256), 
+	`Subject` VARCHAR(255) NOT NULL, 
+	`Message` TEXT NOT NULL, 
+	`CreatedDateTime` DATETIME(6) NOT NULL, 
+	`UpdatedDateTime` DATETIME(6), 
+	PRIMARY KEY (id), 
+	UNIQUE (`Name`)
+)ENGINE=InnoDB CHARSET=utf8mb4 COLLATE utf8mb4_bin;
 
 CREATE TABLE `MasterObjects` (
 	id INTEGER NOT NULL AUTO_INCREMENT, 
@@ -88,6 +104,43 @@ CREATE TABLE `StepTypes` (
 	PRIMARY KEY (id), 
 	UNIQUE (`Code`)
 )ENGINE=InnoDB CHARSET=utf8mb4 COLLATE utf8mb4_bin;
+
+CREATE TABLE `AlertDeliveries` (
+	id INTEGER NOT NULL AUTO_INCREMENT, 
+	`Alert_id` INTEGER, 
+	`AlertName` VARCHAR(100) NOT NULL, 
+	`RunID` VARCHAR(36), 
+	`WorkflowPath` VARCHAR(1000), 
+	`Recipients` TEXT NOT NULL, 
+	`Subject` VARCHAR(255) NOT NULL, 
+	`Body` TEXT NOT NULL, 
+	`IsTest` BOOL NOT NULL DEFAULT false, 
+	`Status` VARCHAR(10) NOT NULL DEFAULT 'PENDING', 
+	`Attempts` INTEGER NOT NULL DEFAULT 0, 
+	`LastError` TEXT, 
+	`CreatedDateTime` DATETIME(6) NOT NULL, 
+	`NextAttemptDateTime` DATETIME(6), 
+	`SentDateTime` DATETIME(6), 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(`Alert_id`) REFERENCES `Alerts` (id) ON DELETE SET NULL
+)ENGINE=InnoDB CHARSET=utf8mb4 COLLATE utf8mb4_bin;
+
+CREATE INDEX `ix_AlertDeliveries_Alert_id` ON `AlertDeliveries` (`Alert_id`);
+
+CREATE INDEX `ix_AlertDeliveries_RunID` ON `AlertDeliveries` (`RunID`);
+
+CREATE INDEX `ix_AlertDeliveries_Status` ON `AlertDeliveries` (`Status`);
+
+CREATE TABLE `AlertRecipients` (
+	id INTEGER NOT NULL AUTO_INCREMENT, 
+	`Alert_id` INTEGER NOT NULL, 
+	`RecipientOrder` INTEGER NOT NULL DEFAULT 1, 
+	`Address` VARCHAR(255) NOT NULL, 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(`Alert_id`) REFERENCES `Alerts` (id) ON DELETE CASCADE
+)ENGINE=InnoDB CHARSET=utf8mb4 COLLATE utf8mb4_bin;
+
+CREATE INDEX `ix_AlertRecipients_Alert_id` ON `AlertRecipients` (`Alert_id`);
 
 CREATE TABLE `Applications` (
 	`MasterObject_id` INTEGER NOT NULL, 
@@ -229,6 +282,9 @@ CREATE TABLE `JobRuns` (
 	`LogFile` VARCHAR(500), 
 	`LogRemovedDateTime` DATETIME(6), 
 	`WorkflowVariables` TEXT, 
+	`LateDateTime` DATETIME(6), 
+	`LateReason` TEXT, 
+	`LateCause` TEXT, 
 	PRIMARY KEY (id), 
 	UNIQUE (`RunID`), 
 	FOREIGN KEY(`Job_MasterObject_id`) REFERENCES `Jobs` (`MasterObject_id`) ON DELETE SET NULL, 
@@ -255,6 +311,17 @@ CREATE TABLE `JobSteps` (
 	FOREIGN KEY(`Job_MasterObject_id`) REFERENCES `Jobs` (`MasterObject_id`) ON DELETE CASCADE, 
 	FOREIGN KEY(`StepType_id`) REFERENCES `StepTypes` (id), 
 	FOREIGN KEY(`ParentStep_id`) REFERENCES `JobSteps` (id) ON DELETE CASCADE
+)ENGINE=InnoDB CHARSET=utf8mb4 COLLATE utf8mb4_bin;
+
+CREATE TABLE `MailSettings` (
+	id INTEGER NOT NULL AUTO_INCREMENT, 
+	`Host` VARCHAR(255) NOT NULL, 
+	`Port` INTEGER NOT NULL DEFAULT 25, 
+	`SenderAddress` VARCHAR(255) NOT NULL, 
+	`UseTls` BOOL NOT NULL DEFAULT false, 
+	`Credential_MasterObject_id` INTEGER, 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(`Credential_MasterObject_id`) REFERENCES `Credentials` (`MasterObject_id`) ON DELETE SET NULL
 )ENGINE=InnoDB CHARSET=utf8mb4 COLLATE utf8mb4_bin;
 
 CREATE TABLE `Sites` (
@@ -349,6 +416,11 @@ CREATE TABLE `Reactions` (
 	`WhenTest` VARCHAR(20) NOT NULL DEFAULT 'FAILED', 
 	`WhenReturnCodes` VARCHAR(100), 
 	`WhenCondition` TEXT, 
+	`WhenTimeKind` VARCHAR(12), 
+	`WhenClockTime` VARCHAR(5), 
+	`WhenMinutes` INTEGER, 
+	`WhenPercent` INTEGER, 
+	`WhenRunCount` INTEGER, 
 	PRIMARY KEY (id), 
 	CONSTRAINT ck_reaction_one_owner CHECK ((Job_MasterObject_id IS NULL) <> (Item_id IS NULL)), 
 	FOREIGN KEY(`Job_MasterObject_id`) REFERENCES `Jobs` (`MasterObject_id`) ON DELETE CASCADE, 
@@ -408,6 +480,10 @@ CREATE TABLE `WorkflowRunItems` (
 	`Attempt` INTEGER NOT NULL DEFAULT 0, 
 	`StartedDateTime` DATETIME(6), 
 	`EndedDateTime` DATETIME(6), 
+	`ReadyDateTime` DATETIME(6), 
+	`LateDateTime` DATETIME(6), 
+	`LateReason` TEXT, 
+	`LateCause` TEXT, 
 	PRIMARY KEY (id), 
 	CONSTRAINT uq_workflow_run_item_path UNIQUE (`WorkflowRun_id`, `Path`), 
 	FOREIGN KEY(`WorkflowRun_id`) REFERENCES `JobRuns` (id) ON DELETE CASCADE, 
@@ -464,10 +540,13 @@ CREATE TABLE `ReactionActions` (
 	`RerunMode` VARCHAR(10), 
 	`TargetItem_id` INTEGER, 
 	`TargetJob_MasterObject_id` INTEGER, 
+	`Alert_id` INTEGER, 
+	`SkipIfCauseLate` BOOL NOT NULL DEFAULT false, 
 	PRIMARY KEY (id), 
 	FOREIGN KEY(`Reaction_id`) REFERENCES `Reactions` (id) ON DELETE CASCADE, 
 	FOREIGN KEY(`TargetItem_id`) REFERENCES `WorkflowItems` (id) ON DELETE CASCADE, 
-	FOREIGN KEY(`TargetJob_MasterObject_id`) REFERENCES `Jobs` (`MasterObject_id`) ON DELETE RESTRICT
+	FOREIGN KEY(`TargetJob_MasterObject_id`) REFERENCES `Jobs` (`MasterObject_id`) ON DELETE RESTRICT, 
+	FOREIGN KEY(`Alert_id`) REFERENCES `Alerts` (id) ON DELETE RESTRICT
 )ENGINE=InnoDB CHARSET=utf8mb4 COLLATE utf8mb4_bin;
 
 CREATE INDEX `ix_ReactionActions_Reaction_id` ON `ReactionActions` (`Reaction_id`);
@@ -506,7 +585,7 @@ CREATE INDEX `ix_WorkflowPrerequisites_Item_id` ON `WorkflowPrerequisites` (`Ite
 
 CREATE TABLE `ReactionEvents` (
 	id INTEGER NOT NULL AUTO_INCREMENT, 
-	`JobRun_id` INTEGER NOT NULL, 
+	`JobRun_id` INTEGER, 
 	`WorkflowRun_id` INTEGER, 
 	`WorkflowPath` VARCHAR(1000), 
 	`ReactionAction_id` INTEGER, 

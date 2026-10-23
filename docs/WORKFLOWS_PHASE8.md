@@ -2,7 +2,7 @@
 
 The eighth phase of [WORKFLOWS.md](WORKFLOWS.md) ("Implementation in phases"): **a job or workflow can react to the clock as well as to how it ended: it did not start by a time, did not end by a time, or is running longer than it should. It can be marked late, and people can be told.** It answers the SLA half of shortcoming 2 ([PROJECT_GOALS.md](PROJECT_GOALS.md) goal 2): in RunMyJobs an SLA is a separate feature, wholly apart from job statuses and very complex. Here it is one more kind of *When* in the Reactions list that already exists (D68).
 
-Status: **PLAN AGREED 2026-10-23, all questions answered (F: all three parts of proposal 13).** Nothing is built. The owner's answers to questions A to E are under "Settled by the owner". Decisions are D178 to D183 in WORKFLOW_DECISIONS.md.
+Status: **PLAN AGREED 2026-10-23, all questions answered (F: all three parts of proposal 13).** **Step 1 (model and migration) built 2026-10-23;** the rest is not. The owner's answers to questions A to E are under "Settled by the owner". Decisions are D178 to D183 in WORKFLOW_DECISIONS.md.
 
 ## Starting point
 
@@ -126,7 +126,7 @@ Already built, and what this phase uses:
 
 Each step is built and tested before the next; the full suites run at the stops marked.
 
-1. **Model and migration.** Time Whens on a Reaction (kind, clock time or length, relative-to, percent and run count); Mark as late and Notify as actions; the Late flag on runs and workflow items; Alerts, Alert recipients, Alert deliveries; mail settings, and the cause of a late flag. `autoapp_dev` migrated (backup first).
+1. **Model and migration. (Built.** Settled in the build: the Late flag lives on `JobRuns` and `WorkflowRunItems` as `LateDateTime`, `LateReason`, `LateCause`; `WorkflowRunItems.ReadyDateTime` holds when an item's prerequisites were met; the time Whens are in `Reaction.TIME_TESTS`, not yet in `TESTS`, so the API refuses them until the runner can judge them; the login for mail is a Credential. `migrate_late_alerts.py`. `ReactionEvents.JobRun_id` is now optional (owner's choice, 2026-10-23): an event for an item that never started has no job run, and belongs to the workflow run by `WorkflowRun_id` and the item's path.**) Time Whens on a Reaction (kind, clock time or length, relative-to, percent and run count); Mark as late and Notify as actions; the Late flag on runs and workflow items; Alerts, Alert recipients, Alert deliveries; mail settings, and the cause of a late flag. `autoapp_dev` migrated (backup first).
 2. **The clock rules.** A pure module: work out a deadline from a time of day or a length and the run's start; work out "longer than usual" from a list of durations; judge a timed entry at a given moment. Tested with a made-up clock, including the midnight case and too-little-history.
 3. **The workflow runner watches.** Fires Mark as late and side effects for timed entries on items and on the workflow itself; once-only; reopen behaviour. *Stop: workflow and reopen tests.*
 4. **The job runner watches** a job on its own (*not ended by*, *runs longer than*), side effects only, through the spool. Tested for not slowing a job.

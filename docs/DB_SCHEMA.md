@@ -16,6 +16,8 @@ All tables and how they connect.
 
 ```mermaid
 erDiagram
+    Alerts |o--o{ AlertDeliveries : "Alert_id"
+    Alerts ||--o{ AlertRecipients : "Alert_id"
     MasterObjects ||--o| Applications : "MasterObject_id"
     MasterObjects |o--o{ Audits : "MasterObject_id"
     MasterObjects ||--o| Credentials : "MasterObject_id"
@@ -32,6 +34,7 @@ erDiagram
     Jobs ||--o{ JobSteps : "Job_MasterObject_id"
     StepTypes ||--o{ JobSteps : "StepType_id"
     JobSteps |o--o{ JobSteps : "ParentStep_id"
+    Credentials |o--o{ MailSettings : "Credential_MasterObject_id"
     MasterObjects ||--o| Sites : "MasterObject_id"
     Entities |o--o{ Sites : "Entity_MasterObject_id"
     Tags ||--o{ TagAssignments : "Tag_MasterObject_id"
@@ -57,12 +60,13 @@ erDiagram
     Reactions ||--o{ ReactionActions : "Reaction_id"
     WorkflowItems |o--o{ ReactionActions : "TargetItem_id"
     Jobs |o--o{ ReactionActions : "TargetJob_MasterObject_id"
+    Alerts |o--o{ ReactionActions : "Alert_id"
     WorkflowItems ||--o{ WorkflowPrerequisites : "Item_id"
     WorkflowItems |o--o{ WorkflowPrerequisites : "TargetItem_id"
     Jobs |o--o{ WorkflowPrerequisites : "TargetJob_MasterObject_id"
     Endpoints |o--o{ WorkflowPrerequisites : "Endpoint_MasterObject_id"
     WorkflowPrerequisites |o--o{ WorkflowPrerequisites : "WaitFromPrerequisite_id"
-    JobRuns ||--o{ ReactionEvents : "JobRun_id"
+    JobRuns |o--o{ ReactionEvents : "JobRun_id"
     JobRuns |o--o{ ReactionEvents : "WorkflowRun_id"
     ReactionActions |o--o{ ReactionEvents : "ReactionAction_id"
 ```
@@ -290,6 +294,11 @@ erDiagram
         string(20) WhenTest "required"
         string(100) WhenReturnCodes
         text WhenCondition
+        string(12) WhenTimeKind
+        string(5) WhenClockTime
+        int WhenMinutes
+        int WhenPercent
+        int WhenRunCount
     }
     ReactionActions {
         int id PK
@@ -301,6 +310,8 @@ erDiagram
         string(10) RerunMode
         int TargetItem_id FK
         int TargetJob_MasterObject_id FK
+        int Alert_id FK
+        bool SkipIfCauseLate "required"
     }
     JobRuns {
         int id PK
@@ -331,6 +342,9 @@ erDiagram
         string(500) LogFile
         datetime LogRemovedDateTime
         text WorkflowVariables
+        datetime LateDateTime
+        text LateReason
+        text LateCause
     }
     WorkflowRunItems {
         int id PK
@@ -349,10 +363,14 @@ erDiagram
         int Attempt "required"
         datetime StartedDateTime
         datetime EndedDateTime
+        datetime ReadyDateTime
+        datetime LateDateTime
+        text LateReason
+        text LateCause
     }
     ReactionEvents {
         int id PK
-        int JobRun_id FK "required"
+        int JobRun_id FK
         int WorkflowRun_id FK
         string(1000) WorkflowPath
         int ReactionAction_id FK
@@ -398,14 +416,89 @@ erDiagram
     Reactions ||--o{ ReactionActions : "Reaction_id"
     WorkflowItems |o--o{ ReactionActions : "TargetItem_id"
     Jobs |o--o{ ReactionActions : "TargetJob_MasterObject_id"
+    Alerts |o--o{ ReactionActions : "Alert_id"
     WorkflowItems ||--o{ WorkflowPrerequisites : "Item_id"
     WorkflowItems |o--o{ WorkflowPrerequisites : "TargetItem_id"
     Jobs |o--o{ WorkflowPrerequisites : "TargetJob_MasterObject_id"
     Endpoints |o--o{ WorkflowPrerequisites : "Endpoint_MasterObject_id"
     WorkflowPrerequisites |o--o{ WorkflowPrerequisites : "WaitFromPrerequisite_id"
-    JobRuns ||--o{ ReactionEvents : "JobRun_id"
+    JobRuns |o--o{ ReactionEvents : "JobRun_id"
     JobRuns |o--o{ ReactionEvents : "WorkflowRun_id"
     ReactionActions |o--o{ ReactionEvents : "ReactionAction_id"
+```
+
+## Alerts and mail
+
+```mermaid
+erDiagram
+    Alerts {
+        int id PK
+        string(100) Name UK "required"
+        string(256) Description
+        string(255) Subject "required"
+        text Message "required"
+        datetime CreatedDateTime "required"
+        datetime UpdatedDateTime
+    }
+    AlertRecipients {
+        int id PK
+        int Alert_id FK "required"
+        int RecipientOrder "required"
+        string(255) Address "required"
+    }
+    AlertDeliveries {
+        int id PK
+        int Alert_id FK
+        string(100) AlertName "required"
+        string(36) RunID
+        string(1000) WorkflowPath
+        text Recipients "required"
+        string(255) Subject "required"
+        text Body "required"
+        bool IsTest "required"
+        string(10) Status "required"
+        int Attempts "required"
+        text LastError
+        datetime CreatedDateTime "required"
+        datetime NextAttemptDateTime
+        datetime SentDateTime
+    }
+    MailSettings {
+        int id PK
+        string(255) Host "required"
+        int Port "required"
+        string(255) SenderAddress "required"
+        bool UseTls "required"
+        int Credential_MasterObject_id FK
+    }
+    ReactionActions {
+        int id PK
+        int Reaction_id FK "required"
+        int ActionOrder "required"
+        string(30) Action "required"
+        int MaxTimes
+        int WaitSeconds
+        string(10) RerunMode
+        int TargetItem_id FK
+        int TargetJob_MasterObject_id FK
+        int Alert_id FK
+        bool SkipIfCauseLate "required"
+    }
+    Credentials {
+        int MasterObject_id PK, FK
+        string(100) Name UK "required"
+        string(50) CredType "required"
+        text SecretData
+        bool IsActive
+    }
+    Alerts |o--o{ AlertDeliveries : "Alert_id"
+    Alerts ||--o{ AlertRecipients : "Alert_id"
+    MasterObjects ||--o| Credentials : "MasterObject_id"
+    Credentials |o--o{ MailSettings : "Credential_MasterObject_id"
+    Reactions ||--o{ ReactionActions : "Reaction_id"
+    WorkflowItems |o--o{ ReactionActions : "TargetItem_id"
+    Jobs |o--o{ ReactionActions : "TargetJob_MasterObject_id"
+    Alerts |o--o{ ReactionActions : "Alert_id"
 ```
 
 ## Endpoints, runs, operations, audits and settings
@@ -450,6 +543,9 @@ erDiagram
         string(500) LogFile
         datetime LogRemovedDateTime
         text WorkflowVariables
+        datetime LateDateTime
+        text LateReason
+        text LateCause
     }
     Operations {
         int id PK

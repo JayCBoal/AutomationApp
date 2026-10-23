@@ -25,6 +25,7 @@ TABLE_GROUPS = {
     "Jobs and steps": ["Jobs", "JobSteps", "JobStepParameters", "StepTypes", "StepDefinitions"],
     "Workflows": ["Jobs", "WorkflowItems", "WorkflowItemVariables", "WorkflowPrerequisites", "WorkflowPrerequisiteChecks", "Reactions", "ReactionActions", "JobRuns",
                   "WorkflowRunItems", "ReactionEvents", "RunRestarts", "ConditionChecks"],
+    "Alerts and mail": ["Alerts", "AlertRecipients", "AlertDeliveries", "MailSettings", "ReactionActions", "Credentials"],
     "Endpoints, runs, operations, audits and settings": ["Endpoints", "JobRuns", "Operations", "Audits", "Settings"],
 }
 

@@ -101,6 +101,38 @@ An arrow is a relationship attribute you can follow in code: `job.steps` is the 
 ```mermaid
 classDiagram
     direction LR
+    class Alert {
+        +int id
+        +string(100) Name
+        +string(256) Description
+        +string(255) Subject
+        +text Message
+        +datetime CreatedDateTime
+        +datetime UpdatedDateTime
+    }
+    class AlertDelivery {
+        +int id
+        +int Alert_id
+        +string(100) AlertName
+        +string(36) RunID
+        +string(1000) WorkflowPath
+        +text Recipients
+        +string(255) Subject
+        +text Body
+        +bool IsTest
+        +string(10) Status
+        +int Attempts
+        +text LastError
+        +datetime CreatedDateTime
+        +datetime NextAttemptDateTime
+        +datetime SentDateTime
+    }
+    class AlertRecipient {
+        +int id
+        +int Alert_id
+        +int RecipientOrder
+        +string(255) Address
+    }
     class Audit {
         +int id
         +int MasterObject_id
@@ -148,6 +180,9 @@ classDiagram
         +string(500) LogFile
         +datetime LogRemovedDateTime
         +text WorkflowVariables
+        +datetime LateDateTime
+        +text LateReason
+        +text LateCause
     }
     class JobStep {
         +int id
@@ -165,6 +200,14 @@ classDiagram
         +int job_step_id
         +string(100) ParamName
         +text ParamValue
+    }
+    class MailSetting {
+        +int id
+        +string(255) Host
+        +int Port
+        +string(255) SenderAddress
+        +bool UseTls
+        +int Credential_MasterObject_id
     }
     class Operation {
         +int id
@@ -199,6 +242,11 @@ classDiagram
         +string(20) WhenTest
         +string(100) WhenReturnCodes
         +text WhenCondition
+        +string(12) WhenTimeKind
+        +string(5) WhenClockTime
+        +int WhenMinutes
+        +int WhenPercent
+        +int WhenRunCount
     }
     class ReactionAction {
         +int id
@@ -210,6 +258,8 @@ classDiagram
         +string(10) RerunMode
         +int TargetItem_id
         +int TargetJob_MasterObject_id
+        +int Alert_id
+        +bool SkipIfCauseLate
     }
     class ReactionEvent {
         +int id
@@ -343,7 +393,12 @@ classDiagram
         +int Attempt
         +datetime StartedDateTime
         +datetime EndedDateTime
+        +datetime ReadyDateTime
+        +datetime LateDateTime
+        +text LateReason
+        +text LateCause
     }
+    Alert "1" --> "*" AlertRecipient : recipients
     Endpoint "*" --> "0..1" Site : site
     Endpoint "*" --> "0..1" Application : application
     Entity "1" --> "*" Site : sites
@@ -357,6 +412,7 @@ classDiagram
     JobStep "*" --> "0..1" StepType : step_type
     JobStep "1" --> "*" JobStepParameter : parameters
     JobStep "1" --> "*" JobStep : children
+    MailSetting "*" --> "0..1" Credential : credential
     MasterObject "1" --> "*" Variable : variables
     MasterObject "1" --> "*" TagAssignment : tag_assignments
     Operation "*" --> "0..1" Endpoint : source_endpoint
@@ -364,6 +420,7 @@ classDiagram
     Reaction "1" --> "*" ReactionAction : actions
     ReactionAction "*" --> "0..1" WorkflowItem : target_item
     ReactionAction "*" --> "0..1" Job : target_job
+    ReactionAction "*" --> "0..1" Alert : alert
     StepType "1" --> "*" StepDefinition : definitions
     Tag "1" --> "*" Tag : children
     TagAssignment "*" --> "0..1" Tag : tag

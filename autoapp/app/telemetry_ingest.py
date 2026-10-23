@@ -138,6 +138,8 @@ def ingest_batch(db: Session, batch: TelemetryBatch) -> TelemetryIngestResult:
                 action_id = existing_id(ReactionAction, record.ReactionActionID)
                 db.add(ReactionEvent(JobRun_id=run.id, ReactionAction_id=action_id, Action=record.Action,
                                      Result=record.Result, Message=record.Message, EventDateTime=_naive_utc(record.AtUtc)))
+                if record.LateReason and run.LateDateTime is None:       # the first reason is kept (proposal 5)
+                    run.LateDateTime, run.LateReason = _naive_utc(record.AtUtc), record.LateReason
 
         db.commit()
     except Exception:

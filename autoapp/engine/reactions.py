@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Callable, List, Optional, Tuple
 
 from engine import return_codes
+from engine.clock_rules import KINDS_FOR, TimeRule
 
 AUTOAPP_DIR = Path(__file__).resolve().parents[1]
 REACTION_SCHEDULER = "AutoApp reaction"
@@ -36,8 +37,12 @@ ORDER = ("COUNT_AS_SUCCEEDED", "COUNT_AS_FAILED", "SKIP", "SKIP_BRANCH", "RERUN"
 
 WORDS = {"COUNT_AS_SUCCEEDED": "count as succeeded", "COUNT_AS_FAILED": "count as failed", "RERUN": "rerun",
          "RERUN_FROM": "rerun from", "SKIP": "skip", "SKIP_BRANCH": "skip the rest of the branch",
-         "KILL_WORKFLOW": "kill the workflow", "START_WORKFLOW": "start workflow"}
-WHEN_WORDS = {"SUCCESS": "it succeeded", "FAILED": "it failed", "ENDED": "it ended", "RC": "its return code is"}
+         "KILL_WORKFLOW": "kill the workflow", "START_WORKFLOW": "start workflow", "MARK_AS_LATE": "mark as late",
+         "NOTIFY": "notify"}
+WHEN_WORDS = {"SUCCESS": "it succeeded", "FAILED": "it failed", "ENDED": "it ended", "RC": "its return code is",
+              "NOT_STARTED_BY": "it has not started by its time", "NOT_ENDED_BY": "it has not ended by its time",
+              "RUNS_LONGER_THAN": "it runs longer than its limit"}
+TIME_TESTS = tuple(KINDS_FOR)      # judged while the run goes on, by the runner's clock
 
 
 @dataclass
@@ -50,9 +55,12 @@ class Act:
     target_item: Optional[str] = None       # a job in the workflow, by its name there
     target_job: Optional[str] = None        # the workflow START_WORKFLOW starts, by its key
     mode: str = RESTART                     # RERUN: from the beginning, or from where the job failed
+    alert_id: Optional[int] = None          # NOTIFY: the alert that says who is told and what
+    alert_name: Optional[str] = None
+    skip_if_cause_late: bool = False        # NOTIFY: do not send when a job this one waited for was late
 
     def words(self) -> str:
-        target = self.target_item or self.target_job
+        target = self.target_item or self.target_job or self.alert_name
         return WORDS[self.action] + (f" '{target}'" if target else "") + (
             " from where it failed" if self.action == "RERUN" and self.mode == RESUME else "")
 
@@ -69,6 +77,7 @@ class Rule:
     test: str
     codes: Optional[str]
     actions: List[Act]
+    time: Optional[TimeRule] = None         # a time When: how its time is given
 
     def when_words(self) -> str:
         return WHEN_WORDS[self.test] + (f" {self.codes}" if self.test == "RC" else "")
@@ -89,18 +98,29 @@ class Verdict:
 def read_rules(job, item=None) -> List[Rule]:
     """A job's Reactions; for a use in a workflow that overrides them, the use's own."""
     reactions = item.reactions if item is not None and item.ReactionsOverridden else job.reactions
-    return [Rule(r.id, r.Section, r.WhenTest, r.WhenReturnCodes, [_act(a) for a in r.actions]) for r in reactions]
+    return [Rule(r.id, r.Section, r.WhenTest, r.WhenReturnCodes, [_act(a) for a in r.actions], _time_rule(r))
+            for r in reactions]
+
+
+def _time_rule(reaction) -> Optional[TimeRule]:
+    if reaction.WhenTest not in TIME_TESTS:
+        return None
+    return TimeRule(reaction.WhenTest, reaction.WhenTimeKind, reaction.WhenClockTime, reaction.WhenMinutes,
+                    reaction.WhenPercent, reaction.WhenRunCount)
 
 
 def _act(action) -> Act:
     return Act(action.id, action.Action, max_times=action.MaxTimes or 1, wait_seconds=action.WaitSeconds or 0,
                target_item=action.target_item.ItemName if action.target_item else None,
                target_job=action.target_job.JobKey if action.target_job else None,
-               mode=action.RerunMode or RESTART)
+               mode=action.RerunMode or RESTART, alert_id=action.Alert_id,
+               alert_name=action.alert.Name if action.alert else None, skip_if_cause_late=bool(action.SkipIfCauseLate))
 
 
 def holds(rule: Rule, status: str, code: Optional[int]) -> bool:
-    """Whether an entry's When holds for a job that ended so."""
+    """Whether an entry's When holds for a job that ended so. A time When is judged by the clock, never at the end."""
+    if rule.test in TIME_TESTS:
+        return False
     if rule.test == "ENDED":
         return True
     if rule.test == "SUCCESS":

@@ -18,6 +18,7 @@ import json
 import os
 import re
 import socket
+import threading
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -49,6 +50,9 @@ class LocalSpoolTelemetryClient:
         self._file_handle = open(self.active_file_path, "a", encoding="utf-8", buffering=1)
         self._seq = 0
         self._undelivered: List[Dict[str, Any]] = []
+        # The job's clock (engine/job_clock.py) writes from its own thread: one record at a time, one delivery at a time
+        self._write_lock = threading.Lock()
+        self._deliver_lock = threading.Lock()
         self._delivery_abandoned = False
         # The files the run delivered, by where they went, and their size: reported with its end, so
         # Job History has them without anyone counting its operations (docs/WORKFLOWS_PHASE4.md)
@@ -56,10 +60,11 @@ class LocalSpoolTelemetryClient:
         self._carried = (0, 0)              # the files and bytes of the attempt this one picked up
 
     def _write(self, record_type: str, fields: Dict[str, Any]) -> None:
-        self._seq += 1
-        record = {"Record": record_type, "RunID": self.run_id, "Seq": self._seq, **fields}
-        self._file_handle.write(json.dumps(record) + "\n")
-        self._undelivered.append(record)
+        with self._write_lock:
+            self._seq += 1
+            record = {"Record": record_type, "RunID": self.run_id, "Seq": self._seq, **fields}
+            self._file_handle.write(json.dumps(record) + "\n")
+            self._undelivered.append(record)
 
     def start_run(self, job_key: str, run_number: int = 1, scheduler: Optional[str] = None,
                   business_date=None, parent_run_id: Optional[str] = None, workflow_path: Optional[str] = None,
@@ -147,10 +152,13 @@ class LocalSpoolTelemetryClient:
         return {"FileCount": files + len(self._delivered),
                 "Bytes": total + sum(size or 0 for size in self._delivered.values())}
 
-    def record_reaction(self, action: str, result: str, message: str, action_id: Optional[int] = None) -> None:
-        """A Reaction's action that fired after the job ended, or was passed over at its limit."""
+    def record_reaction(self, action: str, result: str, message: str, action_id: Optional[int] = None,
+                        late_reason: Optional[str] = None) -> None:
+        """A Reaction's action that fired (after the job ended, or on the clock), or was passed over at its limit.
+        late_reason is given when the action marked the run as late: why."""
+        late = {"LateReason": late_reason} if late_reason else {}
         self._write("REACTION", {"Action": action, "Result": result, "Message": message, "ReactionActionID": action_id,
-                                 "AtUtc": utc_now_iso()})
+                                 **late, "AtUtc": utc_now_iso()})
 
     def deliver(self) -> bool:
         """
@@ -160,13 +168,17 @@ class LocalSpoolTelemetryClient:
         """
         if not self.api_url or self._delivery_abandoned:
             return False
-        if self._undelivered:
-            try:
-                post_records(self.api_url, self._undelivered, timeout=5)
-            except DeliveryError:
-                self._delivery_abandoned = True
-                return False
-            self._undelivered = []
+        with self._deliver_lock:
+            with self._write_lock:
+                batch = list(self._undelivered)
+            if batch:
+                try:
+                    post_records(self.api_url, batch, timeout=5)
+                except DeliveryError:
+                    self._delivery_abandoned = True
+                    return False
+                with self._write_lock:
+                    del self._undelivered[:len(batch)]
         return True
 
     def close(self) -> None:

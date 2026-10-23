@@ -41,6 +41,8 @@ from app.models import Job, JobRun, Variable, WorkflowItemVariable
 from engine import job_log, log_files, return_codes, run_values, workflow_vars
 from engine.control_file import ControlRecord, ControlWriter, NullControl, control_name, top_level_number
 from engine.executor import Executor
+from engine.job_clock import JobClock
+from engine.workflow_clock import durations_of
 from engine.preflight import describe_problems, prepare_job
 from engine.reactions import OwnReactions, read_rules
 from engine.scope_engine import ScopeResolutionEngine
@@ -105,7 +107,7 @@ def run_job(db: Session, job_key: str, instance_id: str, spool_dir: str,
         if resume:
             telemetry.carry_over(*(own.totals if own is not None and own.record is resume else earlier_totals(db, resume_run_id)))
 
-        executor, success_codes = None, None
+        executor, success_codes, clock = None, None, None
         try:
             if resume_problem:
                 raise ValueError(resume_problem)
@@ -150,6 +152,7 @@ def run_job(db: Session, job_key: str, instance_id: str, spool_dir: str,
             executor = Executor(db, scope_engine, telemetry, telemetry.deliver, control=control, resume=resume,
                                 count_as_done=count_as_done, start_at=int(from_step) if from_step else None,
                                 skip=set(skip_steps or []), attempt=attempt)
+            clock = watch_the_clock(db, own, job_id, job_key, telemetry)
             executor.run_all(prepared_steps)
 
         except Killed:
@@ -161,11 +164,22 @@ def run_job(db: Session, job_key: str, instance_id: str, spool_dir: str,
             code = executor.job_return_code if executor and executor.job_return_code is not None else 1
             return _end(telemetry, own, "FAILED", code, failure_reason(e), str(e))
         finally:
+            if clock is not None:
+                clock.stop()            # before the end is recorded: no record of the clock follows it
             control.close()
         exit_code = _finish(job_key, executor.job_return_code, success_codes, telemetry, own)
         if exit_code == 0 and return_codes.matches(executor.job_return_code or 0, success_codes):
             remove_control_files(control.path, resume)      # it Succeeded, and no Reaction changed that
         return exit_code
+
+
+def watch_the_clock(db: Session, own: Optional[OwnReactions], job_id: int, job_key: str, telemetry) -> Optional[JobClock]:
+    """Starts the clock of the job's time-based Reactions, if it has any (only a job on its own has one here)."""
+    if own is None:
+        return None
+    clock = JobClock(own.rules, telemetry, lambda count: durations_of(db, job_id, count), own.options, job_key)
+    clock.start()
+    return clock if clock.wanted else None
 
 
 def remove_control_files(own_path: Optional[Path], resume: Optional[ControlRecord]) -> None:

@@ -476,6 +476,7 @@ class ReactionRecord(BaseModel):
     Result: str = Field(..., max_length=20, description="TOOK_EFFECT, LIMIT_REACHED or NOT_FIRED")
     Message: Optional[str] = None
     ReactionActionID: Optional[int] = None
+    LateReason: Optional[str] = Field(None, description="Set when the action marked the run as late: why")
     AtUtc: datetime
 
 

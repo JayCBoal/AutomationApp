@@ -53,6 +53,7 @@ from engine.frames import tree_top
 from engine import conditions, job_log, log_files, outside, reopen, reopen_counts, reopen_tree, settings, workflow_conditions, workflow_vars
 from engine.outside_state import Context, Outside
 from engine.prerequisites import FINAL, HOLDS, NEVER, TIMED_OUT, WAIT, SKIPPED_OPTIONAL, prerequisite_state
+from engine.workflow_clock import ClockWatcher
 from engine.reactions import LIMITED, Act, OwnReactions, Rule, judge, read_rules, start_workflow
 
 AUTOAPP_DIR = Path(__file__).resolve().parents[1]
@@ -237,6 +238,7 @@ class WorkflowRunner:
         self.record_start_ts = time.time()          # when the run started, for the patience that counts from it
         self._tree_run_cache: Optional[JobRun] = None
         self.frames_read: List[str] = []            # the frames whose insides a condition reads, by path
+        self.clock = ClockWatcher(self)             # time-based Reactions (engine/workflow_clock.py)
 
     def run(self) -> int:
         """Runs the workflow to the end. Returns the exit code for whoever started it: 0 if it succeeded, else 1."""
@@ -255,10 +257,12 @@ class WorkflowRunner:
                 job_log.error(problem)
             return self._finish("FAILED", "ERROR", "The workflow cannot run: " + " ".join(problems))
         self._plan()
+        self.clock.begin()
         while True:
             self._check_cancel()
             self._collect_ended()
             self._advance()
+            self.clock.watch()
             self._save()
             if all(p.row.Status in FINAL for p in self.items):
                 break
@@ -521,6 +525,7 @@ class WorkflowRunner:
         """The item is to run again: from scratch, or picking up the run of its last attempt."""
         row, child = planned.row, planned.row.child_run
         row.Status, row.Reason, row.ReturnCode, row.StatusBeforeOverride, row.EndedDateTime = "PENDING", None, None, None, None
+        row.ReadyDateTime = None
         planned.file_count = planned.size = None
         if action == reopen.FRESH or child is None:
             job_log.summary(f"'{planned.name}' will run again from the beginning.")
@@ -747,6 +752,8 @@ class WorkflowRunner:
                     looked.add(planned.name)
                     self._look_outside(planned)
                 state = self._readiness(planned)
+                if state == HOLDS and planned.row.ReadyDateTime is None:
+                    planned.row.ReadyDateTime = utcnow()
                 if state == NEVER:
                     self._unmet(planned, "PREREQUISITES_NOT_MET", why_never(planned, self.by_name))
                     changed = True
@@ -860,6 +867,7 @@ class WorkflowRunner:
         planned.row.Status, planned.row.StartedDateTime = "RUNNING", utcnow()
         planned.row.ProcessID = planned.process.pid
         attempt = f", attempt {planned.row.Attempt}" if planned.row.Attempt > 1 else ""
+        self.clock.item_started(planned)
         job_log.summary(f"Started '{planned.name}' (job '{planned.job_key}'{attempt}).")
 
     def _command(self, planned: Planned) -> List[str]:
@@ -924,6 +932,7 @@ class WorkflowRunner:
             row = planned.row
             row.Status, row.ReturnCode, row.Reason, row.EndedDateTime = status, code, reason, utcnow()
             row.ChildRun_id = child.id if child else None
+            self.clock.carry_late(planned, child)
             planned.file_count, planned.size = (child.FileCount, child.Bytes) if child else (None, None)
             words = "succeeded" if status == "SUCCESS" else "was killed" if reason == "KILLED" else "failed"
             job_log.summary(f"'{planned.name}' {words}" + (f", return code {code}." if code is not None else ".")

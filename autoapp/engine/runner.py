@@ -39,7 +39,7 @@ from sqlalchemy.orm import Session
 from app.database import SessionLocal
 from app.models import Job, JobRun, Variable, WorkflowItemVariable
 from engine import job_log, log_files, return_codes, run_values, workflow_vars
-from engine.control_file import ControlRecord, ControlWriter, NullControl, control_name
+from engine.control_file import ControlRecord, ControlWriter, NullControl, control_name, top_level_number
 from engine.executor import Executor
 from engine.preflight import describe_problems, prepare_job
 from engine.reactions import OwnReactions, read_rules
@@ -62,7 +62,8 @@ def run_job(db: Session, job_key: str, instance_id: str, spool_dir: str,
             parent_run_id: Optional[str] = None, workflow_path: Optional[str] = None, attempt: int = 1,
             own: Optional[OwnReactions] = None, resume_run_id: Optional[str] = None,
             count_as_done: Optional[str] = None, refresh_values: bool = False,
-            value_edits: Optional[Dict[str, str]] = None, drop_values: Optional[List[str]] = None) -> int:
+            value_edits: Optional[Dict[str, str]] = None, drop_values: Optional[List[str]] = None,
+            from_step: Optional[str] = None, skip_steps: Optional[List[str]] = None) -> int:
     """
     Executes the job and returns the exit code to hand back to the scheduler.
     environment is what ${ENV:...} and the ENV level read: this process's own, unless given.
@@ -73,6 +74,9 @@ def run_job(db: Session, job_key: str, instance_id: str, spool_dir: str,
     value_edits: values the operator changed for a picked-up run, by key (engine/run_values.py); for a job
         started again by Advanced they are the only values pinned, the rest being read fresh.
     drop_values: names of the workflow's or the use's variables that were changed: the run reads them again.
+    from_step, skip_steps: Advanced, for a picked-up run, by top-level step number (docs/WORKFLOWS_PHASE7.md, 6d). The steps
+        before from_step count as done, with their outputs, and those that had not finished are passed over; from_step and every
+        later step run fresh, whatever the earlier attempt did with them. skip_steps are not run at all.
     """
     environment = dict(os.environ) if environment is None else environment
     signal.signal(signal.SIGTERM, _killed)
@@ -80,6 +84,10 @@ def run_job(db: Session, job_key: str, instance_id: str, spool_dir: str,
         resume, resume_problem = own.record, None           # this process ran it: its record is in hand, not yet in the database
     else:
         resume, resume_problem = find_earlier_attempt(db, resume_run_id)
+    if (from_step or skip_steps) and not resume_run_id:
+        resume_problem = "Starting at a step or skipping steps needs an earlier attempt to pick up; there is none."
+    if resume is not None and from_step:
+        resume = resume.starting_at(int(from_step))
     business_date = business_date or (resume.business_date if resume else None)
     with LocalSpoolTelemetryClient(spool_dir=spool_dir, instance_id=instance_id, api_url=api_url,
                                    run_id=run_id) as telemetry:
@@ -121,7 +129,7 @@ def run_job(db: Session, job_key: str, instance_id: str, spool_dir: str,
             scope_engine.build_context()
             control.write("job", run_id=telemetry.run_id, job_key=job_key, started=scope_engine.started.isoformat(),
                           business_date=business_date.isoformat() if business_date else None)
-            _log_how_it_started(resume, attempt, count_as_done)
+            _log_how_it_started(resume, attempt, count_as_done, from_step, skip_steps)
             if scope_engine.working_folder:
                 os.makedirs(scope_engine.working_folder, exist_ok=True)
             job_log.debug(f"Working folder: {scope_engine.working_folder}")
@@ -136,8 +144,12 @@ def run_job(db: Session, job_key: str, instance_id: str, spool_dir: str,
             control.write("values", values=used)
             if resume:
                 _log_values(resume, used, refresh_values, value_edits or {}, drop_values or [])
+            problem = _step_choice_problem(prepared_steps, from_step, skip_steps)
+            if problem:
+                raise ValueError(problem)
             executor = Executor(db, scope_engine, telemetry, telemetry.deliver, control=control, resume=resume,
-                                count_as_done=count_as_done)
+                                count_as_done=count_as_done, start_at=int(from_step) if from_step else None,
+                                skip=set(skip_steps or []))
             executor.run_all(prepared_steps)
 
         except Killed:
@@ -171,16 +183,34 @@ def remove_control_files(own_path: Optional[Path], resume: Optional[ControlRecor
             pass
 
 
-def _log_how_it_started(resume: Optional[ControlRecord], attempt: int, count_as_done: Optional[str]) -> None:
+def _step_choice_problem(steps, from_step: Optional[str], skip_steps: Optional[List[str]]) -> Optional[str]:
+    """Why the steps the operator named are not steps of the job as it is now, in words, or None."""
+    numbers = [prepared.number for prepared in steps]
+    wrong = [n for n in ([from_step] if from_step else []) + list(skip_steps or []) if n not in numbers]
+    if wrong:
+        return (f"The job has no active step {wrong[0]} now (its steps are " + ", ".join(numbers) + "). "
+                f"It may have been edited since the run; restart the job from the beginning.")
+    return None
+
+
+def _log_how_it_started(resume: Optional[ControlRecord], attempt: int, count_as_done: Optional[str],
+                        from_step: Optional[str] = None, skip_steps: Optional[List[str]] = None) -> None:
     """Says in the job log whether this attempt picks up an earlier one or starts again from the beginning."""
     earlier = f"attempt {attempt - 1}" if attempt > 1 else "the earlier attempt"
     if resume is None:
         if attempt > 1:
             job_log.summary(f"Restarted from the beginning (attempt {attempt}); {earlier} failed.")
         return
-    job_log.summary(f"Resumed from {earlier}: {_what_was_finished(resume)}")
+    if from_step:
+        job_log.summary(f"Resumed from {earlier}, starting at step {from_step} as the operator chose: the steps before it "
+                        f"count as done, and step {from_step} and every step after it run again, finished or not.")
+    else:
+        job_log.summary(f"Resumed from {earlier}: {_what_was_finished(resume)}")
+    if skip_steps:
+        job_log.summary("The operator chose to skip step" + ("s " if len(skip_steps) > 1 else " ") + ", ".join(skip_steps) + ".")
     failure = resume.open_failure()
-    if failure and failure.get("operator_decides") and failure.get("key") != count_as_done:
+    if failure and failure.get("operator_decides") and failure.get("key") != count_as_done and not from_step \
+            and top_level_number(failure["key"]) not in {int(n) for n in (skip_steps or [])}:
         job_log.summary(f"Step {failure['step']} '{failure.get('title')}' may have changed something before it "
                         f"failed: run again, as chosen.")
 
@@ -398,6 +428,11 @@ def main():
     parser.add_argument("--drop-values", default=None,
                         help="With --resume-run-id: a JSON list of names the workflow or the use changed; "
                              "the run reads them again, not as the earlier attempt had them")
+    parser.add_argument("--from-step", default=None,
+                        help="With --resume-run-id: start at this top-level step number. The steps before it count as done; it and "
+                             "every step after it run again, even ones that had finished")
+    parser.add_argument("--skip-steps", default=None,
+                        help="With --resume-run-id: a JSON list of top-level step numbers not to run (their %%{Name.Status} is SKIPPED)")
     parser.add_argument("--log-level", default=os.getenv("AUTOAPP_LOG_LEVEL", job_log.DEFAULT_LEVEL),
                         type=str.upper, choices=list(job_log.LEVELS),
                         help="How much the job log says: DETAIL (default) logs every action, SUMMARY one line "
@@ -435,6 +470,7 @@ def run_with_reactions(db: Session, args) -> int:
     count_as_done, reopen = args.count_as_done, args.reopen
     refresh_values, value_edits = args.refresh_values, json.loads(args.edit_values) if args.edit_values else None
     drop_values = json.loads(args.drop_values) if args.drop_values else None
+    from_step, skip_steps = args.from_step, json.loads(args.skip_steps) if args.skip_steps else None
     while True:
         if job is not None and job.JobType == "WORKFLOW":
             exit_code = start_workflow(db, job, args, run_id, attempt, own, reopen, refresh_values, value_edits)
@@ -444,7 +480,8 @@ def run_with_reactions(db: Session, args) -> int:
                                 run_id=run_id, business_date=args.business_date,
                                 parent_run_id=args.parent_run_id, workflow_path=args.workflow_path,
                                 attempt=attempt, own=own, resume_run_id=resume_run_id, count_as_done=count_as_done,
-                                refresh_values=refresh_values, value_edits=value_edits, drop_values=drop_values)
+                                refresh_values=refresh_values, value_edits=value_edits, drop_values=drop_values,
+                                from_step=from_step, skip_steps=skip_steps)
         if own is None or own.rerun is None:
             return exit_code
         time.sleep(own.rerun.wait_seconds)
@@ -456,6 +493,7 @@ def run_with_reactions(db: Session, args) -> int:
         args.reopen_scope, args.rerun_decisions, args.reopen_items = None, None, None
         args.ignore_waits, args.reset_counts = None, False
         refresh_values, value_edits, drop_values = False, None, None
+        from_step, skip_steps = None, None              # an operator's choice is for the one attempt
         db.expire_all()
 
 

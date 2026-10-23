@@ -15,7 +15,8 @@ each loop around it ("3.1|2.1" is step 3.1 in pass 2 of a loop and pass 1 of the
     values       the ${...} values the job used, by key; a secret's by name only (engine/run_values.py)
     resumed      this attempt picked up another run's record; that run's records follow, copied
     begin        a step started
-    end          a step ended; done says whether the job went on past it, with its outputs
+    end          a step ended; done says whether the job went on past it, with its outputs; skipped: the operator
+                 had it passed over, so it did not run and has no outputs (Advanced, docs/WORKFLOWS_PHASE7.md, 6d)
     failed       a step failed, and what it knew about its effect (engine/step_catalog.py), with its number and title
     branch       the branch an If took
     files        the files a For Each File matched, as matched then
@@ -41,6 +42,16 @@ def control_name(log_file: str) -> str:
     """The control file's name within the host's folder, from the job log's: <date>/<RunID>.control."""
     stem = log_file[:-len(".log")] if log_file.endswith(".log") else log_file
     return stem + CONTROL_SUFFIX
+
+
+def top_level_key(key: str) -> str:
+    """The key of the top-level step a step is, or is inside: "3.2|1.2" is inside "3|"."""
+    return f"{key.split('|')[0].split('.')[0]}|"
+
+
+def top_level_number(key: str) -> int:
+    """The number of the top-level step a step is, or is inside: 3 for "3.2|1.2"."""
+    return int(key.split("|")[0].split(".")[0])
 
 
 def _now() -> str:
@@ -164,11 +175,36 @@ class ControlRecord:
         return last if last and last["e"] == "failed" else None
 
     def open_failure(self) -> Optional[Dict[str, Any]]:
-        """The failure the attempt stopped on: its latest step failure that no later record of that step replaced."""
-        for record in reversed(self.records):
-            if record.get("e") == "failed" and self._last.get(("step", record["key"])) is record:
+        """
+        The failure the attempt stopped on: its latest step failure that no later record of that step replaced,
+        and that the step it was inside did not later end (an operator passed that step over).
+        """
+        for index in range(len(self.records) - 1, -1, -1):
+            record = self.records[index]
+            if (record.get("e") == "failed" and self._last.get(("step", record["key"])) is record
+                    and not self._ended_after(top_level_key(record["key"]), index)):
                 return record
         return None
+
+    def _ended_after(self, key: str, index: int) -> bool:
+        """Whether the step at key (a top-level one) ended with the job going on past it, after the record at index."""
+        return any(r.get("e") == "end" and r.get("done") and r.get("key") == key for r in self.records[index + 1:])
+
+    def starting_at(self, number: int) -> "ControlRecord":
+        """
+        The record as a run that starts at top-level step `number` should see it: what the steps from there on did is
+        forgotten, so they run fresh (an If asks its condition again, a loop lists its files again, a file step
+        copies again). What the steps before it did stays.
+        """
+        kept = [r for r in self.records if r.get("key") is None or top_level_number(r["key"]) < number]
+        return ControlRecord(kept, self.path)
+
+    def top_level_state(self, number: str) -> str:
+        """What the attempt did with the top-level step: "finished", "failed" (it is where the attempt stopped) or "not_run"."""
+        if self.finished(f"{number}|"):
+            return "finished"
+        failure = self.open_failure()
+        return "failed" if failure and top_level_number(failure["key"]) == int(number) else "not_run"
 
     def branch(self, key: str) -> Optional[str]:
         record = self._last.get(("branch", key))

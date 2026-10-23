@@ -111,7 +111,7 @@ def test_from_a_job_bypassed_lets_what_follows_run_and_records_it(failed, live_a
 
     assert {i["name"]: i["status"] for i in run["items"]} == {"Extract": "SUCCESS", "Load": "BYPASSED", "Report": "SUCCESS"}
     details = json.loads(db.query(RunRestart).one().Details)
-    assert any("Load" in item and "bypassed" in item for item in details["items"])
+    assert "Bypassed 'Load'." in details["items"]
 
 
 def test_from_a_job_not_run_leaves_what_follows_unrun(failed, live_api):

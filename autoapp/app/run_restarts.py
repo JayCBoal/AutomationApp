@@ -13,9 +13,11 @@ from pydantic import BaseModel, Field
 from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
+from app import rerun_steps
 from app.models import Audit, Job, JobRun, ReactionEvent, RunRestart
 
 RESUME, RESTART, ADVANCED = "RESUME", "RESTART", "ADVANCED"
+PASSED_OVER = {"bypass": "Bypassed", "dont_run": "Did not run"}
 AUDIT_ACTIONS = {RESUME: "JOB_RESUMED", RESTART: "JOB_RESTARTED", ADVANCED: "JOB_RERUN_ADVANCED"}
 BY_OPERATOR, BY_REACTION = "web interface", "a Reaction"
 
@@ -40,6 +42,7 @@ class RestartOut(BaseModel):
     edits: List[str] = Field([], description="Values changed, by name, with the old and new value; never a secret")
     ignored: List[IgnoredWait] = Field([], description="Prerequisites an operator released for this restart only (drawn crossed out)")
     counts_reset: bool = Field(False, description="The automatic retry counts were reset by this restart")
+    steps: List[str] = Field([], description="A job on its own: the step to start at and the steps skipped, in words")
     released: List[str] = Field([], description="The two above, in words")
     message: Optional[str] = Field(None, description="For a Reaction: what it said")
 
@@ -66,12 +69,23 @@ def next_number(db: Session, run_id: str) -> int:
 def details_for(plan, kind: str, decisions: Dict[str, str], refreshed: bool, edits: List[str]) -> Dict[str, Any]:
     """What the request did, for the row: the plan's items, the choices on unknown steps, the values."""
     if kind in (RESUME, ADVANCED):
-        items = [f"{item.path} {item.what}" for item in plan.items] if plan.items else []
+        items = [_item_words(plan, item) for item in plan.items]
     else:
         items = [plan.scope or plan.job_key] if plan.scope else []
     return {"from_attempt": plan.attempt, "items": items, "decisions": _decision_words(plan, decisions),
             "values_refreshed": refreshed, "edits": edits, "ignored": _ignored_list(plan),
-            "counts_reset": bool(plan.reset_counts)}
+            "counts_reset": bool(plan.reset_counts), "steps": step_words(plan)}
+
+
+def _item_words(plan, item) -> str:
+    """"Load goes on from attempt 1", but "Bypassed 'Post'." and "Did not run 'Report'." for the two that are passed over."""
+    said = PASSED_OVER.get(getattr(plan, "named_items", {}).get(item.path))
+    return f"{said} '{item.path}'." if said else f"{item.path} {item.what}"
+
+
+def step_words(plan) -> List[str]:
+    """"Started at step 3 'Gate b'." and "Skipped step 4 'Report'." for a job on its own; nothing for a workflow."""
+    return rerun_steps.words(plan.steps, plan.from_step, plan.skip_steps) if plan.steps else []
 
 
 def _ignored_list(plan) -> List[Dict[str, str]]:
@@ -102,13 +116,20 @@ def headline(plan, job_key: str, kind: str, details: Dict[str, Any]) -> str:
     what = f"'{plan.scope}' in '{job_key}'" if plan.scope else f"'{job_key}'"
     if kind == RESTART:
         return f"Restarted {what} from the beginning (it was attempt {plan.attempt})."
+    if kind == ADVANCED and details["steps"]:
+        return f"Resumed {what} from attempt {plan.attempt}, by step: " + " ".join(details["steps"])
     if kind == ADVANCED:
-        return (f"Ran {what} again, item by item: " + "; ".join(f"'{i.path}' {i.what}" for i in plan.items) + "."
+        return (f"Ran {what} again, item by item: " + "; ".join(_headline_item(plan, i) for i in plan.items) + "."
             + "".join(" " + words for words in released_words(details["ignored"], details["counts_reset"])))
     touched = [item.path for item in plan.items]
     parts = [f"{_names(touched)} run again" if len(touched) > 1 else f"{_names(touched)} runs again"] if touched else []
     parts += [d.rstrip(".").replace(": ", " ", 1) for d in details["decisions"]]
     return f"Resumed {what} from attempt {plan.attempt}" + (": " + "; ".join(parts) + "." if parts else ".")
+
+
+def _headline_item(plan, item) -> str:
+    said = PASSED_OVER.get(plan.named_items.get(item.path))
+    return f"{said.lower()} '{item.path}'" if said else f"'{item.path}' {item.what}"
 
 
 def _names(paths: List[str]) -> str:
@@ -143,11 +164,11 @@ def _chain(db: Session, run: JobRun) -> List[JobRun]:
 def _from_row(row: RunRestart) -> RestartOut:
     details = json.loads(row.Details or "{}")
     return RestartOut(number=row.Number, time=row.ChosenDateTime, kind=row.Kind, by=row.PerformedBy,
-                      words=_words(row.Kind, details.get("from_attempt")), from_attempt=details.get("from_attempt"),
+                      words=_words(row.Kind, details.get("from_attempt"), bool(details.get("steps"))), from_attempt=details.get("from_attempt"),
                       scope=row.Scope or "", items=details.get("items", []), decisions=details.get("decisions", []),
                       values_refreshed=bool(details.get("values_refreshed")), edits=details.get("edits", []),
                       ignored=[IgnoredWait(**i) for i in details.get("ignored", [])],
-                      counts_reset=bool(details.get("counts_reset")),
+                      counts_reset=bool(details.get("counts_reset")), steps=details.get("steps", []),
                       released=released_words(details.get("ignored", []), bool(details.get("counts_reset"))))
 
 
@@ -172,9 +193,9 @@ def _from_reactions(db: Session, run: JobRun, chain: List[JobRun]) -> List[Resta
     return found
 
 
-def _words(kind: str, from_attempt: Optional[int]) -> str:
+def _words(kind: str, from_attempt: Optional[int], by_step: bool = False) -> str:
     if kind == ADVANCED:
-        return "Run again, item by item"
+        return f"Resumed from attempt {from_attempt}, by step" if by_step else "Run again, item by item"
     if kind == RESUME:
         return f"Resumed from attempt {from_attempt}" if from_attempt else "Resumed from where it failed"
     return "Restarted from the beginning"

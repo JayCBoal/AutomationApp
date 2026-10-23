@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import Audit, Job, JobRun, utcnow
-from app import rerun_advanced, rerun_values, run_restarts
+from app import rerun_advanced, rerun_steps, rerun_values, run_restarts
 from engine import reopen_tree as rerun_tree
 from app.rerun_values import LevelEdit, ValueChange, ValueLevel, ValueShown
 from app.routers.launches import LaunchOut, start_runner
@@ -63,6 +63,9 @@ class ItemChoice(BaseModel):
     custom_rule: bool = Field(False, description="It starts by a Custom rule: a wait cannot be ignored one by one")
 
 
+StepChoice = rerun_steps.StepChoice
+
+
 class RerunPlan(BaseModel):
     run_id: str
     job_key: str
@@ -92,6 +95,10 @@ class RerunPlan(BaseModel):
     items_problem: Optional[str] = Field(None, description="Advanced: why the items named cannot be run, in words")
     ignored: Dict[str, List[str]] = Field({}, description="Advanced: the prerequisites released for this one restart, by the job's path")
     reset_counts: bool = Field(False, description="Advanced: the Reactions of the run start their counts from zero")
+    steps: List[StepChoice] = Field([], description="Advanced, a job on its own: its top-level steps, what the attempt finished of each and what the choices give it")
+    from_step: Optional[str] = Field(None, description="Advanced, a job on its own: the step to start at")
+    skip_steps: List[str] = Field([], description="Advanced, a job on its own: the steps not to run")
+    steps_problem: Optional[str] = Field(None, description="Advanced, a job on its own: why the step choices cannot be run, in words")
 
 
 class RerunRequest(BaseModel):
@@ -110,6 +117,8 @@ class RerunRequest(BaseModel):
         {}, description="For a workflow's Resume: a job's own values to change, by key, by the job's place in the run")
     ignore: Dict[str, List[str]] = Field({}, description="Advanced: prerequisites to ignore for this one restart, by the job's path")
     reset_counts: bool = Field(False, description="Advanced: the automatic retry counts of the run start again from zero")
+    from_step: Optional[str] = Field(None, description="Advanced, a job on its own: start at this top-level step; the steps before count as done")
+    skip_steps: List[str] = Field([], description="Advanced, a job on its own: top-level steps not to run")
     log_level: str = Field(job_log.DEFAULT_LEVEL, description="DEBUG, DETAIL, SUMMARY or SILENT")
 
 
@@ -245,11 +254,11 @@ def _summary(plan: RerunPlan) -> str:
 
 def make_advanced_plan(db: Session, run: JobRun, shortcut: Optional[str] = None, chosen: Optional[List[str]] = None,
                        chosen_as: str = "resume", explicit: Optional[Dict[str, str]] = None,
-                       ignore: Optional[Dict[str, List[str]]] = None, reset_counts: bool = False) -> RerunPlan:
+                       ignore: Optional[Dict[str, List[str]]] = None, reset_counts: bool = False,
+                       from_step: Optional[str] = None, skip_steps: Optional[List[str]] = None) -> RerunPlan:
     """What Advanced can do for a workflow run: the items to choose from, and, once some are named, what they would get."""
     if not _in_a_workflow(run):
-        return RerunPlan(run_id=run.RunID, job_key=run.JobKey, attempt=run.Attempt, can_restart=False, can_resume=False,
-                         advanced=True, refusal="Advanced is for workflow runs; a job on its own is run again with Resume or Restart.")
+        return make_job_advanced_plan(db, run, from_step, skip_steps or [])
     tree = rerun_tree.make_advanced_plan(db, run)
     plan = RerunPlan(run_id=run.RunID, job_key=run.JobKey, attempt=run.Attempt, can_restart=tree.refusal is None,
                      can_resume=False, refusal=tree.refusal, scope=tree.scope, reopens_run_id=tree.top.RunID, advanced=True)
@@ -275,15 +284,55 @@ def make_advanced_plan(db: Session, run: JobRun, shortcut: Optional[str] = None,
     return plan
 
 
+def make_job_advanced_plan(db: Session, run: JobRun, from_step: Optional[str], skip_steps: List[str]) -> RerunPlan:
+    """What Advanced can do for a failed job on its own: its steps to start at or skip, and what the choices give each."""
+    plan = make_plan(db, run)
+    plan.advanced = True
+    if plan.refusal:
+        return plan
+    record, problem = find_earlier_attempt(db, run.RunID)
+    if record is None:
+        plan.steps_problem = f"{problem} Restart the job from the beginning." if problem and "Restart" not in problem else problem
+        return plan
+    plan.steps = rerun_steps.steps_for(db, run.JobKey, record)
+    plan.from_step, plan.skip_steps = from_step, list(skip_steps)
+    plan.steps_problem = rerun_steps.choice_problem(plan.steps, from_step, plan.skip_steps)
+    if plan.steps_problem:
+        return plan
+    rerun_steps.apply_choices(plan.steps, from_step, plan.skip_steps)
+    if rerun_steps.failed_step_is_passed_over(plan.steps) or from_step:
+        plan.step_to_decide = None              # the step that failed does not run as it was: nothing to decide about it
+    if from_step or skip_steps:
+        plan.summary = rerun_steps.summary(run.Attempt, plan.steps, from_step, plan.skip_steps)
+    return plan
+
+
 @router.get("/{run_id}/rerun-plan", response_model=RerunPlan)
 def rerun_plan(run_id: str, advanced: bool = False, shortcut: Optional[str] = None, chosen: List[str] = Query([]),
-               chosen_as: str = "resume", db: Session = Depends(get_db)):
+               chosen_as: str = "resume", items: str = "", ignore: str = "", reset_counts: bool = False,
+               from_step: Optional[str] = None, skip_steps: List[str] = Query([]), db: Session = Depends(get_db)):
     """
     What Rerun can do for this run: whether Resume is possible, and a step the operator must decide on. With
-    advanced=true, a workflow run's items to choose from; with chosen (and a shortcut), what they would get.
+    advanced=true, a workflow run's items to choose from; with chosen (and a shortcut), what they would get. For a job
+    on its own, advanced=true gives its steps; with from_step and skip_steps, what each would get. items and ignore
+    are JSON, as in the request: the action for each item by path, and the prerequisites to ignore for each job.
     """
     run = _find(db, run_id)
-    return make_advanced_plan(db, run, shortcut, chosen, chosen_as) if advanced else make_plan(db, run)
+    if not advanced:
+        return make_plan(db, run)
+    return make_advanced_plan(db, run, shortcut, chosen, chosen_as, _json_object(items), _json_object(ignore), reset_counts,
+                              from_step, skip_steps)
+
+
+def _json_object(text: str) -> dict:
+    """A query value that holds a JSON object, or a refusal in words."""
+    try:
+        found = json.loads(text) if text else {}
+    except ValueError:
+        found = None
+    if not isinstance(found, dict):
+        raise HTTPException(422, "items and ignore must be JSON objects, such as {\"Load\": \"restart\"}.")
+    return found
 
 
 @router.post("/{run_id}/rerun", response_model=LaunchOut, status_code=status.HTTP_202_ACCEPTED)
@@ -294,7 +343,7 @@ def rerun(run_id: str, payload: RerunRequest, request: Request, db: Session = De
     if kind not in ("resume", "restart", "advanced"):
         raise HTTPException(422, "Choose resume, restart or advanced.")
     plan = (make_advanced_plan(db, run, payload.shortcut, payload.chosen, payload.chosen_as, payload.items,
-                                payload.ignore, payload.reset_counts)
+                                payload.ignore, payload.reset_counts, payload.from_step, payload.skip_steps)
             if kind == "advanced" else make_plan(db, run))
     if plan.refusal:
         raise HTTPException(409, plan.refusal)
@@ -303,6 +352,8 @@ def rerun(run_id: str, payload: RerunRequest, request: Request, db: Session = De
         job_log.level_number(level)
     except ValueError as e:
         raise HTTPException(422, str(e))
+    if kind == "advanced" and not _in_a_workflow(run):
+        return _rerun_job_advanced(db, request, run, plan, level, payload)
     if kind == "advanced":
         return _reopen_advanced(db, request, plan, level, payload)
     if _in_a_workflow(run):
@@ -318,6 +369,25 @@ def rerun(run_id: str, payload: RerunRequest, request: Request, db: Session = De
     launch = start_runner(request, run.JobKey, run.SchedulerInstanceID, level, run.BusinessDate, extra,
                           scheduler=run.SchedulerName or "AutoApp UI")
     _record(db, plan, run.JobKey, kind, launch.run_id, run.Attempt, {"": payload.unknown_step or ""}, payload.refresh_values, edits)
+    return launch
+
+
+def _rerun_job_advanced(db: Session, request: Request, run: JobRun, plan: RerunPlan, level: str,
+                        payload: RerunRequest) -> LaunchOut:
+    """The next attempt of a failed job, picked up from its record, starting at a step and/or skipping some."""
+    if plan.steps_problem:
+        raise HTTPException(409 if not plan.steps else 422, plan.steps_problem)
+    if not (plan.from_step or plan.skip_steps):
+        raise HTTPException(422, "Choose a step to start at or a step to skip, or use Resume.")
+    extra = ["--run-number", str(run.RunNumber), "--attempt", str(run.Attempt + 1)] + _resume_arguments(plan, payload.unknown_step)
+    arguments, edits = _value_arguments(db, run, payload)
+    extra += arguments
+    extra += ["--from-step", plan.from_step] if plan.from_step else []
+    extra += ["--skip-steps", json.dumps(plan.skip_steps)] if plan.skip_steps else []
+    launch = start_runner(request, run.JobKey, run.SchedulerInstanceID, level, run.BusinessDate, extra,
+                          scheduler=run.SchedulerName or "AutoApp UI")
+    _record(db, plan, run.JobKey, "advanced", launch.run_id, run.Attempt, {"": payload.unknown_step or ""},
+            payload.refresh_values, edits)
     return launch
 
 

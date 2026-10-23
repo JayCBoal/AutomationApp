@@ -384,7 +384,7 @@ Compiled 2026-10-18, from the design record and Phases 1 to 4.
 
 **D61. A rerun's limit counts per workflow run; when used up, the next entry that holds decides**; a manual rerun does not reset the count.
 - *Why:* "rerun twice, then count as failed" needs the fall-through. Operators often rerun without fixing anything; a reset would allow N more automatic retries against a system still broken; one who has fixed the cause resets the count on purpose.
-- *Status:* Built (count and fall-through, Phase 3); manual rerun and reset Designed (Phase 7). *Source:* WORKFLOWS.md, "Reactions (topic 4)" and "Restarts".
+- *Status:* Built (count and fall-through, Phase 3; a manual rerun does not reset it, and Advanced's *Reset automatic retry counts* does, Phase 7, 6c). *Source:* WORKFLOWS.md, "Reactions (topic 4)" and "Restarts".
 
 **D62. Reactions are job-level, and a use can override them**: Override here copies them into the use, and from then on the use's list is the whole list, with no merging.
 - *Why:* "which one fires" must have one answer. Rerun from… and Skip… name other jobs in one workflow, so only a use offers them; what a job *is* goes on the job, how it fits in on its use.
@@ -543,11 +543,11 @@ Compiled 2026-10-18, from the design record and Phases 1 to 4.
 
 **D74. A rerun is a new attempt within the same workflow run**, not a new run.
 - *Why:* the history stays together, and the net-result rule (D43) applies.
-- *Status:* Built for Reactions' reruns (Phase 3); the Rerun ▸ menu Designed (Phase 7). *Source:* WORKFLOWS.md, "Restarts".
+- *Status:* Built (Reactions' reruns, Phase 3; the Rerun ▸ panel and Advanced…, Phase 7). *Source:* WORKFLOWS.md, "Restarts".
 
 **D75. Rerun ▸: Resume first, then Restart from beginning, then Advanced…**, on jobs and workflows alike.
 - *Why:* Resume (the owner's idea from the original prototype's control file) is what an operator usually wants, so it is the first choice, not a hidden default. Advanced holds the rest: from a chosen job, mark done, ignore a prerequisite (Control-M's "add the condition by hand", done openly), with different values, reset retry counts; each choice in the Audit Log.
-- *Status:* Designed (Phase 7). *Source:* WORKFLOWS.md, "Restarting" and "Restarts".
+- *Status:* Built (Phase 7, steps 4 to 6e). *Source:* WORKFLOWS.md, "Restarting" and "Restarts".
 
 **D76. Every failed step reports whether what it did is known**: not done, partly done and known, or unknown; Resume holds for an operator at an unknown step, and automatic reruns do not retry it.
 - *Why:* resuming blindly could repeat a payment or a partly committed SQL change; the handler knows from the error it caught.
@@ -754,3 +754,21 @@ Compiled 2026-10-18, from the design record and Phases 1 to 4.
 
 **D168. Reset counts is a record the rebuild respects.** Reaction counts are rebuilt from the run's Reaction events at each reopening, so a reset is recorded on the Restarts row (`counts_reset`) with the time the request was made, and every later rebuild counts only events after the latest reset, for the run and for the embedded workflows inside it. The reopening that makes the reset passes it on directly, so it does not depend on the row being written yet.
 - *Why:* a reset that lasted only one restart would be undone by the next reopening, or by a Reaction's own resume (D61). *Status:* Built (6c). *Source:* WORKFLOWS_PHASE7.md, step 6.
+
+**D169. A failed job on its own can be picked up at a chosen top-level step, or with steps skipped.** Advanced on a job on its own (only when it Failed and left a record) takes `from_step` and `skip_steps`, by top-level step number. *From a step:* the steps before it count as done, with their outputs restored from the record; the step and every later one run fresh, including ones that had finished (an If asks its condition again, a loop lists its files again, a file step copies or deletes again). A step before the chosen one that had not finished, the failed one and any between, is passed over, which is the same as skipping it. *Skip:* the step is not run, ends as skipped in the control file (`skipped`), has no outputs and `%{Step.Status}` reads `SKIPPED`; a later attempt does not run it either. A step is a unit: an If, For Each File or While is started or skipped whole (the owner, 2026-10-22). Values use the Resume's Use as they were / Refresh / Edit.
+- *Considered:* starting a Succeeded job at a step (no record, D159); choosing a step inside a block (later, if wanted); making a step before the chosen one that never finished fail the request (it would make "start at a later step" useless, which is how bypassing a failed step is done).
+- *Status:* Built (6d); the dialog is 6e. *Source:* WORKFLOWS_PHASE7.md, step 6.
+
+**D170. Starting at a step, or skipping the step that failed, needs no decision about that step.** A failed step of unknown effect asks for "run again / count as done" (proposal 3) only when it runs as it was. If the choice runs it fresh (it is at or after the chosen step) or passes it over, the operator has already decided, and the plan no longer asks. The control file ignores the failure of a step inside a top-level step that later ended as skipped, so the next attempt does not find it again.
+- *Status:* Built (6d). *Source:* WORKFLOWS_PHASE7.md, step 6.
+
+**D171. The rerun plan of a job on its own lists its top-level steps; the record says what was chosen.** `GET rerun-plan?advanced=true` gives each active top-level step with its type, whether it is or holds a file step, what the attempt finished of it (finished, failed, not run), and, once `from_step` or `skip_steps` are given, what it gets (done as it was, run, skipped) and whether it finished and runs again; a choice that makes no sense is refused in words (`steps_problem`). The Restarts row keeps `steps` ("Started at step 3 'Gate b'.", "Passed over step 2 ... which had not finished.", "Skipped step 4 'Report'.") and the Audit Log says it. The files counted for the run add up across attempts (D43), so a file step run again counts its files again.
+- *Status:* Built (6d). *Source:* WORKFLOWS_PHASE7.md, step 6.
+
+**D172. Advanced… is a second state of the Rerun panel, not a second dialog; what the operator chooses is asked of the server each time.** Choosing a shortcut, an item's action, a wait to ignore, a step or the retry-count reset sends the choices to `GET rerun-plan` (`items`, `ignore`, `reset_counts` as well as the shortcut, `from_step` and `skip_steps`), and the panel shows the answer: the items that run, a refusal in words, the steps to decide, and the values lists. The panel never works out for itself what a choice does, so what it says is what the run does. Run stays disabled until something is chosen and the server accepts it. *Back* returns to Resume and Restart.
+- *Why:* one rule in one place (D75, D161); the same panel serves the Run Job page, the log page, a workflow's run and Job History without drifting apart.
+- *Status:* Built (6e). *Source:* WORKFLOWS_PHASE7.md, step 6.
+
+**D173. The Restarts list and the Audit Log name the items passed over.** An item bypassed reads "Bypassed 'Post'." and one not run "Did not run 'Report'."; the Audit Log headline says "bypassed 'Post'" in the same sentence as the items run again. Waits ignored and a reset of the retry counts read as in 6c.
+- *Why:* "'Post' is bypassed: it counts as succeeded and does not run" is the plan's wording for the operator before choosing; afterwards the record should say what happened in one short phrase.
+- *Status:* Built (6e). *Source:* WORKFLOWS_PHASE7.md, step 6.

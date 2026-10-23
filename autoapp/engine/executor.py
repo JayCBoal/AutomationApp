@@ -11,7 +11,7 @@ success (END_SUCCESS).
 import os
 import time
 from datetime import datetime
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 from sqlalchemy.orm import Session
 
@@ -43,12 +43,14 @@ class JobFailed(Exception):
 class Executor:
     def __init__(self, db: Session, scope_engine: ScopeResolutionEngine, telemetry: LocalSpoolTelemetryClient,
                  after_step: Callable[[], None], control=None, resume: Optional[ControlRecord] = None,
-                 count_as_done: Optional[str] = None):
+                 count_as_done: Optional[str] = None, start_at: Optional[int] = None, skip: Optional[Set[str]] = None):
         self.db, self.scope_engine, self.telemetry = db, scope_engine, telemetry
         self.after_step = after_step            # sends what the step recorded
         self.control = control or NullControl() # what this run keeps so a later attempt can pick up (engine/control_file.py)
         self.resume = resume                    # the earlier attempt's record, when this run picks up where it stopped
         self.count_as_done = count_as_done      # the key of a step the operator says to count as done, not run again
+        self.start_at = start_at                # Advanced: the top-level step the run starts at; unfinished ones before it are passed over
+        self.skip = skip or set()               # Advanced: numbers of top-level steps not to run
         self.context = RunContext()
         self.loops: List[LoopFolder] = []       # the folders of the For Each File loops the run is inside
         self.passes: List[Tuple[str, str]] = [] # each of those loops' pass: ("File 2 of 5: a.csv", "2")
@@ -59,7 +61,7 @@ class Executor:
     def _restore_outputs(self, resume: ControlRecord) -> None:
         """Brings back what the earlier attempt's finished steps left for the steps after them."""
         for record in resume.ended_steps():
-            if record.get("name"):
+            if record.get("name") and not record.get("skipped"):
                 self.context.record(record["name"], record.get("outputs") or {})
             if record.get("return_code") is not None:
                 self.job_return_code = record["return_code"]
@@ -81,10 +83,14 @@ class Executor:
         key = self._key(prepared)
         earlier = self.resume.finished(key) if self.resume else None
         if earlier:
-            job_log.summary(f"{self._label(prepared)}: finished in the earlier attempt, so it is not run again.")
+            job_log.summary(f"{self._label(prepared)}: " + ("skipped in the earlier attempt, so it is not run" if earlier.get("skipped")
+                            else "finished in the earlier attempt, so it is not run") + " again.")
             return END if earlier.get("signal") == END else CONTINUE
         if key == self.count_as_done:
             return self._count_as_done(prepared, key)
+        passed_over = self._passed_over(prepared)
+        if passed_over:
+            return self._skip(prepared, key, passed_over)
         started, timer, own = datetime.now(), time.perf_counter(), {}
         self.control.write("begin", key=key, name=prepared.step.StepName)
         try:
@@ -99,6 +105,25 @@ class Executor:
         self._record(prepared, own, started, timer)
         self._note_end(prepared, key, signal)
         return signal
+
+    def _passed_over(self, prepared: PreparedStep) -> Optional[str]:
+        """Why the operator's Advanced choice has this top-level step not run, in words, or None."""
+        number = prepared.number
+        if "." in number:
+            return None
+        if number in self.skip:
+            return "the operator chose to skip it"
+        if self.start_at is not None and int(number) < self.start_at:
+            return f"the operator chose to start at step {self.start_at}, and it had not finished"
+        return None
+
+    def _skip(self, prepared: PreparedStep, key: str, why: str) -> str:
+        """The step does not run: it ends as not run, has no outputs (%{Name.Status} reads SKIPPED), and the job goes on."""
+        job_log.summary(f"{self._label(prepared)}: skipped, as {why}.")
+        self.control.write("end", key=key, name=prepared.step.StepName, done=True, skipped=True, signal=CONTINUE,
+                           outputs=None, return_code=self.job_return_code)
+        self.context.outputs.pop(prepared.step.StepName, None)
+        return CONTINUE
 
     def _count_as_done(self, prepared: PreparedStep, key: str) -> str:
         """The operator said this step did its work, though it failed without saying: it is not run again."""

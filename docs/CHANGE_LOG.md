@@ -6,6 +6,15 @@ Notable structural, schema and design changes to AutoApp, newest first. Line-by-
 
 ## 2026-10-22
 
+### Workflows, Phase 7, step 6: Advanced… on the Rerun panel
+
+Plan: [WORKFLOWS_PHASE7.md](WORKFLOWS_PHASE7.md). Decisions D161 to D173 in [WORKFLOW_DECISIONS.md](WORKFLOW_DECISIONS.md).
+
+- **Added (pages):** *Advanced…* beside Resume and Restart from beginning. For a workflow run: every item with Leave / Resume / Restart / Bypass / Don't run, or the shortcuts *From the jobs chosen, and everything that waits for them* and *Only the jobs chosen* (with a warning that what follows may be out of date), a tick to ignore a wait for this restart only, and *Start the automatic retry counts again from zero*. For a job on its own: *Start here* and *Skip* on each top-level step, with a warning when a step that copies or deletes files will do it again. The panel says what the run will do before *Run* is pressed; the `${...}` values list is the one Resume uses.
+- **Added (API):** `GET rerun-plan` takes `items`, `ignore` and `reset_counts` (JSON) so the panel can preview an item-by-item choice.
+- **Changed (records):** the Restarts list and the Audit Log say "Bypassed 'Post'." and "Did not run 'Report'.".
+- **Not yet:** Advanced on a Succeeded or Cancelled run is accepted by the API (D161) but the Rerun button still appears only on a Failed run.
+
 ### Workflows, Phase 7, step 5a: a Reaction resumes a workflow
 
 Plan: [WORKFLOWS_PHASE7.md](WORKFLOWS_PHASE7.md). Decisions D156 to D158 in [WORKFLOW_DECISIONS.md](WORKFLOW_DECISIONS.md).

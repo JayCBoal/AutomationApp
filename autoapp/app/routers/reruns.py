@@ -17,13 +17,13 @@ reopens the run at the top and runs again only that item (docs/WORKFLOWS_PHASE7.
 import json
 from typing import Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import Audit, Job, JobRun
-from app import rerun_values, run_restarts
+from app.models import Audit, Job, JobRun, utcnow
+from app import rerun_advanced, rerun_values, run_restarts
 from engine import reopen_tree as rerun_tree
 from app.rerun_values import LevelEdit, ValueChange, ValueLevel, ValueShown
 from app.routers.launches import LaunchOut, start_runner
@@ -51,6 +51,18 @@ class ItemPlan(BaseModel):
     what: str = Field(..., description="What Resume does with it, in words")
 
 
+class ItemChoice(BaseModel):
+    path: str
+    job_key: str
+    status: str
+    is_workflow: bool
+    depth: int = Field(..., description="How many embedded workflows it is inside")
+    can_resume: bool = Field(..., description="Whether it can be picked up from where it failed; if not, only restarted")
+    resume_problem: Optional[str] = None
+    waits: List[str] = Field([], description="What it waits for, by name: jobs of its workflow, and things outside it")
+    custom_rule: bool = Field(False, description="It starts by a Custom rule: a wait cannot be ignored one by one")
+
+
 class RerunPlan(BaseModel):
     run_id: str
     job_key: str
@@ -74,10 +86,20 @@ class RerunPlan(BaseModel):
         [], description="In a workflow run: the values to choose about, one list for each workflow, use and resumed job")
     kept_jobs: List[str] = Field([], description="In a workflow run: jobs that Succeeded; they are not run again and keep their values")
     values_note: str = Field("", description="In a workflow run: what to say about the conditions not yet decided")
+    advanced: bool = Field(False, description="This is the plan of an Advanced rerun")
+    choices: List[ItemChoice] = Field([], description="Advanced: every item of the run, to choose from")
+    named_items: Dict[str, str] = Field({}, description="Advanced: what each item named gets, resume or restart, by path")
+    items_problem: Optional[str] = Field(None, description="Advanced: why the items named cannot be run, in words")
+    ignored: Dict[str, List[str]] = Field({}, description="Advanced: the prerequisites released for this one restart, by the job's path")
+    reset_counts: bool = Field(False, description="Advanced: the Reactions of the run start their counts from zero")
 
 
 class RerunRequest(BaseModel):
-    kind: str = Field(..., description="resume or restart")
+    kind: str = Field(..., description="resume, restart, or advanced (item by item, for a workflow run)")
+    items: Dict[str, str] = Field({}, description="Advanced: resume or restart for each item, by path")
+    shortcut: Optional[str] = Field(None, description="Advanced: from (the jobs chosen and all that waits for them) or only")
+    chosen: List[str] = Field([], description="Advanced: the jobs chosen for a shortcut, by path")
+    chosen_as: str = Field("resume", description="Advanced: what a failed item chosen gets, resume or restart")
     unknown_step: Optional[str] = Field(None, description="For a Resume with a step to decide: run_again or count_done")
     decisions: Dict[str, str] = Field({}, description="For a workflow run: run_again or count_done for each step to decide, by the job's path")
     refresh_values: bool = Field(False, description="For a Resume: read the ${...} values again, not use them as they were")
@@ -86,6 +108,8 @@ class RerunRequest(BaseModel):
         {}, description="For a workflow's Resume: variables to change, by the workflow's place in the run (empty for the top)")
     job_edits: Dict[str, Dict[str, str]] = Field(
         {}, description="For a workflow's Resume: a job's own values to change, by key, by the job's place in the run")
+    ignore: Dict[str, List[str]] = Field({}, description="Advanced: prerequisites to ignore for this one restart, by the job's path")
+    reset_counts: bool = Field(False, description="Advanced: the automatic retry counts of the run start again from zero")
     log_level: str = Field(job_log.DEFAULT_LEVEL, description="DEBUG, DETAIL, SUMMARY or SILENT")
 
 
@@ -162,6 +186,10 @@ def make_workflow_plan(db: Session, run: JobRun) -> RerunPlan:
 def _what(pick: "rerun_tree.Pick") -> str:
     if pick.action == reopen.ROUTE:
         return "is opened again, to run the item chosen"
+    if pick.action == reopen.BYPASS:
+        return "is bypassed: it counts as succeeded and does not run"
+    if pick.action == reopen.DONT_RUN:
+        return "is not run: it ends Skipped, and what waits for its success does not run"
     if pick.goes_on():
         return f"goes on from attempt {pick.attempt}"
     return "runs again from the beginning"
@@ -215,27 +243,68 @@ def _summary(plan: RerunPlan) -> str:
             f"Step {plan.step_to_decide.step} '{plan.step_to_decide.title}' needs your decision first.")
 
 
+def make_advanced_plan(db: Session, run: JobRun, shortcut: Optional[str] = None, chosen: Optional[List[str]] = None,
+                       chosen_as: str = "resume", explicit: Optional[Dict[str, str]] = None,
+                       ignore: Optional[Dict[str, List[str]]] = None, reset_counts: bool = False) -> RerunPlan:
+    """What Advanced can do for a workflow run: the items to choose from, and, once some are named, what they would get."""
+    if not _in_a_workflow(run):
+        return RerunPlan(run_id=run.RunID, job_key=run.JobKey, attempt=run.Attempt, can_restart=False, can_resume=False,
+                         advanced=True, refusal="Advanced is for workflow runs; a job on its own is run again with Resume or Restart.")
+    tree = rerun_tree.make_advanced_plan(db, run)
+    plan = RerunPlan(run_id=run.RunID, job_key=run.JobKey, attempt=run.Attempt, can_restart=tree.refusal is None,
+                     can_resume=False, refusal=tree.refusal, scope=tree.scope, reopens_run_id=tree.top.RunID, advanced=True)
+    if tree.refusal:
+        return plan
+    plan.choices = [ItemChoice(**vars(c)) for c in tree.choices]
+    if not (shortcut or chosen or explicit):
+        return plan
+    items, plan.items_problem = rerun_advanced.named_items(db, tree, shortcut, chosen or [], chosen_as, explicit or {})
+    if plan.items_problem:
+        return plan
+    tree = rerun_tree.make_advanced_plan(db, run, items)
+    plan.named_items, plan.items_problem = items, tree.resume_problem or rerun_advanced.waits_problem(tree, items, ignore or {})
+    plan.ignored, plan.reset_counts = (ignore or {}), reset_counts
+    plan.items = [ItemPlan(path=p.path, job_key=p.job_key, what=_what(p)) for p in tree.picks]
+    plan.steps_to_decide = _steps_to_decide(tree)
+    plan.steps_finished = sum(len(p.record.ended_steps()) for p in tree.picks if p.record)
+    plan.can_resume = plan.items_problem is None
+    if plan.can_resume:
+        plan.value_levels = rerun_values.levels_for(db, tree)
+        plan.kept_jobs = rerun_values.kept_jobs(db, tree)
+        plan.values_note = rerun_values.note_for(tree)
+    return plan
+
+
 @router.get("/{run_id}/rerun-plan", response_model=RerunPlan)
-def rerun_plan(run_id: str, db: Session = Depends(get_db)):
-    """What Rerun can do for this run: whether Resume is possible, and a step the operator must decide on."""
-    return make_plan(db, _find(db, run_id))
+def rerun_plan(run_id: str, advanced: bool = False, shortcut: Optional[str] = None, chosen: List[str] = Query([]),
+               chosen_as: str = "resume", db: Session = Depends(get_db)):
+    """
+    What Rerun can do for this run: whether Resume is possible, and a step the operator must decide on. With
+    advanced=true, a workflow run's items to choose from; with chosen (and a shortcut), what they would get.
+    """
+    run = _find(db, run_id)
+    return make_advanced_plan(db, run, shortcut, chosen, chosen_as) if advanced else make_plan(db, run)
 
 
 @router.post("/{run_id}/rerun", response_model=LaunchOut, status_code=status.HTTP_202_ACCEPTED)
 def rerun(run_id: str, payload: RerunRequest, request: Request, db: Session = Depends(get_db)):
     """Starts the next attempt of a failed job, at once; follow it with GET /api/v1/runs/{run_id} of the answer's run_id."""
     run = _find(db, run_id)
-    plan = make_plan(db, run)
+    kind = payload.kind.strip().lower()
+    if kind not in ("resume", "restart", "advanced"):
+        raise HTTPException(422, "Choose resume, restart or advanced.")
+    plan = (make_advanced_plan(db, run, payload.shortcut, payload.chosen, payload.chosen_as, payload.items,
+                                payload.ignore, payload.reset_counts)
+            if kind == "advanced" else make_plan(db, run))
     if plan.refusal:
         raise HTTPException(409, plan.refusal)
-    kind = payload.kind.strip().lower()
-    if kind not in ("resume", "restart"):
-        raise HTTPException(422, "Choose resume or restart.")
     level = payload.log_level.strip().upper()
     try:
         job_log.level_number(level)
     except ValueError as e:
         raise HTTPException(422, str(e))
+    if kind == "advanced":
+        return _reopen_advanced(db, request, plan, level, payload)
     if _in_a_workflow(run):
         return _reopen(db, request, plan, kind, level, payload)
     extra = ["--run-number", str(run.RunNumber), "--attempt", str(run.Attempt + 1)]
@@ -253,12 +322,12 @@ def rerun(run_id: str, payload: RerunRequest, request: Request, db: Session = De
 
 
 def _record(db: Session, plan: RerunPlan, job_key: str, kind: str, run_id: str, number: int, chosen: Dict[str, str],
-            refreshed: bool, edits: List[str]) -> None:
+            refreshed: bool, edits: List[str], chosen_at=None) -> None:
     """The restart record and the Audit Log row for a request that has been started (nothing is written for a refused one)."""
     kind = kind.upper()
     details = run_restarts.details_for(plan, kind, chosen, refreshed, edits)
     said = [run_restarts.headline(plan, job_key, kind, details)] + ([f"{i}." for i in details["items"]] if kind == "RESUME" else [])
-    run_restarts.record(db, job_key, run_id, kind, number, plan.scope or "", details, said)
+    run_restarts.record(db, job_key, run_id, kind, number, plan.scope or "", details, said, chosen_at)
 
 
 def _reopen(db: Session, request: Request, plan: RerunPlan, kind: str, level: str, payload: RerunRequest) -> LaunchOut:
@@ -279,6 +348,28 @@ def _reopen(db: Session, request: Request, plan: RerunPlan, kind: str, level: st
     launch = start_runner(request, top.JobKey, top.SchedulerInstanceID, level, top.BusinessDate, extra,
                           scheduler=top.SchedulerName or "AutoApp UI", run_id=top.RunID)
     _record(db, plan, top.JobKey, kind, top.RunID, number, decisions, payload.refresh_values, edits)
+    return launch
+
+
+def _reopen_advanced(db: Session, request: Request, plan: RerunPlan, level: str, payload: RerunRequest) -> LaunchOut:
+    """Starts the workflow runner on the run at the top, reopened with an action for each item named."""
+    if plan.items_problem:
+        raise HTTPException(422 if not plan.named_items else 409, plan.items_problem)
+    if not plan.named_items:
+        raise HTTPException(422, "Choose at least one item to run again.")
+    top = _find(db, plan.reopens_run_id)
+    decisions = _decisions(plan, payload.decisions)
+    values, edits = _workflow_values(db, top, plan, "advanced", payload)
+    extra = ["--run-number", str(top.RunNumber), "--attempt", str(top.Attempt), "--reopen", reopen.ADVANCED,
+             "--reopen-items", json.dumps(plan.named_items)] + values
+    extra += ["--ignore-waits", json.dumps(plan.ignored)] if plan.ignored else []
+    extra += ["--reset-counts"] if plan.reset_counts else []
+    extra += ["--rerun-decisions", json.dumps(decisions)] if decisions else []
+    number = run_restarts.next_number(db, top.RunID)
+    chosen_at = utcnow()                # before the runner starts: the Reactions it counts afterwards come after a reset
+    launch = start_runner(request, top.JobKey, top.SchedulerInstanceID, level, top.BusinessDate, extra,
+                          scheduler=top.SchedulerName or "AutoApp UI", run_id=top.RunID)
+    _record(db, plan, top.JobKey, "advanced", top.RunID, number, decisions, payload.refresh_values, edits, chosen_at)
     return launch
 
 
@@ -328,13 +419,15 @@ def _workflow_values(db: Session, top: JobRun, plan: RerunPlan, kind: str, paylo
     wanted = payload.refresh_values or payload.level_edits or payload.job_edits or payload.edits
     if not wanted:
         return [], []
-    if kind != "resume":
+    if kind == "restart":
         raise HTTPException(422, "Values can be refreshed or edited for a Resume; a restart reads them all again.")
     if payload.edits:
         raise HTTPException(422, "Use level_edits and job_edits to change the values of a workflow's Resume.")
     if not plan.can_resume:
         raise HTTPException(409, plan.resume_problem)
-    tree = rerun_tree.make_tree_plan(db, _find(db, plan.run_id))
+    run = _find(db, plan.run_id)
+    tree = (rerun_tree.make_advanced_plan(db, run, plan.named_items) if kind == "advanced"
+            else rerun_tree.make_tree_plan(db, run))
     choices, problems = rerun_values.check_edits(tree, payload.level_edits, payload.job_edits)
     if problems:
         raise HTTPException(422, " ".join(problems))

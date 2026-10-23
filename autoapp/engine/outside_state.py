@@ -17,6 +17,9 @@ from engine import conditions, outside, workflow_conditions
 from engine.prerequisites import FINAL, HOLDS, NEVER, SKIPPED_OPTIONAL, TIMED_OUT, WAIT, prerequisite_state
 
 
+RELEASED_WORDS = "Released by an operator for this restart."
+
+
 @dataclass
 class Context:
     """The run this pass is for: when it started, and what time it is now (UTC for the database, local for the clock)."""
@@ -60,6 +63,7 @@ class Outside:
     unlimited: bool = False
     check: Any = None                   # the WorkflowPrerequisiteCheck row kept for this attempt
     tree_run_id: Optional[int] = None   # set when the target is in the same tree: look only in this run of it (D122)
+    released: bool = False              # an operator ignored this wait for one restart: it holds (docs/WORKFLOWS_PHASE7.md, step 6c)
 
     def blank_values(self) -> Dict[str, Any]:
         """Every value it offers to conditions, unknown."""
@@ -83,6 +87,8 @@ class Outside:
     def look(self, ctx: Context) -> None:
         """Reads what it waits for, setting holding, values, words and run_id."""
         {"OTHER_JOB": self._look_at_job, "ENDPOINT": self._look_at_files, "TIME": self._look_at_time}[self.kind](ctx)
+        if self.released:
+            self.holding, self.words = True, RELEASED_WORDS
 
     def _look_at_job(self, ctx: Context) -> None:
         after = ctx.run_started if self.only_after_start else None

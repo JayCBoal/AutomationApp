@@ -1348,12 +1348,27 @@ function workflowDetail() {
                 return item.prerequisites.filter(p => p.kind === "JOB" && shown.has(prefix + p.target)).map((p, i) => ({
                     id: `${path}>${i}`, from: prefix + p.target, to: path, test: p.test, codes: p.return_codes || "" }));
             });
+            this.markIgnoredLines(lines, items);
             const selected = this.runSelected ? { kind: "item", id: this.runSelected } : null;
             const saved = this.form ? this.form.items.filter(i => i.id && shown.has(this.pathOfItem(i))) : [];
             const edge = this.outsideBoxes(saved, item => this.pathOfItem(item), item => this.nameOf(item.uid), item => this.pathOfItem(item),
                                            (item, o) => this.outsideState(this.pathOfItem(item), this.outsideName(item, o)));
             return { ...this.withExternal(items, lines, edge), selected,
                      reruns: this.reruns(saved, item => item && this.pathOfItem(item)) };
+        },
+
+        /** Lines an operator ignored for the run's latest restart are drawn struck through (docs/WORKFLOWS_PHASE7.md, step 6c). */
+        markIgnoredLines(lines, items) {
+            const byYou = ((this.run && this.run.restarts) || []).filter(r => r.by === "web interface");     // a Reaction's rerun after it is not a new choice
+            const latest = byYou[byYou.length - 1];
+            if (!latest || !latest.ignored || !latest.ignored.length) return;
+            const names = new Map(items.map(item => [item.id, item.name]));
+            for (const line of lines) {
+                const target = names.get(line.from);
+                if (!latest.ignored.some(i => i.item === line.to && i.prerequisite === target)) continue;
+                line.ignored = true;
+                line.words = `${names.get(line.to)} did not wait for ${target}: an operator ignored this wait for restart ${latest.number}`;
+            }
         },
 
         /** How what a job of the run waited for outside stood when last looked at: [the box's status, in words]. */

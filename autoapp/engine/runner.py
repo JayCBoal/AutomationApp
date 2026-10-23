@@ -70,7 +70,8 @@ def run_job(db: Session, job_key: str, instance_id: str, spool_dir: str,
     resume_run_id: an earlier attempt to pick up where it stopped, using its control file.
     count_as_done: the key of a step of that attempt the operator says to count as done, not run again.
     refresh_values: a picked-up run reads its variables again; by default it uses the values as that attempt had them.
-    value_edits: values the operator changed for a picked-up run, by key (engine/run_values.py).
+    value_edits: values the operator changed for a picked-up run, by key (engine/run_values.py); for a job
+        started again by Advanced they are the only values pinned, the rest being read fresh.
     drop_values: names of the workflow's or the use's variables that were changed: the run reads them again.
     """
     environment = dict(os.environ) if environment is None else environment
@@ -114,8 +115,8 @@ def run_job(db: Session, job_key: str, instance_id: str, spool_dir: str,
                 db=db, job_id=job_id, instance_id=instance_id, global_config=global_config,
                 environment=environment, business_date=business_date, workflow=from_workflow,
                 started=resume.started if resume else None,
-                pinned=run_values.pins(resume.values, value_edits, keep=not refresh_values,
-                                       drop=drop_values) if resume else None,
+                pinned=run_values.pins(resume.values if resume else {}, value_edits, keep=not refresh_values,
+                                       drop=drop_values) if resume or value_edits else None,
             )
             scope_engine.build_context()
             control.write("job", run_id=telemetry.run_id, job_key=job_key, started=scope_engine.started.isoformat(),
@@ -371,8 +372,16 @@ def main():
     parser.add_argument("--attempt", type=int, default=1, help="Given by the workflow runner: which attempt this is")
     parser.add_argument("--resume-run-id", default=None,
                         help="Pick up an earlier attempt of this job where it stopped, given its run ID")
-    parser.add_argument("--reopen", default=None, choices=["resume", "restart"],
-                        help="For a workflow: pick up the run --run-id names, which has ended, instead of starting a new one")
+    parser.add_argument("--reopen", default=None, choices=["resume", "restart", "advanced"],
+                        help="For a workflow: pick up the run --run-id names, which has ended, instead of starting a new one. "
+                             "advanced: run again the items --reopen-items names, each as it says")
+    parser.add_argument("--reopen-items", default=None,
+                        help="With --reopen advanced: a JSON object giving, by path, resume or restart for each item to run again")
+    parser.add_argument("--ignore-waits", default=None,
+                        help="With --reopen advanced: a JSON object listing, by the job's path, the prerequisites to ignore for this "
+                             "reopening only")
+    parser.add_argument("--reset-counts", action="store_true",
+                        help="With --reopen advanced: the Reactions of the run start their counts from zero")
     parser.add_argument("--reopen-scope", default=None,
                         help="With --reopen: the path of the one item to run again; without it, the whole run")
     parser.add_argument("--rerun-decisions", default=None,
@@ -444,7 +453,8 @@ def run_with_reactions(db: Session, args) -> int:
         # a workflow that resumes is its same run reopened; a restart is a new run under the same instance ID
         run_id, reopen = (own.run_id, "resume") if own.rerun.resumes and is_workflow else (None, None)
         attempt, count_as_done = attempt + 1, None
-        args.reopen_scope, args.rerun_decisions = None, None
+        args.reopen_scope, args.rerun_decisions, args.reopen_items = None, None, None
+        args.ignore_waits, args.reset_counts = None, False
         refresh_values, value_edits, drop_values = False, None, None
         db.expire_all()
 
@@ -460,6 +470,9 @@ def start_workflow(db: Session, workflow: Job, args, run_id: Optional[str], atte
                          business_date=args.business_date, log_level=args.log_level,
                          parent_run_id=args.parent_run_id, workflow_path=args.workflow_path, attempt=attempt,
                          reopen=reopen, reopen_scope=args.reopen_scope if reopen else None,
+                         reopen_items=json.loads(args.reopen_items) if reopen == "advanced" and args.reopen_items else None,
+                         ignored_waits=json.loads(args.ignore_waits) if reopen == "advanced" and args.ignore_waits else {},
+                         reset_counts=bool(reopen == "advanced" and args.reset_counts),
                          decisions=json.loads(args.rerun_decisions) if reopen and args.rerun_decisions else {},
                          refresh_values=bool(reopen and refresh_values), value_edits=(value_edits or {}) if reopen else {})
     return run_workflow(db, workflow, options, own)

@@ -210,7 +210,7 @@ class OutsideWaitOut(BaseModel):
     attempt: int
     kind: str
     target: Optional[str] = None
-    result: str = Field(..., description="WAITING, HOLDS, TIMED_OUT, SKIPPED or NOT_NEEDED")
+    result: str = Field(..., description="WAITING, HOLDS, TIMED_OUT, SKIPPED, NOT_NEEDED or RELEASED (an operator ignored it for one restart)")
     used_run_id: Optional[str] = Field(None, description="The run of the other workflow it used")
     seen_status: Optional[str] = Field(None, description=(
         "How what it waits for stood when last looked at: the other job's status, or SUCCESS or WAITING"))

@@ -85,6 +85,7 @@
                                 <template x-for="line in r.decisions" :key="line"><li x-text="line"></li></template>
                                 <li x-show="r.values_refreshed">Values were read again.</li>
                                 <template x-for="line in r.edits" :key="line"><li x-text="line"></li></template>
+                                <template x-for="line in r.released" :key="line"><li x-text="line"></li></template>
                                 <li x-show="r.message" x-text="r.message"></li>
                             </ul>
                         </li>

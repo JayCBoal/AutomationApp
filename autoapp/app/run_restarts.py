@@ -15,8 +15,14 @@ from sqlalchemy.orm import Session
 
 from app.models import Audit, Job, JobRun, ReactionEvent, RunRestart
 
-RESUME, RESTART = "RESUME", "RESTART"
+RESUME, RESTART, ADVANCED = "RESUME", "RESTART", "ADVANCED"
+AUDIT_ACTIONS = {RESUME: "JOB_RESUMED", RESTART: "JOB_RESTARTED", ADVANCED: "JOB_RERUN_ADVANCED"}
 BY_OPERATOR, BY_REACTION = "web interface", "a Reaction"
+
+
+class IgnoredWait(BaseModel):
+    item: str = Field(..., description="The job whose wait was released, by path")
+    prerequisite: str = Field(..., description="What it no longer waited for, by name")
 
 
 class RestartOut(BaseModel):
@@ -32,19 +38,22 @@ class RestartOut(BaseModel):
     decisions: List[str] = Field([], description="What was chosen for steps that may have changed something")
     values_refreshed: bool = False
     edits: List[str] = Field([], description="Values changed, by name, with the old and new value; never a secret")
+    ignored: List[IgnoredWait] = Field([], description="Prerequisites an operator released for this restart only (drawn crossed out)")
+    counts_reset: bool = Field(False, description="The automatic retry counts were reset by this restart")
+    released: List[str] = Field([], description="The two above, in words")
     message: Optional[str] = Field(None, description="For a Reaction: what it said")
 
 
 # ---------- Writing ----------
 
 def record(db: Session, job_key: str, run_id: str, kind: str, number: int, scope: str, details: Dict[str, Any],
-           changes: List[str]) -> None:
+           changes: List[str], chosen_at: Optional[datetime] = None) -> None:
     """Writes the run's restart row and its Audit Log row, in one commit."""
     db.add(RunRestart(RunID=run_id, Number=number, Kind=kind, Scope=scope, PerformedBy=BY_OPERATOR,
-                      Details=json.dumps(details)))
+                      Details=json.dumps(details), **({"ChosenDateTime": chosen_at} if chosen_at else {})))
     job = db.query(Job).filter(Job.JobKey == job_key).first()
     db.add(Audit(MasterObject_id=job.MasterObject_id if job else None,
-                 Action="JOB_RESUMED" if kind == RESUME else "JOB_RESTARTED",
+                 Action=AUDIT_ACTIONS[kind],
                  PerformedBy=BY_OPERATOR, Details=json.dumps({"changes": changes})))
     db.commit()
 
@@ -56,12 +65,23 @@ def next_number(db: Session, run_id: str) -> int:
 
 def details_for(plan, kind: str, decisions: Dict[str, str], refreshed: bool, edits: List[str]) -> Dict[str, Any]:
     """What the request did, for the row: the plan's items, the choices on unknown steps, the values."""
-    if kind == RESUME:
+    if kind in (RESUME, ADVANCED):
         items = [f"{item.path} {item.what}" for item in plan.items] if plan.items else []
     else:
         items = [plan.scope or plan.job_key] if plan.scope else []
     return {"from_attempt": plan.attempt, "items": items, "decisions": _decision_words(plan, decisions),
-            "values_refreshed": refreshed, "edits": edits}
+            "values_refreshed": refreshed, "edits": edits, "ignored": _ignored_list(plan),
+            "counts_reset": bool(plan.reset_counts)}
+
+
+def _ignored_list(plan) -> List[Dict[str, str]]:
+    return [{"item": path, "prerequisite": name} for path, names in plan.ignored.items() for name in names]
+
+
+def released_words(ignored: List[Dict[str, str]], counts_reset: bool) -> List[str]:
+    """"Ignored the wait of 'Reconcile' for 'Load'." and "Reset the retry counts." as the Restarts list says them."""
+    said = [f"Ignored the wait of '{i['prerequisite']}' for '{i['item']}'." for i in ignored]
+    return said + (["Reset the retry counts."] if counts_reset else [])
 
 
 def _decision_words(plan, chosen: Dict[str, str]) -> List[str]:
@@ -82,6 +102,9 @@ def headline(plan, job_key: str, kind: str, details: Dict[str, Any]) -> str:
     what = f"'{plan.scope}' in '{job_key}'" if plan.scope else f"'{job_key}'"
     if kind == RESTART:
         return f"Restarted {what} from the beginning (it was attempt {plan.attempt})."
+    if kind == ADVANCED:
+        return (f"Ran {what} again, item by item: " + "; ".join(f"'{i.path}' {i.what}" for i in plan.items) + "."
+            + "".join(" " + words for words in released_words(details["ignored"], details["counts_reset"])))
     touched = [item.path for item in plan.items]
     parts = [f"{_names(touched)} run again" if len(touched) > 1 else f"{_names(touched)} runs again"] if touched else []
     parts += [d.rstrip(".").replace(": ", " ", 1) for d in details["decisions"]]
@@ -122,7 +145,10 @@ def _from_row(row: RunRestart) -> RestartOut:
     return RestartOut(number=row.Number, time=row.ChosenDateTime, kind=row.Kind, by=row.PerformedBy,
                       words=_words(row.Kind, details.get("from_attempt")), from_attempt=details.get("from_attempt"),
                       scope=row.Scope or "", items=details.get("items", []), decisions=details.get("decisions", []),
-                      values_refreshed=bool(details.get("values_refreshed")), edits=details.get("edits", []))
+                      values_refreshed=bool(details.get("values_refreshed")), edits=details.get("edits", []),
+                      ignored=[IgnoredWait(**i) for i in details.get("ignored", [])],
+                      counts_reset=bool(details.get("counts_reset")),
+                      released=released_words(details.get("ignored", []), bool(details.get("counts_reset"))))
 
 
 def _from_reactions(db: Session, run: JobRun, chain: List[JobRun]) -> List[RestartOut]:
@@ -147,6 +173,8 @@ def _from_reactions(db: Session, run: JobRun, chain: List[JobRun]) -> List[Resta
 
 
 def _words(kind: str, from_attempt: Optional[int]) -> str:
+    if kind == ADVANCED:
+        return "Run again, item by item"
     if kind == RESUME:
         return f"Resumed from attempt {from_attempt}" if from_attempt else "Resumed from where it failed"
     return "Restarted from the beginning"
@@ -168,5 +196,6 @@ def summary_for(db: Session, run: JobRun) -> Tuple[int, Optional[str]]:
 
 
 def _in_words(listed: List[RestartOut]) -> Optional[str]:
-    parts = [f"{'resumed' if r.kind == RESUME else 'restarted'} by {'you' if r.by == BY_OPERATOR else r.by}" for r in listed]
+    names = {RESUME: "resumed", ADVANCED: "run again item by item"}
+    parts = [f"{names.get(r.kind, 'restarted')} by {'you' if r.by == BY_OPERATOR else r.by}" for r in listed]
     return (", then ".join(parts)).capitalize() if parts else None

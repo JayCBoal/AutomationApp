@@ -50,7 +50,7 @@ from app.models import (ConditionCheck, Job, JobRun, ReactionEvent, WorkflowPrer
                         WorkflowRunItem, utcnow)
 from engine import frames
 from engine.frames import tree_top
-from engine import conditions, job_log, log_files, outside, reopen, reopen_tree, settings, workflow_conditions, workflow_vars
+from engine import conditions, job_log, log_files, outside, reopen, reopen_counts, reopen_tree, settings, workflow_conditions, workflow_vars
 from engine.outside_state import Context, Outside
 from engine.prerequisites import FINAL, HOLDS, NEVER, TIMED_OUT, WAIT, SKIPPED_OPTIONAL, prerequisite_state
 from engine.reactions import LIMITED, Act, OwnReactions, Rule, judge, read_rules, start_workflow
@@ -81,9 +81,12 @@ class RunOptions:
     attempt: int = 1
     reopen: Optional[str] = None            # resume or restart: picks up this run's record, already ended (engine/reopen.py)
     reopen_scope: Optional[str] = None      # the one item chosen, by path; None for the whole run
+    reopen_items: Optional[Dict[str, str]] = None   # Advanced: what to do with each item, by path (resume or restart)
     decisions: Dict[str, str] = field(default_factory=dict)     # failed steps whose effect is unknown: path to run_again or count_done
     refresh_values: bool = False            # a Resume: read the ${...} values again, not as the run had them
     value_edits: Dict[str, Any] = field(default_factory=dict)   # a Resume: what the operator changed, by level and path (workflow_vars.level_of)
+    ignored_waits: Dict[str, List[str]] = field(default_factory=dict)   # Advanced: prerequisites released for this reopening only, by the job's path
+    reset_counts: bool = False              # Advanced: the Reactions of the run start their counts from zero
 
 
 @dataclass
@@ -116,6 +119,7 @@ class Planned:
     resume_from: Optional[str] = None       # a reopened run: the run of the item's last attempt, to pick up
     reopen_kind: Optional[str] = None       # a frame picked up: resume, or restart on the way to the item chosen
     count_as_done: Optional[str] = None     # the step of that attempt the operator counted as done
+    released: List[str] = field(default_factory=list)   # prerequisites (by target name) an operator released for this reopening
 
 
 # ---------- Whether a job may start ----------
@@ -151,6 +155,14 @@ def rule_state(planned: Planned, by_name: Dict[str, Planned], values: Dict[str, 
     return (HOLDS if answer else NEVER), answer
 
 
+def wait_state(planned: Planned, target: str, test: str, codes: Optional[str], by_name: Dict[str, Planned]) -> str:
+    """Where one prerequisite on a job of the workflow stands; one an operator released for this reopening holds."""
+    if target in planned.released:
+        return HOLDS
+    row = by_name[target].row
+    return prerequisite_state(test, codes, row.Status, row.ReturnCode)
+
+
 def readiness(planned: Planned, by_name: Dict[str, Planned], values: Optional[Dict[str, Any]] = None) -> str:
     """
     HOLDS when the job may start, NEVER when it never can, TIMED_OUT when a prerequisite outside the
@@ -158,8 +170,7 @@ def readiness(planned: Planned, by_name: Dict[str, Planned], values: Optional[Di
     """
     if planned.join == "CUSTOM":
         return rule_state(planned, by_name, values if values is not None else run_values(by_name, {}))[0]
-    states = [prerequisite_state(test, codes, by_name[target].row.Status, by_name[target].row.ReturnCode)
-              for target, test, codes in planned.prerequisites]
+    states = [wait_state(planned, target, test, codes, by_name) for target, test, codes in planned.prerequisites]
     states += [o.state for o in planned.outside]
     if not states:
         return HOLDS
@@ -188,7 +199,7 @@ def why_never(planned: Planned, by_name: Dict[str, Planned]) -> str:
     reasons = []
     for target, test, codes in planned.prerequisites:
         row = by_name[target].row
-        if prerequisite_state(test, codes, row.Status, row.ReturnCode) != NEVER:
+        if wait_state(planned, target, test, codes, by_name) != NEVER:
             continue
         need = NEEDS[test] + (f" {codes}" if test == "RC" else "")
         reasons.append(f"it waits for '{target}' to {need}, and '{target}' {outcome_words(row)}")
@@ -398,13 +409,16 @@ class WorkflowRunner:
         for position, item in enumerate(self.workflow.items, start=1):
             row = self._item_row(kept.pop(base + item.ItemName, None), item, base, position)
             inside = [p for p in item.prerequisites if p.Kind == "JOB" and p.target]
+            released = self.options.ignored_waits.get(base + item.ItemName, [])
             prerequisites = [(p.target.ItemName, p.Test, p.ReturnCodes) for p in inside]
             self.items.append(Planned(item.ItemName, item.job.JobKey, item.JoinRule, prerequisites, row,
                                       active=bool(item.job.IsActive), disabled_here=item.DisabledHere,
                                       job_type=item.job.JobType, rules=read_rules(item.job, item),
                                       rule=item.StartRule if item.JoinRule == "CUSTOM" else None,
                                       inside_ids=[p.id for p in inside], on_unmet=item.OnUnmet, job=item.job,
-                                      outside=[self._outside(p) for p in item.prerequisites if p.Kind != "JOB"]))
+                                      outside=[self._outside(p, released) for p in item.prerequisites if p.Kind != "JOB"],
+                                      released=list(released)))
+            self._say_released(self.items[-1])
         self.by_name = {p.name: p for p in self.items}
         self.frames_read = self._frames_read()
         if self.options.reopen:
@@ -436,7 +450,7 @@ class WorkflowRunner:
 
     def _reopen_items(self, leftover: Dict[str, WorkflowRunItem]) -> None:
         """Puts the items a reopened run is to run again back to Pending, and keeps what the others ended with."""
-        kind, scope = self.options.reopen, self.options.reopen_scope
+        kind, scope, items = self.options.reopen, self.options.reopen_scope, self.options.reopen_items
         self._read_stored_variables()
         if kind == reopen.RESTART and scope is None:
             for row in leftover.values():           # items the workflow no longer has
@@ -445,9 +459,11 @@ class WorkflowRunner:
         for planned in self.items:
             row = planned.row
             child = row.child_run
-            action = reopen.action_for(row.Status, child is not None, row.Path, kind, scope)
+            action = reopen.action_for(row.Status, child is not None, row.Path, kind, scope, items)
             if action == reopen.UNTOUCHED:
                 planned.file_count, planned.size = (child.FileCount, child.Bytes) if child else (None, None)
+            elif action in reopen.PASS_OVER:
+                self._pass_over(planned, action)
             else:
                 self._reset_item(planned, action, kind)
 
@@ -471,7 +487,7 @@ class WorkflowRunner:
         """
         o = self.options
         level = workflow_vars.level_of(o.value_edits, o.workflow_path)
-        if o.reopen != reopen.RESUME or not (o.refresh_values or level):
+        if o.reopen not in (reopen.RESUME, reopen.ADVANCED) or not (o.refresh_values or level):
             return
         kept = json.loads(self.record.WorkflowVariables)
         fresh = None
@@ -490,9 +506,14 @@ class WorkflowRunner:
 
     def _remember_reactions_used(self) -> None:
         """How often each rerun Reaction has run in this run, so a manual rerun does not give it a fresh allowance (D61)."""
+        if self.options.reset_counts:
+            return
         events = self.db.query(ReactionEvent).filter(
             ReactionEvent.WorkflowRun_id == self.record.id, ReactionEvent.Result == "TOOK_EFFECT",
             ReactionEvent.Action.in_(LIMITED), ReactionEvent.ReactionAction_id.isnot(None))
+        since = reopen_counts.reset_at(self.db, self.record)
+        if since is not None:
+            events = events.filter(ReactionEvent.EventDateTime > since)
         for event in events:
             self.times_used[(event.WorkflowPath, event.ReactionAction_id)] += 1
 
@@ -506,10 +527,25 @@ class WorkflowRunner:
             return
         planned.resume_from = child.RunID
         if child.JobType == "WORKFLOW":
-            planned.reopen_kind = kind if action == reopen.ROUTE else reopen.RESUME
+            planned.reopen_kind = kind if action == reopen.ROUTE else reopen.RESUME     # Advanced goes on down the way to its items
         else:
             self._note_decision(planned, child)
         job_log.summary(f"'{planned.name}' will go on from attempt {row.Attempt}.")
+
+    def _pass_over(self, planned: Planned, action: str) -> None:
+        """
+        The operator moves past the item (Advanced). Bypass: it counts as succeeded without running, so what waits
+        for it goes on; it has no outputs. Don't run: it ends Skipped, so what waits for its success does not run.
+        """
+        row = planned.row
+        row.StatusBeforeOverride, row.ReturnCode, row.EndedDateTime = row.Status, None, utcnow()
+        planned.file_count = planned.size = None
+        if action == reopen.BYPASS:
+            row.Status, row.Reason = "BYPASSED", "MARKED_DONE"
+            job_log.summary(f"'{planned.name}' is bypassed by the operator: it counts as succeeded without running.")
+        else:
+            row.Status, row.Reason = "SKIPPED", None
+            job_log.summary(f"'{planned.name}' is left unrun by the operator, so what waits for its success does not run.")
 
     def _note_decision(self, planned: Planned, child: JobRun) -> None:
         """A failed step whose effect is unknown, which the operator said to count as done, is not run again."""
@@ -519,7 +555,11 @@ class WorkflowRunner:
         if failure and failure.get("operator_decides") and self.options.decisions.get(planned.row.Path) == reopen.COUNT_AS_DONE:
             planned.count_as_done = failure["key"]
 
-    def _outside(self, prerequisite: WorkflowPrerequisite) -> Outside:
+    def _say_released(self, planned: Planned) -> None:
+        for name in planned.released:
+            job_log.summary(f"'{planned.name}' will not wait for '{name}': an operator released that wait for this restart.")
+
+    def _outside(self, prerequisite: WorkflowPrerequisite, released: List[str] = ()) -> Outside:
         """A prerequisite on something outside the workflow, ready to look at it."""
         target = prerequisite.target
         o = Outside(id=prerequisite.id, name=prerequisite.TargetName or "", kind=prerequisite.Kind,
@@ -530,7 +570,7 @@ class WorkflowRunner:
                     min_age=prerequisite.MinAgeSeconds, time_condition=prerequisite.TimeCondition,
                     wait_mode=prerequisite.WaitMode, wait_minutes=prerequisite.WaitMinutes,
                     wait_until=prerequisite.WaitUntil, wait_from=prerequisite.WaitFrom,
-                    wait_from_id=prerequisite.WaitFromPrerequisite_id)
+                    wait_from_id=prerequisite.WaitFromPrerequisite_id, released=(prerequisite.TargetName or "") in released)
         if prerequisite.Kind == "ENDPOINT":
             o.pattern = self._files_pattern(prerequisite)
         elif prerequisite.Kind == "OTHER_JOB" and self._in_my_tree(prerequisite):
@@ -772,8 +812,7 @@ class WorkflowRunner:
     def _note_held(self, planned: Planned, now_ts: float) -> None:
         """When each prerequisite of the job first held: its patience counts from these."""
         for prerequisite_id, (target, test, codes) in zip(planned.inside_ids, planned.prerequisites):
-            row = self.by_name[target].row
-            if prerequisite_state(test, codes, row.Status, row.ReturnCode) == HOLDS:
+            if wait_state(planned, target, test, codes, self.by_name) == HOLDS:
                 planned.held.setdefault(prerequisite_id, now_ts)
         for o in planned.outside:
             if o.holding:
@@ -788,7 +827,7 @@ class WorkflowRunner:
             self.db.add(o.check)
             if o.state == WAIT:
                 job_log.summary(f"'{planned.name}' waits for '{o.name}', {o.limit_words(default_hours)}.")
-        o.check.Result = {WAIT: "WAITING"}.get(o.state, o.state)
+        o.check.Result = "RELEASED" if o.released else {WAIT: "WAITING"}.get(o.state, o.state)
         o.check.UsedRunID, o.check.SeenStatus = o.run_id, o.seen
         o.check.Message = o.words if o.state != WAIT else f"Waiting for '{o.name}', {o.limit_words(default_hours)}. {o.words}"
         if o.state != before and o.state != WAIT:
@@ -846,14 +885,23 @@ class WorkflowRunner:
             arguments = ["--reopen", planned.reopen_kind]
             if reopen.is_on_the_way(planned.row.Path, o.reopen_scope):
                 arguments += ["--reopen-scope", o.reopen_scope]
-            if planned.reopen_kind == reopen.RESUME:
+            if planned.reopen_kind == reopen.ADVANCED:
+                arguments += ["--reopen-items", json.dumps(o.reopen_items)]
+                arguments += ["--ignore-waits", json.dumps(o.ignored_waits)] if o.ignored_waits else []
+                arguments += ["--reset-counts"] if o.reset_counts else []
+            if planned.reopen_kind in (reopen.RESUME, reopen.ADVANCED):
                 arguments += (["--refresh-values"] if o.refresh_values else []) + (
                     ["--edit-values", json.dumps(o.value_edits)] if o.value_edits else [])
             return arguments + (["--rerun-decisions", json.dumps(o.decisions)] if o.decisions else [])
         if planned.resume_from:
             return ["--resume-run-id", planned.resume_from] + (
                 ["--count-as-done", planned.count_as_done] if planned.count_as_done else []) + self._value_arguments(planned)
-        return []
+        return self._edit_arguments(planned)
+
+    def _edit_arguments(self, planned: Planned) -> List[str]:
+        """A job Advanced starts again reads every value fresh, except those the operator typed (docs/WORKFLOWS_PHASE7.md, step 6)."""
+        edits = (self.options.value_edits.get("jobs") or {}).get(planned.row.Path)
+        return ["--edit-values", json.dumps(edits)] if edits else []
 
     def _value_arguments(self, planned: Planned) -> List[str]:
         """A job that picks up its earlier attempt: whether it reads its values again, what was edited for it, and what the workflow changed."""

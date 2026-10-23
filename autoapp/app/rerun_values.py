@@ -95,7 +95,7 @@ def levels_for(db: Session, tree: TreePlan) -> List[ValueLevel]:
             found.append(ValueLevel(kind=WORKFLOW, path=path, name=run.JobKey, values=_shown(kept["workflow"]),
                                     changes=_changed(kept["workflow"], fresh.get("workflow", {}))))
         for pick in tree.picks:
-            if _parent(pick.path) != path:
+            if _parent(pick.path) != path or pick.action in reopen.PASS_OVER:
                 continue
             use = pick.path.rsplit("/", 1)[-1]
             entries = kept.get("uses", {}).get(use) or {}
@@ -158,16 +158,27 @@ def check_edits(tree: TreePlan, level_edits: Dict[str, LevelEdit], job_edits: Di
         for use, names in edit.uses.items():
             problems += _plain(kept.get("uses", {}).get(use, {}), names, f"use '{use}' in '{run.JobKey}'")
         levels[path] = {"workflow": edit.workflow, "uses": edit.uses}
-    picks = {p.path: p for p in tree.picks if p.record is not None and p.action == reopen.PICK_UP}
+    picks = {p.path: p for p in tree.picks if _can_edit(p, tree.items is not None)}
     jobs: Dict[str, Dict[str, str]] = {}
     for path, edits in job_edits.items():
         pick = picks.get(path)
         if pick is None:
-            problems.append(f"'{path}' does not go on from an earlier attempt, so its values cannot be edited.")
+            problems.append(f"'{path}' does not go on from an earlier attempt or start again as a job, so its values cannot be edited.")
             continue
-        problems += run_values.edit_problems(pick.record.values, edits)
+        problems += run_values.edit_problems(pick.record.values, edits) if pick.record is not None else _blank(edits)
         jobs[path] = edits
     return {"levels": levels, "jobs": jobs}, problems
+
+
+def _can_edit(pick: Pick, advanced: bool) -> bool:
+    """A job that goes on from its record, or one Advanced starts again (it reads fresh and pins only what is typed)."""
+    if pick.action == reopen.PICK_UP:
+        return pick.record is not None
+    return advanced and pick.action == reopen.FRESH and (pick.child is None or pick.child.JobType != "WORKFLOW")
+
+
+def _blank(edits: Dict[str, str]) -> List[str]:
+    return ["The name of a value to change cannot be empty." for key in edits if not key.strip()]
 
 
 def _plain(kept: Dict[str, Any], edits: Dict[str, str], where: str) -> List[str]:
@@ -200,17 +211,22 @@ def audit(db: Session, tree: TreePlan, choices: Dict[str, Any]) -> List[str]:
         every += said
     for path, edits in choices["jobs"].items():
         pick = picks[path]
-        said = [f"Resumed '{pick.job_key}' with {k} changed from '{pick.record.values[k]['value']}' to '{v}'."
-                for k, v in sorted(edits.items())]
-        _add(db, pick.job_key, said)
+        said = [_job_edit_words(pick, k, v) for k, v in sorted(edits.items())]
+        _add(db, pick.job_key, said, "JOB_RESUMED_WITH_EDITS" if pick.record is not None else "JOB_RESTARTED_WITH_EDITS")
         every += said
     db.commit()
     return every
 
 
-def _add(db: Session, job_key: str, said: List[str]) -> None:
+def _job_edit_words(pick: Pick, key: str, value: str) -> str:
+    if pick.record is not None:
+        return f"Resumed '{pick.job_key}' with {key} changed from '{pick.record.values[key]['value']}' to '{value}'."
+    return f"Restarted '{pick.job_key}' with {key} set to '{value}'; its other values are read as it starts."
+
+
+def _add(db: Session, job_key: str, said: List[str], action: str = "JOB_RESUMED_WITH_EDITS") -> None:
     if not said:
         return
     job = db.query(Job).filter(Job.JobKey == job_key).first()
-    db.add(Audit(MasterObject_id=job.MasterObject_id if job else None, Action="JOB_RESUMED_WITH_EDITS",
+    db.add(Audit(MasterObject_id=job.MasterObject_id if job else None, Action=action,
                  PerformedBy="web interface", Details=json.dumps({"changes": said})))

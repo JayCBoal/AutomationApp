@@ -695,7 +695,7 @@ class ReactionEvent(Base):
 
 class RunRestart(Base):
     """
-    An operator ran a run again, from where it stopped (RESUME) or from the beginning (RESTART): one row for each
+    An operator ran a run again, from where it stopped (RESUME) or from the beginning (RESTART), or item by item (ADVANCED): one row for each
     request, written by the API when the request is made (the runner never writes the database). RunID is text, not
     a link, so the row outlives the run record as the job log does: the reopened workflow run's own, or the new
     run of a job on its own. Scope is the item chosen, by path; empty for the whole run. Details is JSON: the earlier
@@ -705,7 +705,7 @@ class RunRestart(Base):
     """
     __tablename__ = 'RunRestarts'
 
-    KINDS = ("RESUME", "RESTART")
+    KINDS = ("RESUME", "RESTART", "ADVANCED")
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     RunID = Column(String(36), nullable=False, index=True)

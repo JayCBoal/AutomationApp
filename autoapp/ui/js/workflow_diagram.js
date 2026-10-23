@@ -440,6 +440,18 @@ const WorkflowDiagram = (() => {
         g.addEventListener("pointerleave", () => x.setAttribute("opacity", selected ? 1 : 0));
     }
 
+    /** A line an operator ignored for the latest restart: two short strokes across it, about halfway along. */
+    function drawStrike(g, points, words) {
+        let length = 0;
+        for (let i = 1; i < points.length; i++) length += Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y);
+        const at = pointBack(points, length / 2);
+        const strike = svg("g", { class: "wf-line-ignored" }, g);
+        for (const shift of [-2.5, 2.5]) {
+            svg("path", { d: `M${at.x + shift - 4} ${at.y + 6}L${at.x + shift + 4} ${at.y - 6}`, stroke: css("--failure"), "stroke-width": 1.6 }, strike);
+        }
+        tooltip(strike, words);
+    }
+
     function drawLine(layer, edge, line, words, diagram, prefix) {
         const style = lineStyle(line.test);
         const selected = isSelected(diagram, "line", line.id);
@@ -460,6 +472,7 @@ const WorkflowDiagram = (() => {
             svg("text", { x: label.x + 5, y: label.y + 12, fill: style.color, style: `font: ${SMALL_FONT}` }, g).textContent = label.text;
             tooltip(g.lastChild, words);
         }
+        if (line.ignored && last) drawStrike(g, last, words);
         if (diagram.editing && last && line.test !== "RULE") drawRemover(g, last, words, selected, selected ? 3 : 1.6);
     }
 

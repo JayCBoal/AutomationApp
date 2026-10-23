@@ -785,3 +785,19 @@ Compiled 2026-10-18, from the design record and Phases 1 to 4.
 **D177. In Advanced, a top-level item that did not run waits its turn: it runs again when its waits are met, unless the operator chooses *Leave Not run*.** This is part of how Resume already treats such items, and it changes D161 for them: every other item not named still stays as it ended. It does not apply to the shortcut *Only the jobs chosen*, to items inside a workflow, or to a Failed or Skipped item. The server fills the default in (`app/rerun_advanced.py`, `_waiting_their_turn`), so the plan, the request and the run all see the same list; the engine is unchanged and `leave` never reaches it.
 - *Why:* the owner, 2026-10-22: Not run means it did not run, so it should not need to be restarted by hand after a Bypass of the job it waited for. Re-evaluating is harmless: a rule or wait that still does not hold ends Not run again. *Status:* Built. *Source:* WORKFLOWS_PHASE7.md, step 7.
 
+
+**D178. A time of day in a time-based Reaction means its next occurrence after the run started.** A run starting at 23:00 with "not ended by 03:00" means 03:00 tomorrow; the editor shows the result. This replaces the earlier note in WORKFLOWS.md ("the day the run started").
+- *Why:* the owner, 2026-10-23. The old wording would make a run that starts at 23:00 late the moment it begins; the new one agrees with D103 (windows that cross midnight) and with a run not being tied to "today". *Considered:* the day the run started. *Status:* Designed (Phase 8). *Source:* WORKFLOWS_PHASE8.md, proposal 3.
+
+**D179. Notify names an alert, goes through an outbox and is tested against a small mail server of our own.** An alert has recipients, a subject and a message; Notify adds a delivery row and a sender in the server sends it, so no job waits for mail. A development-only receive-only mail server (`mail_sink`) takes the place of a real one. Operator Messages are a separate path (a person's reply), not part of this phase.
+- *Why:* the telemetry principle (D40), and runners on agent hosts should not need a mail server; the test server exercises the real sending path with no second "write to a folder" path. *Considered:* only recording "alert X would be sent"; saved-messages folder. *Status:* Designed (Phase 8). *Source:* WORKFLOWS_PHASE8.md, proposals 6 to 8.
+
+**D180. "Not started by" applies inside workflows only.** A job on its own has no run to watch before it starts; that waits for scheduling to say when a start was expected.
+- *Why:* the owner, 2026-10-23. *Status:* Designed (Phase 8). *Source:* WORKFLOWS_PHASE8.md.
+
+**D181. Time-based Whens take side effects only** (Mark as late, Notify, Start a workflow): no Kill, Count as or Rerun on a time. *Why:* the owner, 2026-10-23; a timed entry can then never change how a job ends, so a missed or late firing is harmless. *Status:* Designed (Phase 8).
+
+**D182. "Longer than usual" uses the job's last 10 successful runs (at least 3), fixed once at the start.** Fewer than 3: not judged, and the job log says so. *Why:* the owner, 2026-10-23; the timer then needs no database, so the job runner on an agent host can use it. *Status:* Designed (Phase 8). *Source:* WORKFLOWS_PHASE8.md, proposal 4.
+
+**D183. A late job's cause is named; Notify can skip the alert when a job it waited for was late; a time can be "within N minutes of being ready".** When a timed entry fires on a job that was still waiting for a job in the same workflow, the late flag, the event and the alert name that job. A tick on Notify (off by default) skips the alert in that case, never the late flag. The third way to give a time counts from the moment the job's own prerequisites were met.
+- *Why:* the owner, 2026-10-23: a delayed job must not make everything after it a separate fault. *Status:* Designed (Phase 8). *Source:* WORKFLOWS_PHASE8.md, proposal 13.

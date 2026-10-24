@@ -47,7 +47,7 @@ How RunMyFiles works. Each section says what is **built** (in the code and cover
 
 ## 2. Data model
 
-Defined in `autoapp/app/models.py`. Diagrams: [DB_SCHEMA.md](DB_SCHEMA.md) and [PYTHON_MODEL.md](PYTHON_MODEL.md). Development uses SQLite; `DATABASE_URL` selects another database (MariaDB is the intended production target).
+Defined in `autoapp/core/models.py`. Diagrams: [DB_SCHEMA.md](DB_SCHEMA.md) and [PYTHON_MODEL.md](PYTHON_MODEL.md). Development uses SQLite; `DATABASE_URL` selects another database (MariaDB is the intended production target).
 
 ### MasterObjects supertype
 
@@ -96,7 +96,7 @@ Jobs are deliberately **not** linked to an Application or Entity. A job may touc
 
 **Built**
 
-- System-wide settings are declared in `engine/settings.py`: a name, a type, a default, the allowed values and a description. The `Settings` table holds only the values changed from the default. Every change is audited.
+- System-wide settings are declared in `core/settings.py`: a name, a type, a default, the allowed values and a description. The `Settings` table holds only the values changed from the default. Every change is audited.
 - `VariablePrecedence` is the one setting so far (section 3).
 - Settings are not variables: nothing reads them through `${...}`.
 
@@ -122,12 +122,12 @@ A workflow is a job of type `WORKFLOW` (the design: [WORKFLOWS.md](WORKFLOWS.md)
 - The workflow page (Phase 2: [WORKFLOWS_PHASE2.md](WORKFLOWS_PHASE2.md)): Diagram | Outline. The diagram is `ui/js/workflow_diagram.js`: elkjs (`ui/vendor/elk-0.12.0.bundled.js`) lays the boxes and lines out, and it draws them as SVG; it knows nothing of the server, and is handed what to draw by `ui/js/workflow.js`. `ui/mockup_workflow.html` still shows the whole design, with what later phases add.
 - Job History is a tree: `GET /api/v1/runs?tree=true` leaves out runs whose workflow run is listed too; `parent=` lists the runs inside one.
 - **Reactions** (Phase 3): what happens after a job ends, chosen by how it ended. `Reactions` belong to a job (`Job_MasterObject_id`) or to one use of it in a workflow (`Item_id`, when `WorkflowItems.ReactionsOverridden`: the use's list then replaces the job's, even when empty). `Section` `NEXT` (What happens next: in order, the first that holds decides) or `ALSO` (every one that holds fires); the When is `WhenTest` (`SUCCESS`, `FAILED`, `ENDED`, `RC` with `WhenReturnCodes`). `ReactionActions`: `COUNT_AS_SUCCEEDED`, `COUNT_AS_FAILED`, `RERUN` and `RERUN_FROM` (`MaxTimes`, `WaitSeconds`, `TargetItem_id`), `SKIP` (`TargetItem_id`), `SKIP_BRANCH`, `KILL_WORKFLOW`; and under Also `START_WORKFLOW` (`TargetJob_MasterObject_id`). Rerun from, Skip, Skip the rest of the branch and Kill the workflow only on a use.
-  - Saving checks them (`app/reaction_store.py`); `engine/reactions.py` judges them; the workflow runner carries them out for a job in a workflow, the job runner for a job (or workflow) run on its own. Each entry is judged on what really happened; once a rerun has used up its limit, the next entry that holds decides. "The rest of the branch" is what waits for the job, directly or not, except what waits for the outcome it had (a failure path, a clean-up) and what follows that.
+  - Saving checks them (`app/reaction_store.py`); `core/reactions.py` judges them; the workflow runner carries them out for a job in a workflow, the job runner for a job (or workflow) run on its own. Each entry is judged on what really happened; once a rerun has used up its limit, the next entry that holds decides. "The rest of the branch" is what waits for the job, directly or not, except what waits for the outcome it had (a failure path, a clean-up) and what follows that.
   - A Count as keeps the run's own outcome in `StatusBeforeOverride`. Each action that fired, or was passed over at its limit, is a `ReactionEvents` row (job runners send theirs as `REACTION` spool records). A killed job's Reactions do not apply.
 - **Disable here** (`WorkflowItems.DisabledHere`): `STOP` ends the job Disabled; `PASS_THROUGH` ends it Bypassed (Reason `DISABLED_PASS_THROUGH`), which prerequisites treat as succeeded with return code 0.
 - **Kill**: `POST /api/v1/runs/{run_id}/kill`. A job's runner is sent SIGTERM (its `ProcessID`, on this machine only) and ends Failed, `KILLED`, with no return code. A workflow's run gets `KillRequestedDateTime`; its runner kills its running jobs (down through workflows inside) and cancels the rest (Kill and Cancel). The workflow runner records each job's process on its `WorkflowRunItems` row as it starts it, so `POST /api/v1/runs/{run_id}/items/{path}/kill` works before the job's own records arrive.
 
-- **Conditions** (Phase 4: [WORKFLOWS_PHASE4.md](WORKFLOWS_PHASE4.md)), in flow control's language. Every job in a workflow has the outputs of `engine/workflow_conditions.py`: `Succeeded`, `Failed`, `Ended`, `NotRun`, `Skipped`, `Disabled`, `Bypassed` (true or false), `Status`, `ReturnCode`, `Reason`, `FileCount`, `Bytes`, `StartTime`, `EndTime`, `DurationMs`; all unknown (`NULL`) until it ends.
+- **Conditions** (Phase 4: [WORKFLOWS_PHASE4.md](WORKFLOWS_PHASE4.md)), in flow control's language. Every job in a workflow has the outputs of `core/workflow_conditions.py`: `Succeeded`, `Failed`, `Ended`, `NotRun`, `Skipped`, `Disabled`, `Bypassed` (true or false), `Status`, `ReturnCode`, `Reason`, `FileCount`, `Bytes`, `StartTime`, `EndTime`, `DurationMs`; all unknown (`NULL`) until it ends.
   - **Custom rule:** `WorkflowItems.JoinRule` `CUSTOM` and `StartRule`. Saving reads the rule once and stores the jobs it names as prerequisites with the test `RULE`, so the diagram, the runner and the checks never parse it. The workflow runner works it out each pass with `conditions.decide()`, which answers true, false or unknown: true starts the job, false makes it Not run (`PREREQUISITES_NOT_MET`), unknown waits. A rule using IS NULL, coalesce or the like waits until its jobs have ended. A rule naming no job tests variables, when the workflow starts.
   - **Completion rules:** `Jobs.SucceedsWhen` (a condition) and `Jobs.ReturnCodeFrom` (a job's name in the workflow). A false Succeeds when fails the workflow with Reason `SUCCEEDS_WHEN`.
   - Each decision is a `ConditionChecks` row (the text, the values used as JSON, the result); `GET /api/v1/runs/{run_id}` returns them with each part's answer (`conditions.explain()`). `POST /api/v1/conditions/check` checks a condition as it is typed; `POST /api/v1/conditions/explain` works one out with a past run's values; `GET /api/v1/conditions/outputs` lists the outputs. The condition box is `ui/js/conditions.js`, also used for steps' conditions in the job editor.
@@ -148,10 +148,10 @@ A workflow is a job of type `WORKFLOW` (the design: [WORKFLOWS.md](WORKFLOWS.md)
 
 **Built**
 
-- **Declared once, in the code.** Each handler lists its parameters (`engine/step_catalog.py`). Parameter types are `STRING`, `BOOLEAN`, `INTEGER`, `CHOICE` and `LOCATION`.
+- **Declared once, in the code.** Each handler lists its parameters (`core/step_catalog.py`). Parameter types are `STRING`, `BOOLEAN`, `INTEGER`, `CHOICE` and `LOCATION`.
 - **Published to the database.** `app/catalog.py` copies the declarations into `StepTypes` and `StepDefinitions`. It runs each time the API server starts, and by hand with `python3 -m app.catalog`.
 - **Served by the API.** `GET /api/v1/step-types` returns every step type with its parameters in form order. This is what the job editor will build its step forms from.
-- **Every job is checked before it runs** (`engine/preflight.py`). All active steps are checked and resolved before the first one starts, and every problem is reported at once:
+- **Every job is checked before it runs** (`core/preflight.py`). All active steps are checked and resolved before the first one starts, and every problem is reported at once:
   - a parameter the step type does not have;
   - a required parameter missing;
   - a location given both as a path and as an endpoint;
@@ -208,7 +208,7 @@ Changing or deleting an application, entity, site or endpoint writes one as well
 
 ### Source of truth
 
-The Python models in `autoapp/app/models.py` are the definition of the schema.
+The Python models in `autoapp/core/models.py` are the definition of the schema.
 
 **Built**
 
@@ -231,7 +231,7 @@ The Python models in `autoapp/app/models.py` are the definition of the schema.
 
 ## 3. Variables and placeholders
 
-Step parameters, endpoint paths and variable values may contain `${...}` placeholders. `engine/scope_engine.py` resolves them.
+Step parameters, endpoint paths and variable values may contain `${...}` placeholders. `core/scope_engine.py` resolves them.
 
 **Built**
 
@@ -248,7 +248,7 @@ Step parameters, endpoint paths and variable values may contain `${...}` placeho
 | `${SYS:INSTANCE_ID}`, `${SYS:TIMESTAMP}`, `${SYS:WORKING_FOLDER}` | Values supplied by the runner. `${SYS:YYYYMMDD}` also still works; `${DATE:yyyyMMdd}` is the form to use |
 | `${FILE:NAME}`, `${FILE:STEM}`, `${FILE:EXT}` | Parts of a file's own name. Only in a rename mask; see section 5 |
 
-- Cascade order, lowest priority first, by default: `ENV`, `SYS`, `ENTITY`, `APP`, `ENDPOINT`, `TAG`, `WORKFLOW`, `JOB`, `USE`. A higher level overrides a lower one of the same name. `WORKFLOW` (the workflow's own variables, over its tags') and `USE` (variables set on a use of the job in a workflow) apply only to a job run in a workflow; the workflow runner fixes them as the run starts (`engine/workflow_vars.py`). The order is the `VariablePrecedence` setting, changed on the Settings page.
+- Cascade order, lowest priority first, by default: `ENV`, `SYS`, `ENTITY`, `APP`, `ENDPOINT`, `TAG`, `WORKFLOW`, `JOB`, `USE`. A higher level overrides a lower one of the same name. `WORKFLOW` (the workflow's own variables, over its tags') and `USE` (variables set on a use of the job in a workflow) apply only to a job run in a workflow; the workflow runner fixes them as the run starts (`core/workflow_vars.py`). The order is the `VariablePrecedence` setting, changed on the Settings page.
   - `ENTITY`, `APP` and `ENDPOINT` apply only while an endpoint's path and pattern are being filled in.
   - `TAG` is what the job's tags give it; `ENDPOINT` is what the endpoint's tags give it.
   - `ENV` is the runner's environment, so a plain `${Name}` finds a variable the scheduler set when nothing in RunMyFiles defines it. On the server there is no such environment, so a plain name found nowhere else is reported there as unresolved; write `${ENV:Name}` for a value that only the scheduler gives. Planned: RunMyFiles reading the WLA job's parameters from the scheduler (TO-DO decision 7), so the editor knows them too.
@@ -272,7 +272,7 @@ Step parameters, endpoint paths and variable values may contain `${...}` placeho
 
 ### Date masks
 
-**Built** (`engine/date_mask.py`)
+**Built** (`core/date_mask.py`)
 
 - `${DATE:mask}` gives the moment the run started, in the format the mask describes. Every date placeholder in a run shows the same moment.
 - The mask letters are the ones .NET uses, as the 2024 prototype did, because their case tells months from minutes:
@@ -298,7 +298,7 @@ Step parameters, endpoint paths and variable values may contain `${...}` placeho
 
 The rule: **a location outside the job's working folder must be a registered endpoint.**
 
-**Built** (`engine/step_params.py`)
+**Built** (`core/step_params.py`)
 
 - Each job has its own working folder: `<working root>/<JobKey>`. No other job can use it, so a file passed from one job to another goes through an endpoint, which also records the handoff. The working root comes from `--working-root` or the `AUTOAPP_WORKING_ROOT` environment variable. The folder stays named by the key: renaming a job with run history or a folder warns, and offers to move the folder with it when it is on the server's own disk (D116).
 - Each side of a file step is given one of two ways:
@@ -319,8 +319,8 @@ This is what makes a file trace possible: an operation that reads from an endpoi
 
 **Built**
 
-- `engine/handlers/base_handler.py`: the common wrapper. It times the step, logs it (see section 6), and gives handlers one call for recording a file they handled.
-- `engine/handlers/file_handler.py`: step type `COPY_FILES`. Local copy or move with wildcard matching and optional folder creation.
+- `core/handlers/base_handler.py`: the common wrapper. It times the step, logs it (see section 6), and gives handlers one call for recording a file they handled.
+- `core/handlers/file_handler.py`: step type `COPY_FILES`. Local copy or move with wildcard matching and optional folder creation.
   - Each file is recorded separately, whether it succeeded or failed.
   - The size is measured at the source and at the destination; a difference fails the step.
   - `Checksum=True` records the file's SHA-256 and verifies the copy against it.
@@ -328,22 +328,22 @@ This is what makes a file trace possible: an operation that reads from an endpoi
   - `Dest` may name a new filename only when one file is taken. Several files aimed at one filename fail the step before anything is copied.
   - `RenameMask` gives each file a new name on the way: `${FILE:STEM}_${DATE:yyyyMMdd}${FILE:EXT}` turns `Legal_Batch_1.csv` into `Legal_Batch_1_20261013.csv`. `${FILE:NAME}` is the file's own name, `${FILE:STEM}` its name without the extension, `${FILE:EXT}` its extension with the full stop. It works whether the destination is a folder or an endpoint. A mask that would give two files the same name fails the step before anything is copied, and a mistake in a mask is found before the job starts.
   - A step parameter can be declared as holding per-file placeholders. Those are left for the handler to fill in for each file; anywhere else, `${FILE:...}` is an unresolved placeholder.
-- `engine/handlers/set_return_code.py`: step type `SET_RETURN_CODE` (Set Return Code): sets the job's return code to `ReturnCode` and carries on; the last one run wins. `Message` goes to the job log beside it. Operation type `SET_RETURN_CODE`, one row per step.
-- `engine/handlers/simulate.py`: step type `SIMULATE` (Simulate), for building and trying workflows before the real jobs exist. It writes the `Messages` it is given to the job log at `MessageLevel`, takes `WaitSeconds`, sets the job's return code to `ReturnCode`, and with `Fail` fails with `FailMessage`. Operation type `SIMULATE`, one row per step.
+- `core/handlers/set_return_code.py`: step type `SET_RETURN_CODE` (Set Return Code): sets the job's return code to `ReturnCode` and carries on; the last one run wins. `Message` goes to the job log beside it. Operation type `SET_RETURN_CODE`, one row per step.
+- `core/handlers/simulate.py`: step type `SIMULATE` (Simulate), for building and trying workflows before the real jobs exist. It writes the `Messages` it is given to the job log at `MessageLevel`, takes `WaitSeconds`, sets the job's return code to `ReturnCode`, and with `Fail` fails with `FailMessage`. Operation type `SIMULATE`, one row per step.
 - A step can set the job's return code (`job_return_code` on its handler; Simulate does). The last one set counts; otherwise it is 0, or 1 when a step failed. The job succeeded if its steps did and the code is one of its Success return codes; if not, it fails with Reason `RETURN_CODE`. The runner's exit code stays 0 or 1 (docs/INTEGRATION.md); the code is recorded with the run.
-- `engine/handlers/file_tools.py`: four more file steps. Each records every file it handles, and each fails when it finds nothing unless `AllowNoFiles=True` (Check Files counts instead).
+- `core/handlers/file_tools.py`: four more file steps. Each records every file it handles, and each fails when it finds nothing unless `AllowNoFiles=True` (Check Files counts instead).
   - `DELETE_FILES` (Delete Files): removes the matching files, or with `OlderThanDays` only those last changed more than that many days ago. Operation type `DELETE`.
   - `CHECK_FILES` (Check Files): fails the job unless the files look right: at least `MinCount` (default 1) and at most `MaxCount`, none empty unless `AllowEmpty`, none older than `MaxAgeHours`. It lists every problem at once and touches nothing. Operation type `CHECK`.
   - `ZIP_FILES` (Zip Files): packs the matching files into one archive. `Dest` is the archive's name, or a folder or endpoint with `ArchiveName`. The archive is written under a temporary name, checked, then renamed, so nothing sees half of one; an archive of the same name is replaced only with `Overwrite`. `Move` removes the originals once they are safely in it. Operation type `ZIP`, or `ZIP_MOVE`, one row per file with the archive as its destination.
   - `UNZIP_FILES` (Unzip Files): takes every file out of the matching archives into the `Dest` folder, keeping their folders. Every name is checked before anything is taken out: one that would land outside the folder (`../`, or a full path) refuses the whole archive. A file already there is replaced only with `Overwrite`. Operation type `UNZIP`, one row per file taken out, with the archive as its source.
-- `engine/handlers/sql_handler.py`: step type `RUN_SQL` (Run SQL). Runs one statement against the database a connection URL names (`Database`), normally kept in a secret variable.
+- `core/handlers/sql_handler.py`: step type `RUN_SQL` (Run SQL). Runs one statement against the database a connection URL names (`Database`), normally kept in a secret variable.
   - A query's rows can be written to `ResultFile` as CSV, with a line of column names unless `IncludeHeader=False`. The file is written under a temporary name and renamed when complete.
   - Changes are rolled back unless `Commit=True`, so a statement can be tried safely; the job log says so when it rolled back changes.
   - The statement is sent as written, so `:` and `%` in it mean nothing to RunMyFiles; `${...}` placeholders are filled in first.
   - The database's password never appears in the job log, the operation record or an error message, whether or not the URL came from a secret.
   - Any database SQLAlchemy has a driver for will do. The project installs the MariaDB/MySQL driver; SQLite needs none.
 - A parameter of type `TEXT` is a string that may run to several lines. The job editor shows it as a box that grows to fit, in a fixed-width font. Run SQL's `Statement` is one.
-- `engine/handlers/__init__.py`: the list of handlers. Adding one there adds its step type to the catalog.
+- `core/handlers/__init__.py`: the list of handlers. Adding one there adds its step type to the catalog.
 
 **Planned**
 
@@ -354,7 +354,7 @@ This is what makes a file trace possible: an operation that reads from an endpoi
 
 What the runner prints while a job runs, for the scheduler to capture against that run.
 
-**Built** (`engine/job_log.py`)
+**Built** (`core/job_log.py`)
 
 - Four levels, set with the runner's `--log-level` (or `AUTOAPP_LOG_LEVEL`):
 
@@ -379,8 +379,8 @@ What the runner prints while a job runs, for the scheduler to capture against th
 
 **Built**
 
-- **Spool** (`engine/telemetry_client.py`). The runner writes one JSON line per record to a spool file unique to the run: `RUN_START`, one `OPERATION` per file, and `RUN_END`. `RUN_START` says where the job log is (below).
-- **Job logs kept with each run, as files on the host that ran it.** Every line the runner prints is also written, secret values already masked, to `<log root>/<host>/<YYYY-MM-DD>/<RunID>.log` (`engine/log_files.py`; the log root is `AUTOAPP_LOG_ROOT`, by default `autoapp/logs`), line by line as it goes. The run's record keeps only where: its `Host` and `LogFile`. The server reads a log by asking that host's agent for it (`app/log_agent.py`), as a WLA reads job output through its agents; AutoApp has no agents, so a stand-in reads the host's folder on this machine. A run still going shows its log so far.
+- **Spool** (`core/telemetry_client.py`). The runner writes one JSON line per record to a spool file unique to the run: `RUN_START`, one `OPERATION` per file, and `RUN_END`. `RUN_START` says where the job log is (below).
+- **Job logs kept with each run, as files on the host that ran it.** Every line the runner prints is also written, secret values already masked, to `<log root>/<host>/<YYYY-MM-DD>/<RunID>.log` (`core/log_files.py`; the log root is `AUTOAPP_LOG_ROOT`, by default `autoapp/logs`), line by line as it goes. The run's record keeps only where: its `Host` and `LogFile`. The server reads a log by asking that host's agent for it (`app/log_agent.py`), as a WLA reads job output through its agents; AutoApp has no agents, so a stand-in reads the host's folder on this machine. A run still going shows its log so far.
 - **Old logs are removed** after the Settings page's "Keep job logs for" (30 days by default; a week to a year, or never), at server startup and then once a day. The run's record keeps when (`LogRemovedDateTime`), and its log page says so. Runs and their operations are kept.
   - The file is named `.jsonl.tmp` while the job is running and renamed to `.jsonl` when it finishes.
   - Writing locally first means a job never fails, waits or loses its record because the API or database is unreachable.
@@ -510,7 +510,7 @@ Nothing in this section is built in the rewrite. The 2024 prototype tracked exte
   - The server remembers its launches only until it restarts; the runs themselves are in Job History as usual.
   - The runner it starts keeps its spool in `autoapp/spool`, or where `AUTOAPP_SPOOL_DIR` says.
 - **Audit Log** page: every change to a definition or a setting, newest first, saying in words what changed, with a link to the thing changed if it still exists.
-- **Settings** page: each system-wide setting with what it means, drawn from the declarations in `engine/settings.py`. The variable precedence is a list put in order with arrows. Each setting is saved on its own, can be undone, or put back to its default.
+- **Settings** page: each system-wide setting with what it means, drawn from the declarations in `core/settings.py`. The variable precedence is a list put in order with arrows. Each setting is saved on its own, can be undone, or put back to its default.
 - **Main Index** page, linking to every page, in three sections: Definitions, Records of what happened, and Administration (Settings).
 - **Embedded mode:** any page opened with `embed=1` in its address shows a thin bar instead of the header and navigation, for a scheduler to show inside its own interface. Its links stay embedded; `theme=` matches the host's look. The job editor then shows only its own job, and tells the window that opened it when it is ready, has saved (with the job key, whether it would run, and what changed), was cancelled or deleted. `job.html?new&key=...` starts a new job with a suggested key. The addresses and messages a WLA plug-in may rely on are in [INTEGRATION.md](INTEGRATION.md), and `tests/test_ui_embedded.py` keeps them working.
 

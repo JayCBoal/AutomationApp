@@ -1,6 +1,6 @@
 """
 Test helper: engine.runner with a clock that goes AUTOAPP_TEST_CLOCK_SPEED times faster than real time, so a test of
-"30 minutes" takes seconds. AUTOAPP_TEST_CLOCK_SHIFT_MINUTES starts the clock later, as if time had passed. Takes the runner's own arguments. Only the workflow runner's clock (engine.outside.now) is
+"30 minutes" takes seconds. AUTOAPP_TEST_CLOCK_SHIFT_MINUTES starts the clock later, as if time had passed. Takes the runner's own arguments. Only the workflow runner's clock (core.outside.now) is
 changed; the job runners it starts are ordinary.
 """
 import os

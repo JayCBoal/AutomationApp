@@ -1,6 +1,6 @@
 """
 Reopening a workflow run (docs/WORKFLOWS_PHASE7.md, step 3): what Resume and Restart from beginning do
-with each item of a run that has ended. The server's plan (engine/reopen_tree.py) and the workflow runner
+with each item of a run that has ended. The server's plan (core/reopen_tree.py) and the workflow runner
 both ask here, so what the dialog says is what the run does.
 
     UNTOUCHED  the item stays as it ended

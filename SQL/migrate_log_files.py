@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Moves job logs out of the database (2026-10-17): each run's log becomes a file on the host that
-ran it, as engine/log_files.py lays them out, and the run's record says where.
+ran it, as core/log_files.py lays them out, and the run's record says where.
 
     DATABASE_URL=... AUTOAPP_LOG_ROOT=... python3 SQL/migrate_log_files.py
 
@@ -25,7 +25,7 @@ sys.path.insert(0, str(REPO_DIR / "autoapp"))
 
 from sqlalchemy import create_engine, inspect, text
 
-from engine import log_files
+from core import log_files
 
 # (column, its definition for ALTER TABLE ... ADD COLUMN)
 COLUMNS = [("LogFile", "VARCHAR(500) NULL"), ("LogRemovedDateTime", "{datetime} NULL")]

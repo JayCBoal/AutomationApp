@@ -13,13 +13,13 @@ The code is recorded with the run; the exit code stays 0 or 1 (docs/INTEGRATION.
 A job that is a workflow is handed to engine/workflow_runner.py, so it is started the same way. Given
 --reopen, a workflow picks up a run that has ended, under the same run ID (docs/WORKFLOWS_PHASE7.md).
 
-As it goes, a job keeps a control file beside its log (engine/control_file.py). A run given the ID of an
+As it goes, a job keeps a control file beside its log (core/control_file.py). A run given the ID of an
 earlier attempt (resume_run_id) reads that attempt's file and picks up where it stopped: steps that
 finished are not run again, an If keeps its branch, a loop goes on from its pass, and a file step skips
 the files already done.
 
 Told to stop (SIGTERM, as Kill sends), the job ends Failed, Reason KILLED, with no return code.
-A job run on its own carries out its own Reactions (engine/reactions.py): Count as, Rerun this
+A job run on its own carries out its own Reactions (core/reactions.py): Count as, Rerun this
 job (a new run, the next attempt, in this same process) and Start a workflow. In a workflow,
 the workflow runner carries them out instead.
 """
@@ -74,7 +74,7 @@ def run_job(db: Session, job_key: str, instance_id: str, spool_dir: str,
     resume_run_id: an earlier attempt to pick up where it stopped, using its control file.
     count_as_done: the key of a step of that attempt the operator says to count as done, not run again.
     refresh_values: a picked-up run reads its variables again; by default it uses the values as that attempt had them.
-    value_edits: values the operator changed for a picked-up run, by key (engine/run_values.py); for a job
+    value_edits: values the operator changed for a picked-up run, by key (core/run_values.py); for a job
         started again by Advanced they are the only values pinned, the rest being read fresh.
     drop_values: names of the workflow's or the use's variables that were changed: the run reads them again.
     from_step, skip_steps: Advanced, for a picked-up run, by top-level step number (docs/WORKFLOWS_PHASE7.md, 6d). The steps
@@ -399,7 +399,7 @@ def main():
     parser.add_argument("--edit-values", default=None,
                         help="With --resume-run-id: a JSON object of values to use instead, by key. "
                              "With --reopen (a workflow): the values changed at each level of the workflow "
-                             "(engine/workflow_vars.py, apply_choices)")
+                             "(core/workflow_vars.py, apply_choices)")
     parser.add_argument("--drop-values", default=None,
                         help="With --resume-run-id: a JSON list of names the workflow or the use changed; "
                              "the run reads them again, not as the earlier attempt had them")

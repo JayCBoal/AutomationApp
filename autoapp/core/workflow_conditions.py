@@ -1,6 +1,6 @@
 """
 Conditions in a workflow (docs/WORKFLOWS_PHASE4.md): a job's Custom rule, and the workflow's
-Succeeds when. They are written in flow control's language (engine/conditions.py), over
+Succeeds when. They are written in flow control's language (core/conditions.py), over
 %{Name.Output}, where Name is a job in the workflow, and ${...} variables.
 
 Every job in a workflow has the same outputs (OUTPUTS). Until it ends, all of them are unknown

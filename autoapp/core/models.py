@@ -130,7 +130,7 @@ class Tag(MasterObject):
     A label any master object can carry. A tag's variables act as if they were on
     what carries it, and a tag can sit under a parent, nested to any depth,
     inheriting its parent's variables. Names are unique under one parent, so a tag
-    is named by its path: Environment/TEST (see engine/tag_vars.py).
+    is named by its path: Environment/TEST (see core/tag_vars.py).
     """
     __tablename__ = 'Tags'
     __table_args__ = (
@@ -265,7 +265,7 @@ class TagAssignment(Base):
 class SettingValue(Base):
     """
     A system-wide setting changed from its default. The settings themselves, their
-    defaults and what they mean, are declared in engine/settings.py.
+    defaults and what they mean, are declared in core/settings.py.
     """
     __tablename__ = 'Settings'
 
@@ -327,7 +327,7 @@ class StepDefinition(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     StepType_id = Column(Integer, ForeignKey('StepTypes.id', ondelete='CASCADE'), nullable=False)
     ParamName = Column("ParameterName", String(100), nullable=False) # <--- Python attribute is ParamName
-    # STRING, TEXT, BOOLEAN, INTEGER, CHOICE or LOCATION (see engine/step_catalog.py)
+    # STRING, TEXT, BOOLEAN, INTEGER, CHOICE or LOCATION (see core/step_catalog.py)
     DataType = Column(String(20), default='STRING', server_default='STRING')
     IsRequired = Column(Boolean, default=True, server_default=true())
     DefaultValue = Column(Text, nullable=True)
@@ -723,11 +723,11 @@ class JobRun(Base):
     # with its end, never counted from its operations; a workflow's are its jobs' added up
     FileCount = Column(Integer, nullable=True)
     Bytes = Column(BigInteger, nullable=True)
-    # The job log is a file on the host that ran the job (engine/log_files.py): where it is within that
+    # The job log is a file on the host that ran the job (core/log_files.py): where it is within that
     # host's log folder, and when it was removed for being older than the Settings page's limit
     LogFile = Column(String(500), nullable=True)
     LogRemovedDateTime = Column(PreciseDateTime, nullable=True)
-    # A workflow run's variables, fixed as it starts (engine/workflow_vars.py): its own and its tags',
+    # A workflow run's variables, fixed as it starts (core/workflow_vars.py): its own and its tags',
     # and each use's, as JSON. A secret is kept by name only, never its value
     WorkflowVariables = Column(Text, nullable=True)
     # Marked as late: when the first missed deadline was noticed, why, and what it was waiting for (see

@@ -175,7 +175,7 @@ class OwnReactions:
         self.rerun: Optional[Act] = None        # set when the job is to run again
         self.run_id: Optional[str] = None       # the run just judged, which a Resume picks up
         self.control_path: Optional[Path] = None    # its control file,
-        self.record = None                      # read back when a Resume is judged (engine.control_file.ControlRecord),
+        self.record = None                      # read back when a Resume is judged (core.control_file.ControlRecord),
         self.totals: Tuple[int, int] = (0, 0)   # and the files and bytes it delivered: the next attempt need not wait for the database
 
     def after(self, status: str, code: Optional[int], record: Callable[[Act, str, str], None],

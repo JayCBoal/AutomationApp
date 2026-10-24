@@ -1,6 +1,6 @@
 """
 What Rerun would do to a workflow run (docs/WORKFLOWS_PHASE7.md, step 3): which run to reopen, which items
-go on from where they stopped or start again, and what stops it. The rules for each item are engine/reopen.py's,
+go on from where they stopped or start again, and what stops it. The rules for each item are core/reopen.py's,
 the same the workflow runner follows, so the plan is what the run will do. It lives in the engine because a
 Reaction asks it too (automatic_problem): the one rule for "can this run be picked up".
 

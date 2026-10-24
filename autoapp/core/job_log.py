@@ -15,7 +15,7 @@ secret are replaced with ******** wherever they would appear.
 
 Every line written also goes to the run's log file (write_to), masked the same way:
 the file is kept on the host that ran the job, and the server reads it from there
-(engine/log_files.py).
+(core/log_files.py).
 """
 import logging
 import sys

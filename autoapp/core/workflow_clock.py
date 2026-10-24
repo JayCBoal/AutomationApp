@@ -1,7 +1,7 @@
 """
 The workflow runner's clock (docs/WORKFLOWS_PHASE8.md, step 3): time-based Reactions on the jobs of a workflow and on
 the workflow itself. The runner calls this once a pass; the rules for working a deadline out and judging it are in
-engine/clock_rules.py.
+core/clock_rules.py.
 
   - An entry fires once: once per workflow run for "not started by" and "not ended by", once per attempt for "runs
     longer than". What fired is a ReactionEvent row, so a reopened run knows (proposal 9).
@@ -215,7 +215,7 @@ class ClockWatcher:
         self._event(watch, act, "TOOK_EFFECT", f"{told}. Started workflow '{act.target_job}', instance {instance}.")
 
     def _notify(self, watch: Watch, act: Act, told: str, cause_late: bool, deadline: Deadline) -> None:
-        """Queues the alert's message in the outbox (app/alert_outbox.py); the sender sends it, so nothing waits for mail."""
+        """Queues the alert's message in the outbox (core/alert_outbox.py); the sender sends it, so nothing waits for mail."""
         if act.skip_if_cause_late and cause_late:
             self._event(watch, act, "NOT_FIRED", f"{told}. Notify '{act.alert_name}' was skipped: a job it waited for was late.")
             return

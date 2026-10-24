@@ -3,7 +3,7 @@ The job runner's clock (docs/WORKFLOWS_PHASE8.md, step 4): time-based Reactions 
 
 A small thread watches while the job's steps run. Only "has not ended by" and "runs longer than" apply to a job
 on its own (D180); both count from the job's own start. The rules for working a deadline out and judging it are in
-engine/clock_rules.py; the workflow runner has its own watcher (engine/workflow_clock.py).
+core/clock_rules.py; the workflow runner has its own watcher (core/workflow_clock.py).
 
   - The thread only fires side effects (Mark as late, Start a workflow, Notify). It never decides anything about
     the run, so nothing it does can change how the job ends.

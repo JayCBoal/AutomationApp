@@ -4,6 +4,18 @@ Notable structural, schema and design changes to AutoApp, newest first. Line-by-
 
 ---
 
+## 2026-10-24
+
+### Runner separation, Phase A: the `core` package
+
+Plan: [RUNNER_SEPARATION.md](RUNNER_SEPARATION.md). No behaviour changes: pages, API responses and the database are as before.
+
+- **Changed:** a third package, `autoapp/core`, holds what the server and the runners share: the tables and database setup (`models.py`, `database.py`, moved from `app`), the step handlers, step catalog, variables, conditions, reopen rules, the job log and control file, the telemetry client and spool transport (`core/spool.py`), the alert outbox, and the pre-run check (`core/pre_run_check.py`, with `job_problems` and `workflow_problems`, moved out of the jobs router and the workflow store). Picking up an earlier attempt (`core/earlier_attempt.py`) moved out of the runner.
+- **Rule:** `core` imports neither `app` nor `engine`; `app` and `engine` never import each other. `tests/test_package_boundaries.py` checks it.
+- **One exception, to go in Phase B:** the delivery command's no-API path (`engine/spool_delivery.py`) still loads records through `app.telemetry_ingest`.
+- **Changed:** the docs that name modules (CLAUDE.md layout, the module diagram in PYTHON_MODEL.md, PROJECT_BLUEPRINT.md) use the new paths. Older history entries keep the paths they had.
+- **Not changed:** `python3 -m engine.runner` and `python3 -m engine.spool_delivery` start as before, so INTEGRATION.md is untouched.
+
 ## 2026-10-23
 
 ### Workflows summary

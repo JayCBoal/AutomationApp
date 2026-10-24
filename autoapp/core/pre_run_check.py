@@ -19,7 +19,7 @@ def job_problems(db: Session, job: Job, environment: Optional[Dict[str, str]] = 
     Everything that would stop the job from running, as the runner would report it. Runs nothing.
     environment: what the scheduler will set when it runs the job, if known (a WLA job's parameters).
     warnings: given a list, what is worth knowing but does not stop the job is added to it.
-    workflow: for a job used in a workflow, what the workflow gives it (engine.workflow_vars.Levels).
+    workflow: for a job used in a workflow, what the workflow gives it (core.workflow_vars.Levels).
     """
     if job.JobType == "WORKFLOW":
         return workflow_problems(db, job, warnings)

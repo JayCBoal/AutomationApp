@@ -6,7 +6,7 @@ ${JOB.Region}) or an environment variable (`ENV:Region` for ${ENV:Region}). What
 text, with any placeholders inside it filled in. A value that holds a secret is kept by name only, and a
 Resume always reads it again.
 
-The control file holds them in a `values` record (engine/control_file.py), written once the job has been
+The control file holds them in a `values` record (core/control_file.py), written once the job has been
 checked and its steps resolved, since only then are all the placeholders the job uses known.
 """
 import re

@@ -16,7 +16,7 @@ Every second or so it:
   - marks Not run each job whose prerequisites can never hold, which can cascade;
   - after a Cancel, starts nothing more, and marks what has not started Not run; after a
     Kill, also kills the jobs running (Failed, KILLED), down through workflows inside it;
-  - carries out each ended job's Reactions (engine/reactions.py) before anything that waits
+  - carries out each ended job's Reactions (core/reactions.py) before anything that waits
     for it is looked at: Count as, Rerun, Rerun from, Skip, Kill the workflow, Start a workflow.
 A job disabled here ends Disabled (Stop here) or Bypassed (Pass through, which counts as
 succeeded with return code 0) when its turn comes.
@@ -82,7 +82,7 @@ class RunOptions:
     parent_run_id: Optional[str] = None
     workflow_path: Optional[str] = None
     attempt: int = 1
-    reopen: Optional[str] = None            # resume or restart: picks up this run's record, already ended (engine/reopen.py)
+    reopen: Optional[str] = None            # resume or restart: picks up this run's record, already ended (core/reopen.py)
     reopen_scope: Optional[str] = None      # the one item chosen, by path; None for the whole run
     reopen_items: Optional[Dict[str, str]] = None   # Advanced: what to do with each item, by path (resume or restart)
     decisions: Dict[str, str] = field(default_factory=dict)     # failed steps whose effect is unknown: path to run_again or count_done
@@ -240,7 +240,7 @@ class WorkflowRunner:
         self.record_start_ts = time.time()          # when the run started, for the patience that counts from it
         self._tree_run_cache: Optional[JobRun] = None
         self.frames_read: List[str] = []            # the frames whose insides a condition reads, by path
-        self.clock = ClockWatcher(self)             # time-based Reactions (engine/workflow_clock.py)
+        self.clock = ClockWatcher(self)             # time-based Reactions (core/workflow_clock.py)
 
     def run(self) -> int:
         """Runs the workflow to the end. Returns the exit code for whoever started it: 0 if it succeeded, else 1."""
@@ -452,7 +452,7 @@ class WorkflowRunner:
         self.db.add(row)
         return row
 
-    # --- Reopening a run that ended (engine/reopen.py) ---
+    # --- Reopening a run that ended (core/reopen.py) ---
 
     def _reopen_items(self, leftover: Dict[str, WorkflowRunItem]) -> None:
         """Puts the items a reopened run is to run again back to Pending, and keeps what the others ended with."""
@@ -941,7 +941,7 @@ class WorkflowRunner:
                             + (f" {child.ErrorMessage}" if status == "FAILED" and child and child.ErrorMessage else ""))
             self._react(planned, child)
 
-    # --- Reactions (engine/reactions.py) ---
+    # --- Reactions (core/reactions.py) ---
 
     def _react(self, planned: Planned, child: Optional[JobRun]) -> None:
         """Carries out the job's Reactions to how it ended. A killed job's are not: someone stopped it."""
@@ -1068,7 +1068,7 @@ class WorkflowRunner:
         self._event(planned, child, act, "TOOK_EFFECT", f"Started workflow '{act.target_job}', instance {instance}.")
 
     def _notify(self, planned: Planned, child: Optional[JobRun], act: Act) -> None:
-        """Queues the alert's message in the outbox (app/alert_outbox.py); the sender sends it, so nothing waits for mail."""
+        """Queues the alert's message in the outbox (core/alert_outbox.py); the sender sends it, so nothing waits for mail."""
         alert = self.db.get(Alert, act.alert_id) if act.alert_id else None
         if alert is None:
             self._event(planned, child, act, "NOT_FIRED", f"'{planned.name}': Notify was not carried out: its alert no longer exists.")

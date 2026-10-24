@@ -15,7 +15,7 @@ class BaseHandler(ABC):
     Provides standardized step execution wrapping, execution timing,
     job logging, and a helper for recording each file a step handles.
 
-    Logging, for every step type (see engine/job_log.py for the levels):
+    Logging, for every step type (see core/job_log.py for the levels):
       - run() logs the step's parameters, as written and as resolved, and a
         closing line with the outcome. A handler gets these without writing any code.
       - A handler calls job_log.detail() for each thing it does (each file
@@ -29,7 +29,7 @@ class BaseHandler(ABC):
     DESCRIPTION: str = ""
 
     # The parameters this step type takes, in the order the job editor shows them.
-    # See engine/step_catalog.py.
+    # See core/step_catalog.py.
     PARAMETERS: Tuple[Param, ...] = ()
 
     # Parameters every step type takes, shown after its own
@@ -48,7 +48,7 @@ class BaseHandler(ABC):
         return {p.name: p.location_role.lower() for p in cls.parameters() if p.data_type == LOCATION}
 
     # What a step of this type knew about its effect when it failed: NOT_DONE, PARTLY_DONE or UNKNOWN
-    # (engine/step_catalog.py). Every step type must say; one that does not counts as UNKNOWN, the
+    # (core/step_catalog.py). Every step type must say; one that does not counts as UNKNOWN, the
     # safe answer, so a later attempt never runs again what may already have changed something.
     # A step type whose answer depends on how it failed overrides what_failed_step_knew() as well.
     FAILURE_KNOWLEDGE: Optional[str] = None
@@ -86,7 +86,7 @@ class BaseHandler(ABC):
         self.step_config = step_config
         self.step_id = step_config.get("StepID")
         # Notes each file the step handles in the run's control file, and tells a resumed run what the
-        # earlier attempt did with each (engine/control_file.py)
+        # earlier attempt did with each (core/control_file.py)
         self.journal = step_config.get("Journal") or NullJournal()
         self.telemetry = telemetry_client
         # This step type's own outputs, set as the step goes, so a step that fails still leaves them

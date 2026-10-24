@@ -1,6 +1,6 @@
 # Separating the server and the runner
 
-Drafted 2026-10-23. Phase A (the `core` package) is under way; Phases B and C wait on the owner decisions in Open questions 2, 3 and 6.
+Drafted 2026-10-23. Phase A (the `core` package) is built (2026-10-24; see below for what differed from the plan); Phases B and C wait on the owner decisions in Open questions 2, 3 and 6.
 
 ## Aim
 
@@ -45,50 +45,45 @@ The workflow runner decides sequencing, checks prerequisites, applies Reactions 
 
 **Mechanics:** do it in small steps, one module group at a time, full tests between groups. `git mv` so history follows. Update: CLAUDE.md layout, `dev_env.sh`/`pyproject.toml` (so `core` is importable; this touches TO-DO 8), `SQL/generate_ddl.py`, `docs/generate_diagrams.py`, `create_dev_db.py`, `launches.py` (module path used to start runners), `demo/`, the Stand-in Scheduler, README and the docs that name modules. Subprocess start strings (`-m engine.runner`) stay valid because the runner stays in `engine`.
 
+**What differed from the plan (found while doing it):** the step handlers had to move too, because the server uses them for the catalog and validation and the pre-run check calls them; that pulled in the telemetry client and the spool transport (now `core/spool.py`). `job_problems` and `workflow_problems` had to move because the workflow runner called a router function. `workflow_clock` and `alert_outbox` moved with the Notify code. One exception remains: `engine/spool_delivery.py` loads records through `app.telemetry_ingest` when no API is set; Phase B removes that path.
+
 **Done when:** import rule test passes; `autoapp_tests` green on both databases; demo setup and start work; no change in any page or API response.
 
 **Needs from the owner:** nothing beyond approval of the plan. No model or schema change; no INTEGRATION.md change.
 
 ## Phase B: the job runner uses the API
 
-**Goal:** `engine/runner.py` and what it imports (handlers, step_params, etc.) do not import SQLAlchemy models, `core.database`, or anything that opens a database session.
+**Goal:** `engine/runner.py` and what it imports do not import SQLAlchemy models, `core.database`, or anything that opens a database session. Decisions R1 to R5 in [RUNNER_SEPARATION_DECISIONS.md](RUNNER_SEPARATION_DECISIONS.md) shape it.
 
-**The API surface the runner needs (to be designed in detail):**
-1. **Init:** `POST /api/v1/jobs/init` returns the job, its full step tree (today it lists steps flat and nothing uses it), and the variable context. The run record is created here, or at submission (Open question 2), and the run id comes back.
-2. **Start and end of run (Job History)** on a small path of its own: start, process ID, end, status, return code, outputs the workflow needs (`FileCount`, `Bytes`). Prompt, small, retried. This is the telemetry direction (D40, TO-DO 10).
-3. **Operations** (the audit trail) stay in the spool and go in the background or by a periodic sweep, never holding up a step. `engine/spool_delivery.py`'s direct database load is removed.
-4. **Secrets for log masking:** delivered with the init payload (names and values, over HTTPS, in memory only), instead of the runner reading every secret from the database.
-5. **Kill and cancel:** the runner already sees these through its process; confirm nothing reads the database for them.
+**The steps, in order:**
+1. **Runtime flag on variables (R2).** A column (off by default, on for secrets), a migration for both databases, a tick box in the editor, the rule for a normal variable that refers to a Runtime one, and a warning in the editor. Built first because the payload depends on it.
+2. **Split `scope_engine`** into layering (works out the winning value for each name, on the server) and interpolation (fills in placeholders, in the runner). Behaviour unchanged; tests first.
+3. **Agents and tokens (R4).** The Agents table, a default `local` agent, run assignment, and a check on the init and Runtime-fetch calls.
+4. **Run at submission (R1).** The run record is created when a run is submitted, in a state meaning "not started". Init finds it by instance ID, or creates it when there is none.
+5. **The payload (R2, R3).** `POST /api/v1/jobs/init` returns the job, its full step tree (today flat, used by nothing), the layered values, the names of the Runtime variables, the secrets to mask in logs, a version and a "valid until" time.
+6. **Runtime fetch (R2).** One call, before step 1: the run ID and the names; the server returns the values and records what it gave.
+7. **Job History on a small path of its own.** Start, process ID, end, status, return code, and the outputs a workflow needs (`FileCount`, `Bytes`), reported promptly and retried. Operations stay in the spool and go in the background or by a periodic sweep, never holding up a step. The direct database load in `engine/spool_delivery.py` goes, and with it the last known exception in the boundary test.
+8. **The runner without the database.** Remove its imports of models and database; a test fails if they come back.
 
-**Variable resolution** is the main design question (Open question 3).
+**Failure rules (R3):**
+- Server unreachable at start: the job does not start; the runner exits with a clear message.
+- Server unreachable mid-run: the job keeps running. The end report is written to the spool first, always, and sent when the server is back.
+- Reporting never makes a step wait more than a short, bounded time (replacing today's 5-second wait on every batch).
+- A run whose end report never arrives stays as it does today. Marking it Unknown and reconnecting when the agent returns arrives with Queues and Agents (R9, last section).
 
-**Authentication:** a shared token per agent or per installation, sent as a header, checked on `/api/v1/jobs/*` and the run-reporting endpoints. Full API authentication stays in TO-DO 6; this is the smallest version the runner needs. Tokens never appear in logs.
+**Tests:** the runner tests move from direct database setup to a running test server. Expect a slower suite; measure and report.
 
-**Failure rules (to confirm):**
-- Server unreachable at start: the job does not start; the runner exits with a clear message and the scheduler sees the failure to start. (A job cannot start without its payload.)
-- Server unreachable mid-run: the job keeps running; start/end reports and operations wait in the spool and are retried; the end report is written to the spool first, always.
-- Reporting must never make a step wait more than a short bounded time (replaces today's 5-second wait on every batch).
-- A run whose end report never arrives is picked up by a sweep and marked, as in TO-DO "Killed runs".
+**INTEGRATION.md:** the runner's command line and the way a scheduler passes an instance ID do not change (R1). Anything that does change what an external scheduler must do needs the owner's approval first.
 
-**Tests:** runner tests move from direct database setup to a running test server (the existing `conftest.py` already starts subprocess runners; it would start a server too). Expect the suite to get slower; measure and report.
-
-**INTEGRATION.md:** the runner's command line and the way a scheduler passes an instance ID should not change. If the init payload or run-creation point changes what an external scheduler must do, that is a contract change and needs the owner's approval before it is made.
-
-**Done when:** an import check shows the job runner and everything it loads is database-free; the demo runs jobs and workflows end to end; the failure rules above have tests; the suite is green on both databases.
+**Done when:** an import check shows the job runner and everything it loads is database-free; the demo runs jobs and workflows end to end; the failure rules have tests; the suite is green on both databases.
 
 ## Phase C: the workflow runner settles on the server side
 
 Smaller, and partly done by Phase A: it imports `core`, not `app`. Remaining: decide how it starts jobs (still local processes; the later agents work replaces that), and make sure it learns each job's outcome from Job History alone (never the operations table), as the telemetry principle says. Most of this already holds; Phase C is a check plus tests.
 
-## Open questions (owner decisions, with my lean)
+## Decisions and open questions
 
-1. **May the workflow runner import server code (`app`), or must everything it shares be in `core`?** Lean: shared logic goes in `core`; the workflow runner may call small server services only through `core`. Keeps the rule simple (no cross-imports at all).
-2. **Who creates the run record, and when?** Today the runner, when it starts. Alternative: the server, at submission (a "Submitted" state), which also serves the lifecycle audits item. Lean: server, at submission, in Phase B. For an external scheduler this needs the owner's approval (INTEGRATION.md).
-3. **Who resolves `${...}`?** (a) The server resolves everything and sends the runner a finished payload (simplest runner; secrets travel in the payload; Resume still reuses the control file's values). (b) The runner receives raw definitions plus variable layers and resolves locally (keeps `scope_engine` in the runner; more data over the wire). Lean: (a), because it removes the runner's biggest indirect database use and matches how WLAs hand an agent a prepared job.
-4. **Secrets in the payload.** Allowed over HTTPS to an authenticated runner, never written to the spool or logs unmasked. Needs encryption at rest (TO-DO 6) before production; fine for the demonstrator.
-5. **Authentication for the runner:** shared token now; per-agent identity later.
-6. **Start when the server is down:** fail to start (lean), or run from a cached payload. Cached payloads add staleness questions. Lean: fail to start.
-7. **Where decisions are recorded:** a new "Runner separation" section in the decision register, numbered from the next free D number.
+Decided: see [RUNNER_SEPARATION_DECISIONS.md](RUNNER_SEPARATION_DECISIONS.md), R1 to R7. R8 and R9 settle agent assignment and the status of a run that has not started; R8's Queue design, the payload snapshot, the active-runs table and the Unknown status are separate items (roadmap inbox). Still open: sequencing against the rest of the roadmap.
 
 ## Order of work
 

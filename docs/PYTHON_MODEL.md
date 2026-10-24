@@ -1,8 +1,8 @@
 # Python Model
 
-_Generated from `autoapp/app/models.py` by `docs/generate_diagrams.py`. Do not edit by hand; change the models and run the script._
+_Generated from `autoapp/core/models.py` by `docs/generate_diagrams.py`. Do not edit by hand; change the models and run the script._
 
-Two views: the ORM classes in `autoapp/app/models.py`, and how the Python modules depend on each other. The module diagram is written by hand inside the generator script.
+Two views: the ORM classes in `autoapp/core/models.py`, and how the Python modules depend on each other. The module diagram is written by hand inside the generator script.
 
 ## ORM classes: inheritance
 
@@ -461,6 +461,10 @@ flowchart TD
 
     subgraph engine [autoapp/engine]
         runner[runner.py<br/>runs a job's steps in order]
+        delivery[spool_delivery.py<br/>posts spool records to the API]
+    end
+
+    subgraph core [autoapp/core]
         scope[scope_engine.py<br/>resolves placeholders]
         datemask[date_mask.py<br/>date masks]
         renamemask[rename_mask.py<br/>rename masks]
@@ -472,12 +476,11 @@ flowchart TD
         joblog[job_log.py<br/>the job log and its levels]
         file[handlers/file_handler.py<br/>COPY_FILES]
         telemetry[telemetry_client.py<br/>writes the spool file]
-        delivery[spool_delivery.py<br/>posts spool records to the API]
+        models[models.py<br/>ORM classes]
+        database[database.py<br/>engine and sessions]
     end
 
     subgraph app [autoapp/app]
-        models[models.py<br/>ORM classes]
-        database[database.py<br/>engine and sessions]
         schemas[schemas.py<br/>API request and response shapes]
         jobs[routers/jobs.py<br/>POST /api/v1/jobs/init]
         variables[routers/variables.py]

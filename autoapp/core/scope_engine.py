@@ -27,10 +27,10 @@ class ScopeResolutionEngine:
         USE        this use of the job in a workflow: the variables set on it there
 
     ENTITY, APP and ENDPOINT apply only while an endpoint's path and pattern are
-    being filled in; WORKFLOW and USE only for a job in a workflow (engine/workflow_vars.py).
+    being filled in; WORKFLOW and USE only for a job in a workflow (core/workflow_vars.py).
     A variable two tags on one object disagree about is a
     conflict at that level; using it, unless a higher level gives it a value, is
-    an error (see engine/tag_vars.py).
+    an error (see core/tag_vars.py).
     """
 
     # Matches ${SCOPE:target.var}, ${SCOPE.var}, or ${var}. A tag is named by its path: ${TAG:Finance/Reporting.Var}
@@ -41,7 +41,7 @@ class ScopeResolutionEngine:
         r"\$\{(SYS|APP|ENTITY|JOB)\.([^}]+)\}"
     )
     IMPLICIT_VAR_PATTERN = re.compile(r"\$\{([a-zA-Z0-9_:]+)\}")
-    # ${DATE:yyyyMMdd}: the moment the run started, in the format the mask gives (see engine/date_mask.py)
+    # ${DATE:yyyyMMdd}: the moment the run started, in the format the mask gives (see core/date_mask.py)
     DATE_PATTERN = re.compile(r"\$\{DATE:([^}]*)\}")
     # ${BUSINESS_DATE:yyyyMMdd}: the date the scheduler said the run is for (--business-date), or the run's own date
     BUSINESS_DATE_PATTERN = re.compile(r"\$\{BUSINESS_DATE:([^}]*)\}")
@@ -70,9 +70,9 @@ class ScopeResolutionEngine:
         where there is none to give: the server checking or previewing a job, which
         cannot know what a scheduler will set, so ${ENV:...} is left for the run to fill in.
         business_date: the date the run is for, if the scheduler gave one.
-        workflow: for a job in a workflow, what the workflow gives it (engine.workflow_vars.Levels).
+        workflow: for a job in a workflow, what the workflow gives it (core.workflow_vars.Levels).
         started: the moment every date placeholder shows, where it is not now: a resumed run keeps the first attempt's.
-        pinned: values a placeholder shows instead of the one it would resolve to, by what engine/run_values.py
+        pinned: values a placeholder shows instead of the one it would resolve to, by what core/run_values.py
         calls the key (a resumed run's values as the first attempt had them, or as the operator edited them).
         """
         self.db = db

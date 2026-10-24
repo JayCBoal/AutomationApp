@@ -4,7 +4,7 @@ Writes SQL/Create_Tables.sql, the MariaDB script that creates AutoApp's tables.
 
     python3 SQL/generate_ddl.py
 
-The Python models in autoapp/app/models.py define the schema; this script turns
+The Python models in autoapp/core/models.py define the schema; this script turns
 them into MariaDB statements. Run it after changing the models. Do not edit
 Create_Tables.sql by hand.
 """
@@ -33,7 +33,7 @@ def build() -> str:
         "-- ============================================================================",
         "-- AutoApp schema for MariaDB",
         "--",
-        "-- Generated from autoapp/app/models.py by SQL/generate_ddl.py.",
+        "-- Generated from autoapp/core/models.py by SQL/generate_ddl.py.",
         "-- Do not edit by hand: change the models and run the script.",
         "--",
         "-- WARNING: this drops every AutoApp table, and the data in it, before",

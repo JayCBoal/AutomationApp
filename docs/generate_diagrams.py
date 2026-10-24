@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Regenerates docs/DB_SCHEMA.md and docs/PYTHON_MODEL.md from autoapp/app/models.py.
+Regenerates docs/DB_SCHEMA.md and docs/PYTHON_MODEL.md from autoapp/core/models.py.
 
     python3 docs/generate_diagrams.py
 
@@ -32,7 +32,7 @@ TABLE_GROUPS = {
 TYPE_NAMES = {"Integer": "int", "String": "string", "Text": "text", "Boolean": "bool",
               "DateTime": "datetime", "Enum": "enum", "BigInteger": "bigint"}
 
-GENERATED_NOTE = ("_Generated from `autoapp/app/models.py` by `docs/generate_diagrams.py`. "
+GENERATED_NOTE = ("_Generated from `autoapp/core/models.py` by `docs/generate_diagrams.py`. "
                   "Do not edit by hand; change the models and run the script._")
 
 
@@ -187,6 +187,10 @@ flowchart TD
 
     subgraph engine [autoapp/engine]
         runner[runner.py<br/>runs a job's steps in order]
+        delivery[spool_delivery.py<br/>posts spool records to the API]
+    end
+
+    subgraph core [autoapp/core]
         scope[scope_engine.py<br/>resolves placeholders]
         datemask[date_mask.py<br/>date masks]
         renamemask[rename_mask.py<br/>rename masks]
@@ -198,12 +202,11 @@ flowchart TD
         joblog[job_log.py<br/>the job log and its levels]
         file[handlers/file_handler.py<br/>COPY_FILES]
         telemetry[telemetry_client.py<br/>writes the spool file]
-        delivery[spool_delivery.py<br/>posts spool records to the API]
+        models[models.py<br/>ORM classes]
+        database[database.py<br/>engine and sessions]
     end
 
     subgraph app [autoapp/app]
-        models[models.py<br/>ORM classes]
-        database[database.py<br/>engine and sessions]
         schemas[schemas.py<br/>API request and response shapes]
         jobs[routers/jobs.py<br/>POST /api/v1/jobs/init]
         variables[routers/variables.py]
@@ -277,7 +280,7 @@ def build_python_model():
     others = [m for m in mappers if m is not master and m.inherits is None]
 
     out = ["# Python Model", "", GENERATED_NOTE, "",
-           "Two views: the ORM classes in `autoapp/app/models.py`, and how the Python modules depend "
+           "Two views: the ORM classes in `autoapp/core/models.py`, and how the Python modules depend "
            "on each other. The module diagram is written by hand inside the generator script.", "",
            "## ORM classes: inheritance", "",
            "The domain classes inherit from `MasterObject`. Each subclass shows only the "

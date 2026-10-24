@@ -1,5 +1,5 @@
 """
-System-wide settings (declared in engine/settings.py):
+System-wide settings (declared in core/settings.py):
 
     GET  /api/v1/settings          every setting, with its value and default
     PUT  /api/v1/settings/{key}    change one; {"value": ...}. The default's value puts it back to the default

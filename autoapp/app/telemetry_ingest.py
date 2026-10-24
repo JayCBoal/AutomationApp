@@ -1,6 +1,6 @@
 """
 Loads telemetry records (see app/schemas.py) into JobRuns and Operations. The job log is not among
-them: it is a file on the host that ran the job, and RUN_START says where (engine/log_files.py).
+them: it is a file on the host that ran the job, and RUN_START says where (core/log_files.py).
 
 Used by the /api/v1/telemetry/records route and by engine.spool_delivery.
 Loading is safe to repeat: a run is identified by its RunID and an operation by

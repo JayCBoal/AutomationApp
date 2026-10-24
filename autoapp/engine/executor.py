@@ -1,5 +1,5 @@
 """
-Runs a job's steps, checked and prepared by engine/preflight.py, in order: each step
+Runs a job's steps, checked and prepared by core/preflight.py, in order: each step
 once, the steps inside an If on the branch its conditions choose, and those inside a
 For Each File or a While once for each pass (see docs/FLOW_CONTROL.md).
 
@@ -47,7 +47,7 @@ class Executor:
                  attempt: int = 1):
         self.db, self.scope_engine, self.telemetry = db, scope_engine, telemetry
         self.after_step = after_step            # sends what the step recorded
-        self.control = control or NullControl() # what this run keeps so a later attempt can pick up (engine/control_file.py)
+        self.control = control or NullControl() # what this run keeps so a later attempt can pick up (core/control_file.py)
         self.resume = resume                    # the earlier attempt's record, when this run picks up where it stopped
         self.count_as_done = count_as_done      # the key of a step the operator says to count as done, not run again
         self.start_at = start_at                # Advanced: the top-level step the run starts at; unfinished ones before it are passed over

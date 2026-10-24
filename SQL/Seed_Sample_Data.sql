@@ -25,7 +25,7 @@
 -- ============================================================================
 
 -- ----------------------------------------------------------------------------
--- 1. Step catalog: the step types that have a handler in engine/handlers
+-- 1. Step catalog: the step types that have a handler in core/handlers
 -- ----------------------------------------------------------------------------
 -- Added only if it is not there already: the API server creates it when it first starts.
 INSERT INTO StepTypes (Name, Code, Description)

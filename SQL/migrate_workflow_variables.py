@@ -10,7 +10,7 @@ Adds, where they are missing:
     the table WorkflowItemVariables
 No existing value changes: runs from before have no variables fixed, and no use has variables
 of its own. The Variable precedence setting needs nothing: a saved order gets the two new
-levels, Workflow and This use, in their places when it is read (engine/settings.py).
+levels, Workflow and This use, in their places when it is read (core/settings.py).
 
 Works on SQLite and MariaDB, and can be run again safely: what is already there
 is left alone. Nothing is dropped or renamed. Back up a database you care about first.

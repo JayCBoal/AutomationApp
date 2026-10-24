@@ -6,7 +6,7 @@ or the disk, never from the operations log (the telemetry principle).
   - find_job / find_workflow: the run of another workflow that counts (decision D18): the run
     executing now, else the most recent completed one, if it passes the prerequisite's limits;
   - look_at_files: the files at a path, and whether every one is old enough (D19);
-  - now_values: the time as a value in conditions (D20); `IN WINDOW` is expanded by engine/conditions.py (D103).
+  - now_values: the time as a value in conditions (D20); `IN WINDOW` is expanded by core/conditions.py (D103).
 """
 import glob
 import os

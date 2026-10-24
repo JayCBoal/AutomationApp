@@ -5,14 +5,14 @@ Running a failed job again from where it stopped, or from the beginning (docs/WO
     POST /api/v1/runs/{run_id}/rerun        start the next attempt: kind "resume" or "restart"
 
 Either is a new run, the next attempt, under the same instance ID. Resume starts the runner with the
-earlier attempt's control file (engine/control_file.py), so the steps that finished are not run again. A step
+earlier attempt's control file (core/control_file.py), so the steps that finished are not run again. A step
 that failed without knowing whether it changed anything must be decided on first: run it again, or count it
 as done. The ${...} values the job used come back as they were, unless the operator refreshes them (reads
-them again) or edits some (engine/run_values.py). 
+them again) or edits some (core/run_values.py). 
 
 A workflow run is reopened, not copied: the same run goes back to Running under the same run ID, and its failed
 and unrun items go on (Resume) or all start again (Restart). Chosen on a frame, or a failed job, inside a workflow, it
-reopens the run at the top and runs again only that item (docs/WORKFLOWS_PHASE7.md, step 3; engine/reopen.py).
+reopens the run at the top and runs again only that item (docs/WORKFLOWS_PHASE7.md, step 3; core/reopen.py).
 """
 import json
 from typing import Dict, List, Optional

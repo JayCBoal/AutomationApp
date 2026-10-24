@@ -1,5 +1,5 @@
 """
-Whether a Reaction may Resume a workflow run (docs/WORKFLOWS_PHASE7.md, step 5a-1): engine.reopen_tree.automatic_problem
+Whether a Reaction may Resume a workflow run (docs/WORKFLOWS_PHASE7.md, step 5a-1): core.reopen_tree.automatic_problem
 is the one rule, the operator's Resume with nobody there to decide. One refusal refuses the whole workflow.
 """
 from core.models import WorkflowItem

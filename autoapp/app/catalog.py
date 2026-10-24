@@ -2,7 +2,7 @@
 """
 The step catalog: which step types exist and what parameters each takes.
 
-The handlers in engine/handlers are the source of this information. This
+The handlers in core/handlers are the source of this information. This
 module copies it into the StepTypes and StepDefinitions tables, where the job
 editor and anything else that reads the API can get at it.
 

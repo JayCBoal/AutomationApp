@@ -34,7 +34,7 @@ EDITOR_NAME = "web interface"
 
 def workflow_context(db: Session, workflow: Optional[str], use: Optional[str], job_key: Optional[str] = None):
     """
-    What a workflow gives the job it runs as `use` (engine.workflow_vars.Levels), or None when no workflow is
+    What a workflow gives the job it runs as `use` (core.workflow_vars.Levels), or None when no workflow is
     named, so the job is checked on its own. job_key: the job the use must run, when known.
     """
     if not workflow and not use:

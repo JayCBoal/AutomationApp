@@ -5,7 +5,7 @@ entry that has not fired yet, with the time it works out to, how that was worked
     Not ended by: due by 03:00 (in 42 minutes); the next 03:00 after the run started at 01:10
 
 What already fired is not here: it is in the run's Reactions list, with what it did. Nothing is judged or changed here;
-the runners' clocks do that (engine/workflow_clock.py, engine/job_clock.py). This only works the same times out again.
+the runners' clocks do that (core/workflow_clock.py, engine/job_clock.py). This only works the same times out again.
 """
 from datetime import datetime
 from typing import List, Optional, Set, Tuple

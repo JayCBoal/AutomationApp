@@ -1,7 +1,7 @@
 """
 Reading job logs from the hosts that ran the jobs, as a WLA asks its agents for them.
 
-A run's log is a file on the host that ran it (engine/log_files.py); the run's record says which
+A run's log is a file on the host that ran it (core/log_files.py); the run's record says which
 host, and where the file is there. The server never opens a log itself: it asks that host's
 agent. AutoApp has no agents, so LocalAgent stands in for one: it reads the host's folder under
 the log root on this machine. A real agent, reached over the network, would take its place

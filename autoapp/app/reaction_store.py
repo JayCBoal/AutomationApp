@@ -1,14 +1,14 @@
 """
 Reactions as the API reads and saves them (docs/WORKFLOWS_PHASE3.md): on a job, and on one use
 of a job in a workflow, whose list then replaces the job's. job_store and workflow_store call
-this; the engine carries them out (engine/reactions.py).
+this; the engine carries them out (core/reactions.py).
 
 Rules, checked on saving:
   - What happens next (NEXT) holds decisions; Also (ALSO) holds side effects. Each entry has
     at least one action, at most one Count as, and at most one of Rerun, Rerun from… and Kill
     the workflow.
   - The When is SUCCESS, FAILED, ENDED or RC with return codes, or a time When (Phase 8): NOT_STARTED_BY,
-    NOT_ENDED_BY or RUNS_LONGER_THAN with how its time is given (engine/clock_rules.py judges it). A time When
+    NOT_ENDED_BY or RUNS_LONGER_THAN with how its time is given (core/clock_rules.py judges it). A time When
     takes side effects only (Mark as late, Notify, Start a workflow), so it sits under Also. "Has not started by"
     and "within N minutes of being ready" need a workflow around the job.
   - Notify names an alert that exists; Mark as late is only for a time When.

@@ -12,12 +12,12 @@ Each record names the step it is about by its place in the job: the step number,
 each loop around it ("3.1|2.1" is step 3.1 in pass 2 of a loop and pass 1 of the loop inside). Records:
 
     job          the run's anchors: when it started, its business date
-    values       the ${...} values the job used, by key; a secret's by name only (engine/run_values.py)
+    values       the ${...} values the job used, by key; a secret's by name only (core/run_values.py)
     resumed      this attempt picked up another run's record; that run's records follow, copied
     begin        a step started
     end          a step ended; done says whether the job went on past it, with its outputs; skipped: the operator
                  had it passed over, so it did not run and has no outputs (Advanced, docs/WORKFLOWS_PHASE7.md, 6d)
-    failed       a step failed, and what it knew about its effect (engine/step_catalog.py), with its number and title
+    failed       a step failed, and what it knew about its effect (core/step_catalog.py), with its number and title
     branch       the branch an If took
     files        the files a For Each File matched, as matched then
     pass_begin   a loop's pass started (with the file it is on, for a For Each File)
@@ -238,7 +238,7 @@ class ControlRecord:
 class Journal:
     """
     A file step's view of the control file: it notes each file as it begins and ends, and, when the run
-    resumes, learns what the earlier attempt did with each (engine/handlers).
+    resumes, learns what the earlier attempt did with each (core/handlers).
     """
 
     def __init__(self, writer, before: Optional[ControlRecord], key: str):

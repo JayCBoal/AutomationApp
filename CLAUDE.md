@@ -13,8 +13,9 @@ Notes for Claude Code on this project. The why behind the project is in docs/PRO
 
 ## Layout
 
-- `autoapp/app`: the FastAPI server (API, models, connectors to schedulers).
-- `autoapp/engine`: the runner (`python3 -m engine.runner --job-key ... --instance-id ...`), the step types, settings (`engine/settings.py`) and spool delivery.
+- `autoapp/core`: what the server and the runners share: the tables (`core/models.py`), the database setup, the step handlers and catalog, variables and conditions, and the pre-run check. It imports neither of the others.
+- `autoapp/app`: the FastAPI server (API, stores, connectors to schedulers). It never imports `engine`.
+- `autoapp/engine`: the runners (`python3 -m engine.runner --job-key ... --instance-id ...`, and the workflow runner), the executor and spool delivery. It never imports `app`. `tests/test_package_boundaries.py` enforces both rules; the plan is docs/RUNNER_SEPARATION.md.
 - `autoapp/ui`: static pages. `autoapp/tests`: pytest.
 - `demo/`: `demo.py` (setup|start|stop|status, in /tmp/autoapp_demo, ports 8200 and 8210), `DEMO.md` (the 30-minute walkthrough), and `scheduler_standin/` (the Stand-in Scheduler, a fake WLA).
 - `integrations/runmyjobs/`: the RunMyJobs draft. Nothing in it has been tried on a tenant yet.

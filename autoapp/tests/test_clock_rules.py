@@ -1,5 +1,5 @@
 """
-The clock rules of time-based Reactions (engine/clock_rules.py), with a made-up clock:
+The clock rules of time-based Reactions (core/clock_rules.py), with a made-up clock:
 deadlines from a time of day or a length, "longer than usual" from history, and judging at a moment.
 """
 from datetime import datetime, timedelta

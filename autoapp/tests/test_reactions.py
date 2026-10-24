@@ -1,5 +1,5 @@
 """
-Judging Reactions (engine/reactions.py): which entry decides, which side effects fire, and
+Judging Reactions (core/reactions.py): which entry decides, which side effects fire, and
 "at most N times". Carrying them out is tested with the runners.
 """
 from core.reactions import Act, Rule, judge

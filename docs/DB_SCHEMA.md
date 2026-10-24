@@ -1,6 +1,6 @@
 # Database Schema
 
-_Generated from `autoapp/app/models.py` by `docs/generate_diagrams.py`. Do not edit by hand; change the models and run the script._
+_Generated from `autoapp/core/models.py` by `docs/generate_diagrams.py`. Do not edit by hand; change the models and run the script._
 
 This is the schema the Python models create. The MariaDB script `SQL/Create_Tables.sql` is generated from the same models by `SQL/generate_ddl.py`.
 

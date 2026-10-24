@@ -14,7 +14,7 @@ from typing import List, Optional
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.models import Job, JobStep
+from core.models import Job, JobStep
 from engine import step_tree
 from engine.control_file import ControlRecord
 

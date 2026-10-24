@@ -5,7 +5,7 @@ workflows on the Job Search, Job Detail and Job History pages.
 """
 import pytest
 
-from app.models import Job, WorkflowItem, WorkflowPrerequisite
+from core.models import Job, WorkflowItem, WorkflowPrerequisite
 from conftest import wait_for_search
 
 

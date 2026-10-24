@@ -7,11 +7,11 @@ from pydantic import BaseModel, Field
 from sqlalchemy import case, func
 from sqlalchemy.orm import Session
 
-from app.database import get_db
+from core.database import get_db
 from app import embed_store, rename_store, tag_store
 from app.workflow_errors import WorkflowError
 from app.job_store import JobStoreError, apply_job, delete_job, describe_job, inherited_variables, save_job
-from app.models import Job, JobRun, JobStep, JobStepParameter, Operation, Variable
+from core.models import Job, JobRun, JobStep, JobStepParameter, Operation, Variable
 from app.schemas import (
     FieldPreview, JobCheckResult, JobDetail, JobInitRequest, JobInitResponse, JobPreview, JobSave, JobSaveResult,
     JobStepPayloadSchema, JobSummary, LastRun, MakeShared, RenameFacts

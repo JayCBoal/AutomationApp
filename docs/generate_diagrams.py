@@ -16,7 +16,7 @@ sys.path.insert(0, str(DOCS_DIR.parent / "autoapp"))
 from sqlalchemy import inspect
 from sqlalchemy.orm import RelationshipDirection
 
-from app.models import Base, MasterObject
+from core.models import Base, MasterObject
 
 # How the tables are grouped into detail diagrams
 TABLE_GROUPS = {

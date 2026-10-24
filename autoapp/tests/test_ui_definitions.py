@@ -4,7 +4,7 @@ endpoints, in a real browser against a real server. The browser fixtures are in 
 """
 import pytest
 
-from app.models import Endpoint, Variable
+from core.models import Endpoint, Variable
 from conftest import wait_for_search
 
 
@@ -79,7 +79,7 @@ def test_a_search_row_shows_its_fields_and_what_uses_it(page, world):
 
 
 def test_rows_are_two_lines_with_the_description_under_the_name_and_when_each_last_changed(page, db, world):
-    from app.models import Application
+    from core.models import Application
     db.query(Application).filter(Application.Name == "LEGAL_APP").one().ModifiedBy = "jsmith"
     db.commit()
 
@@ -110,7 +110,7 @@ def test_criteria_narrow_a_search_and_are_kept_in_the_address(page, world):
 
 
 def test_active_is_searched_with_a_list(page, db, world):
-    from app.models import Entity
+    from core.models import Entity
     db.query(Entity).filter(Entity.Name == "GLOBEX").one().IsActive = False
     db.commit()
 

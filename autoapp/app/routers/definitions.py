@@ -15,7 +15,7 @@ from typing import Any, Dict, List
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, status
 from sqlalchemy.orm import Session
 
-from app.database import get_db
+from core.database import get_db
 from app.job_store import JobStoreError
 from app import registry_store as store
 

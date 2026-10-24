@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.catalog import sync_catalog
-from app.database import get_db
+from core.database import get_db
 from app.log_agent import remove_old_logs
 from app.mail_sender import run_sender_forever
 from app.routers import (

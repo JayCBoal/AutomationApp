@@ -3,7 +3,7 @@ import json
 
 import pytest
 
-from app.models import Application, Audit, Entity, Site
+from core.models import Application, Audit, Entity, Site
 
 
 def lookups(client, kind):

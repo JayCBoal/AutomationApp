@@ -6,7 +6,7 @@ through the plan and the request.
 """
 import json
 
-from app.models import RunRestart
+from core.models import RunRestart
 from test_launches import follow, get, post     # noqa: F401
 from test_rerun_advanced import advanced, attempts, failed, plan_of, rerun    # noqa: F401  (fixtures)
 from test_workflow_reopen import framed, reopen, run_workflow, two_stage    # noqa: F401  (fixtures)

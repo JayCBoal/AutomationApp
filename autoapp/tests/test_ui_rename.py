@@ -1,7 +1,7 @@
 """The rename warning in a real browser: what it says, the tickbox that moves the working folder."""
 import pytest
 
-from app.models import Job, JobRun
+from core.models import Job, JobRun
 
 from tests.test_ui_job_edit import edit, job, open_job   # noqa: F401  (the DEV-LOAD fixture and helpers)
 

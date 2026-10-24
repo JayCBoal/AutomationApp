@@ -7,7 +7,7 @@ import json
 import pytest
 
 from app.catalog import sync_catalog
-from app.models import JobStepParameter, StepDefinition, StepType
+from core.models import JobStepParameter, StepDefinition, StepType
 from engine.handlers import HANDLERS
 from engine.handlers.file_handler import FileOpHandler
 from engine.step_catalog import (

@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from app.models import AlertDelivery, JobRun, JobStepParameter, ReactionEvent, WorkflowRunItem
+from core.models import AlertDelivery, JobRun, JobStepParameter, ReactionEvent, WorkflowRunItem
 from conftest import AUTOAPP_DIR, subprocess_env
 from create_dev_db import load_seed
 

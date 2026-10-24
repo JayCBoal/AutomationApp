@@ -9,7 +9,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from app.models import Audit, JobRun, RunRestart
+from core.models import Audit, JobRun, RunRestart
 from app.run_restarts import restarts_for
 from test_control_file import gated_job, put_gate
 from test_launches import follow, get, post     # noqa: F401

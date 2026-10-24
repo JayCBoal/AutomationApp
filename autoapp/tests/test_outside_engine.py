@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from app.models import (Job, JobRun, WorkflowItem, WorkflowPrerequisite, WorkflowPrerequisiteCheck, WorkflowRunItem,
+from core.models import (Job, JobRun, WorkflowItem, WorkflowPrerequisite, WorkflowPrerequisiteCheck, WorkflowRunItem,
                         utcnow)
 from engine import conditions, outside, outside_state, workflow_conditions
 from engine.prerequisites import HOLDS, NEVER, SKIPPED_OPTIONAL, TIMED_OUT, WAIT
@@ -65,7 +65,7 @@ def test_a_condition_on_outside_names_says_what_is_wrong_with_them():
 
 def planned(join="ALL", inside=(), outside_states=(), required=()):
     """A job of a run with the states of its prerequisites given: inside as statuses of other jobs, outside as states."""
-    from app.models import WorkflowRunItem as Row
+    from core.models import WorkflowRunItem as Row
     by_name = {}
     for name, status in inside:
         by_name[name] = Planned(name, name, "ALL", [], Row(Status=status, ReturnCode=0 if status == "SUCCESS" else None))

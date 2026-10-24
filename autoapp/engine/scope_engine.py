@@ -5,7 +5,7 @@ from contextlib import contextmanager
 from datetime import date, datetime, time
 from typing import Any, Dict, List, Optional
 from sqlalchemy.orm import Session
-from app.models import Application, Entity, Job, Variable
+from core.models import Application, Entity, Job, Variable
 from engine import settings, tag_vars
 
 

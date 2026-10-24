@@ -11,7 +11,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
-from app.models import Scheduler, Variable
+from core.models import Scheduler, Variable
 
 API_KEY = "rmj-test-key"
 BASE = "/redwood/demo/api-extension/External/REDWOOD/Redwood_RestService/rest/v1"

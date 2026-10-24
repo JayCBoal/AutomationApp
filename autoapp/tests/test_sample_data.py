@@ -14,7 +14,7 @@ from sqlalchemy import text
 
 from app.catalog import sync_catalog
 from app.log_agent import run_log
-from app.models import Endpoint, Job, JobRun, StepType, Variable, WorkflowPrerequisiteCheck, WorkflowRunItem
+from core.models import Endpoint, Job, JobRun, StepType, Variable, WorkflowPrerequisiteCheck, WorkflowRunItem
 from conftest import AUTOAPP_DIR, subprocess_env
 from create_dev_db import create_sales_db, load_seed
 from engine.handlers import HANDLER_REGISTRY

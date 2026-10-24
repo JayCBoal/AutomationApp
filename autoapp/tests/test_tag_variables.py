@@ -4,7 +4,7 @@ from the tags it carries, and what happens when its tags disagree.
 """
 import pytest
 
-from app.models import SettingValue, Variable
+from core.models import SettingValue, Variable
 from engine.scope_engine import ScopeResolutionEngine
 from engine import tag_vars
 

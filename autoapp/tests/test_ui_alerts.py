@@ -7,7 +7,7 @@ from datetime import timedelta
 import pytest
 from playwright.sync_api import expect
 
-from app.models import Alert, AlertDelivery, AlertRecipient, JobRun, MailSetting, utcnow
+from core.models import Alert, AlertDelivery, AlertRecipient, JobRun, MailSetting, utcnow
 
 
 def an_alert(db, name="Ops"):
@@ -70,7 +70,7 @@ def test_the_mail_settings_are_saved_from_the_alerts_page(page, db):
 
 
 def test_a_used_alert_cannot_be_deleted_and_says_who_names_it(page, db, seed):
-    from app.models import Reaction, ReactionAction
+    from core.models import Reaction, ReactionAction
     alert = an_alert(db)
     job = seed.job("LOAD")
     reaction = Reaction(Job_MasterObject_id=job.MasterObject_id, Section="ALSO", WhenTest="FAILED")

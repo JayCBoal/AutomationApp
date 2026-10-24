@@ -7,7 +7,7 @@ import json
 
 import pytest
 
-from app.models import Variable
+from core.models import Variable
 from test_control_file import attempt, control_of, gated_job, log_of, operations, put_gate     # noqa: F401 (attempt is a fixture)
 from test_launches import follow, get, post
 from test_rerun_advanced import plan_of, rerun     # noqa: F401

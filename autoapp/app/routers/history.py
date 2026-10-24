@@ -19,11 +19,11 @@ from pydantic import BaseModel, Field
 from sqlalchemy import case, exists, func
 from sqlalchemy.orm import Session, aliased
 
-from app.database import get_db
+from core.database import get_db
 from app.log_agent import log_note, run_log
 from app.run_clock import fired_entries, item_lines, run_lines
 from app.run_restarts import RestartOut, restarts_for, summary_for
-from app.models import (Audit, ConditionCheck, JobRun, Operation, ReactionEvent, WorkflowPrerequisiteCheck,
+from core.models import (Audit, ConditionCheck, JobRun, Operation, ReactionEvent, WorkflowPrerequisiteCheck,
                         WorkflowRunItem, utcnow)
 from engine import conditions, log_files
 

@@ -113,7 +113,7 @@ def test_a_job_on_its_own_can_start_at_a_chosen_step(page, gated, tmp_path):
 
 
 def test_the_restarts_list_and_audit_log_say_which_item_was_bypassed(failed_run, db):
-    from app.models import Audit
+    from core.models import Audit
     page = failed_run
     open_advanced(page)
     row(page, "Load").locator("select").select_option("bypass")

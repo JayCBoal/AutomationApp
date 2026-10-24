@@ -40,7 +40,7 @@ def chain(tag) -> List:
 
 def find_by_path(db: Session, path: str):
     """The tag a path names, or None."""
-    from app.models import Tag
+    from core.models import Tag
     parent_id, tag = None, None
     for name in [part.strip() for part in path.split(SEPARATOR)]:
         query = db.query(Tag).filter(Tag.Name == name)
@@ -96,7 +96,7 @@ class Inherited:
 
 def tags_on(db: Session, master_object_id: Optional[int]) -> List:
     """The tags attached to an object, in path order."""
-    from app.models import Tag, TagAssignment
+    from core.models import Tag, TagAssignment
     if not master_object_id:
         return []
     tags = (db.query(Tag).join(TagAssignment, TagAssignment.Tag_MasterObject_id == Tag.MasterObject_id)

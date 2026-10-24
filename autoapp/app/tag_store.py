@@ -14,7 +14,7 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.job_store import JobStoreError
-from app.models import Job, JobStepParameter, MasterObject, Tag, TagAssignment, Variable
+from core.models import Job, JobStepParameter, MasterObject, Tag, TagAssignment, Variable
 from engine import tag_vars
 from engine.tag_vars import SEPARATOR, tag_path
 

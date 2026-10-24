@@ -16,7 +16,7 @@ from typing import Any, Dict, List, Optional
 
 from sqlalchemy.orm import Session
 
-from app.models import JobRun, WorkflowRunItem
+from core.models import JobRun, WorkflowRunItem
 from engine import file_age
 
 WEEKDAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")

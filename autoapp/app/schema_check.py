@@ -10,7 +10,7 @@ from typing import List
 from sqlalchemy import inspect
 from sqlalchemy.engine import Connection
 
-from app.models import Base
+from core.models import Base
 
 
 def schema_problems(connection: Connection) -> List[str]:

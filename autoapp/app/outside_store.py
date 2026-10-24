@@ -20,7 +20,7 @@ from typing import Dict, List, Optional, Set
 
 from sqlalchemy.orm import Session
 
-from app.models import Endpoint, Job, WorkflowItem, WorkflowPrerequisite
+from core.models import Endpoint, Job, WorkflowItem, WorkflowPrerequisite
 from app.schemas import NeededByOut, PrerequisiteOut, PrerequisiteSave
 from app.workflow_errors import WorkflowError
 from engine import conditions, frames, return_codes, workflow_conditions

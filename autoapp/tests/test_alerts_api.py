@@ -4,7 +4,7 @@ job's Reactions (docs/WORKFLOWS_PHASE8.md, step 6). Sending itself is tested in 
 """
 import pytest
 
-from app.models import Alert, AlertDelivery, Audit
+from core.models import Alert, AlertDelivery, Audit
 from test_reactions_api import a_workflow, act, reaction, steps_job, use
 
 ALERTS = "/api/v1/alerts"

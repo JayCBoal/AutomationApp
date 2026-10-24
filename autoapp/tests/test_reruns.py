@@ -7,7 +7,7 @@ import time
 
 import pytest
 
-from app.models import JobRun
+from core.models import JobRun
 from engine.runner import failure_reason
 from engine.step_catalog import NOT_DONE, UNKNOWN, WhatItKnew
 from test_control_file import attempt, control_of, gated_job, log_of, put_gate    # noqa: F401 (attempt is a fixture)

@@ -29,7 +29,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import sessionmaker
 
-from app.database import get_db
+from core.database import get_db
 from app.main import app
 from app.telemetry_ingest import ingest_records
 from create_dev_db import sql_statements
@@ -41,7 +41,7 @@ AUTOAPP_DIR = Path(__file__).resolve().parents[1]
 CREATE_TABLES_SCRIPT = AUTOAPP_DIR.parent / "SQL" / "Create_Tables.sql"
 SERVER_DATABASE_URL = os.getenv("AUTOAPP_TEST_DATABASE_URL")
 
-from app.models import (
+from core.models import (
     Application, Base, Endpoint, Entity, Job, JobStep, JobStepParameter, Site, StepType, Tag, TagAssignment, Variable
 )
 

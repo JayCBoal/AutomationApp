@@ -16,7 +16,7 @@ from pathlib import Path
 import pytest
 
 from app.log_agent import LocalAgent
-from app.models import JobRun, Variable
+from core.models import JobRun, Variable
 from conftest import AUTOAPP_DIR, subprocess_env
 from engine import job_log
 from engine.control_file import ControlRecord, ControlWriter, control_name

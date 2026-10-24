@@ -13,7 +13,7 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.exc import IntegrityError, OperationalError
 
-from app.models import (Alert, AlertDelivery, AlertRecipient, Base, Credential, Job, JobRun, MailSetting, Reaction,
+from core.models import (Alert, AlertDelivery, AlertRecipient, Base, Credential, Job, JobRun, MailSetting, Reaction,
                         ReactionAction, ReactionEvent, WorkflowRunItem, utcnow)
 
 REFUSED = (IntegrityError, OperationalError)

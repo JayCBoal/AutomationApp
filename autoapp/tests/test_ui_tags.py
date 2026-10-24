@@ -6,7 +6,7 @@ search pages, and the Settings page. The browser fixtures are in conftest.py.
 """
 import pytest
 
-from app.models import Tag, Variable
+from core.models import Tag, Variable
 from conftest import wait_for_search
 
 

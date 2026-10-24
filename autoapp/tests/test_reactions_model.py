@@ -16,7 +16,7 @@ from sqlalchemy.exc import IntegrityError, OperationalError
 # A failed CHECK is an IntegrityError on SQLite and an OperationalError on MariaDB
 REFUSED = (IntegrityError, OperationalError)
 
-from app.models import (Base, Job, JobRun, Reaction, ReactionAction, ReactionEvent, WorkflowItem, WorkflowRunItem)
+from core.models import (Base, Job, JobRun, Reaction, ReactionAction, ReactionEvent, WorkflowItem, WorkflowRunItem)
 
 MIGRATION = Path(__file__).resolve().parents[2] / "SQL" / "migrate_reactions.py"
 NEW_TABLES = ("ReactionEvents", "ReactionActions", "Reactions")

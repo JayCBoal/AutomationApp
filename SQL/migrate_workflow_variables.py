@@ -26,7 +26,7 @@ sys.path.insert(0, str(REPO_DIR / "SQL"))
 
 from sqlalchemy import create_engine, inspect
 
-from app.models import WorkflowItemVariable
+from core.models import WorkflowItemVariable
 from migrate_workflows import add_missing_columns as add_columns
 
 # (table, column, its definition for ALTER TABLE ... ADD COLUMN, the foreign key it carries or None)

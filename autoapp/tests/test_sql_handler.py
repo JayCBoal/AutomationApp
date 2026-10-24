@@ -161,7 +161,7 @@ def test_safe_url_hides_only_the_password():
 
 def test_an_export_job_takes_its_database_from_a_secret_and_starts_the_files_trace(
         db, seed, sales, run_runner, load_spool, client, tmp_path):
-    from app.models import Variable
+    from core.models import Variable
     job = seed.job("DEV-EXPORT")
     db.add(Variable(MasterObject_id=job.MasterObject_id, VarName="SalesDbUrl", VarValue=sales, IsSecret=True))
     seed.step(job, 1, title="Export", code="RUN_SQL", Database="${SalesDbUrl}",

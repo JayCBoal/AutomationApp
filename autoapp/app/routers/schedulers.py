@@ -12,8 +12,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.connectors import ConnectorError, WlaJob, connector_for
-from app.database import get_db
-from app.models import Scheduler
+from core.database import get_db
+from core.models import Scheduler
 
 router = APIRouter(prefix="/api/v1/schedulers", tags=["Schedulers"])
 

@@ -72,8 +72,8 @@ def python(code: str, cwd: Path) -> None:
 BUILD_AUTOAPP = r'''
 import os
 from pathlib import Path
-from app.database import SessionLocal, engine
-from app.models import Base, Scheduler, Variable
+from core.database import SessionLocal, engine
+from core.models import Base, Scheduler, Variable
 from app.catalog import sync_catalog
 from create_dev_db import load_seed, create_sales_db, create_sample_files
 

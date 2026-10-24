@@ -115,7 +115,7 @@ def stored_text(key: str, value: Any) -> str:
 
 
 def stored(db: Session) -> Dict[str, str]:
-    from app.models import SettingValue
+    from core.models import SettingValue
     return {row.SettingKey: row.SettingValue for row in db.query(SettingValue)}
 
 

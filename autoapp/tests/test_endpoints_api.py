@@ -3,7 +3,7 @@ import json
 
 import pytest
 
-from app.models import Audit, Endpoint
+from core.models import Audit, Endpoint
 
 ROUTE = "/api/v1/endpoints"
 FIELDS = ("name", "application", "site", "entity", "path", "filename_pattern", "description")

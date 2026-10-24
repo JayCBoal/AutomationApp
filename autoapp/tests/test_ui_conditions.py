@@ -6,7 +6,7 @@ on a step's condition in the job editor.
 """
 import pytest
 
-from app.models import Job, WorkflowItem, WorkflowPrerequisite
+from core.models import Job, WorkflowItem, WorkflowPrerequisite
 
 
 @pytest.fixture(autouse=True)

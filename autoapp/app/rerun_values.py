@@ -17,7 +17,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.models import Audit, Job, JobRun, WorkflowRunItem
+from core.models import Audit, Job, JobRun, WorkflowRunItem
 from engine.reopen_tree import Pick, TreePlan
 from engine import reopen, run_values, workflow_vars
 

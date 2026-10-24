@@ -4,7 +4,7 @@ through /api/v1/jobs, with the checks run over the whole tree.
 """
 import pytest
 
-from app.models import Job, JobRun, WorkflowItem
+from core.models import Job, JobRun, WorkflowItem
 from test_workflows_api import ROUTE, item, jobs, save, workflow, working_root      # noqa: F401  (fixtures)
 
 

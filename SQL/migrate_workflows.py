@@ -24,7 +24,7 @@ sys.path.insert(0, str(REPO_DIR / "autoapp"))
 
 from sqlalchemy import create_engine, inspect, text
 
-from app.models import WorkflowItem, WorkflowPrerequisite, WorkflowRunItem
+from core.models import WorkflowItem, WorkflowPrerequisite, WorkflowRunItem
 
 # (table, column, its definition for ALTER TABLE ... ADD COLUMN, the foreign key it carries or None)
 COLUMNS = [

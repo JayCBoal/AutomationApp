@@ -9,7 +9,7 @@ import subprocess
 import sys
 import time
 
-from app.models import Job, JobRun, Reaction, ReactionAction, ReactionEvent, WorkflowRunItem, utcnow
+from core.models import Job, JobRun, Reaction, ReactionAction, ReactionEvent, WorkflowRunItem, utcnow
 from conftest import AUTOAPP_DIR, subprocess_env
 from test_workflow_runner import flow, results, run_flow, sim, start, states  # noqa: F401 (fixtures)
 

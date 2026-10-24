@@ -25,7 +25,7 @@ from sqlalchemy.orm import Session
 
 from app import outside_store, tag_store
 from app.job_store import JobStoreError, apply_variables
-from app.models import (
+from core.models import (
     Application, Audit, Endpoint, Entity, JobRun, JobStep, JobStepParameter, MasterObject, Scheduler, Site, Tag, utcnow
 )
 from engine.step_catalog import ENDPOINT_SUFFIX
@@ -182,7 +182,7 @@ def used_by(db: Session, kind: Kind, obj) -> List[Dict[str, str]]:
             .filter(JobStepParameter.ParamName.like(f"%{ENDPOINT_SUFFIX}"), JobStepParameter.ParamValue == obj.Name)
             .distinct().all()
         )
-        from app.models import Job
+        from core.models import Job
         keys = sorted({db.get(Job, job_id).JobKey for (job_id,) in rows}
                       | set(outside_store.waiting_for_endpoint(db, obj)), key=str.lower)
         return [{"kind": "jobs", "name": key} for key in keys]

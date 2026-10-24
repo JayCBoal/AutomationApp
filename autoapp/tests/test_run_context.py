@@ -9,7 +9,7 @@ from datetime import date
 
 import pytest
 
-from app.models import JobRun, SettingValue
+from core.models import JobRun, SettingValue
 from conftest import AUTOAPP_DIR, subprocess_env
 from engine.scope_engine import ScopeResolutionEngine
 from engine import settings

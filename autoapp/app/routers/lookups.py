@@ -5,8 +5,8 @@ from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.database import get_db
-from app.models import Application, Endpoint, Entity, Job, JobRun, Scheduler, Site, Tag
+from core.database import get_db
+from core.models import Application, Endpoint, Entity, Job, JobRun, Scheduler, Site, Tag
 from engine.tag_vars import tag_path
 
 router = APIRouter(prefix="/api/v1/lookups", tags=["Lookups"])

@@ -9,7 +9,7 @@ import sys
 
 import pytest
 
-from app.models import JobRun, Operation
+from core.models import JobRun, Operation
 from conftest import AUTOAPP_DIR, subprocess_env
 
 

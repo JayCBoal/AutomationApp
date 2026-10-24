@@ -2,7 +2,7 @@
 Whether a Reaction may Resume a workflow run (docs/WORKFLOWS_PHASE7.md, step 5a-1): engine.reopen_tree.automatic_problem
 is the one rule, the operator's Resume with nobody there to decide. One refusal refuses the whole workflow.
 """
-from app.models import WorkflowItem
+from core.models import WorkflowItem
 from engine.reopen_tree import automatic_problem
 from test_frames_engine import tree     # noqa: F401  (fixture)
 from test_workflow_reopen import fix, framed, two_stage

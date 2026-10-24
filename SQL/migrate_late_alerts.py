@@ -27,7 +27,7 @@ sys.path.insert(0, str(REPO_DIR / "SQL"))
 
 from sqlalchemy import create_engine, inspect, text
 
-from app.models import Alert, AlertDelivery, AlertRecipient, MailSetting, ReactionEvent
+from core.models import Alert, AlertDelivery, AlertRecipient, MailSetting, ReactionEvent
 from migrate_workflows import add_missing_columns as add_columns
 
 LATE = [("LateDateTime", "{datetime} NULL"), ("LateReason", "TEXT NULL"), ("LateCause", "TEXT NULL")]

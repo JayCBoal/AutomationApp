@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from app.models import Audit
+from core.models import Audit
 from test_launches import follow, get, post     # noqa: F401
 from test_workflow_reopen import run_workflow
 from test_workflow_runner import flow, results, sim, start    # noqa: F401  (fixtures)
@@ -78,7 +78,7 @@ def test_a_restart_takes_no_values_choice(valued, live_api):
 
 
 def test_the_plan_says_which_values_now_read_differently_and_a_refresh_uses_them(valued, live_api, db):
-    from app.models import Variable
+    from core.models import Variable
     db.query(Variable).filter(Variable.VarName == "Fail").one().VarValue = "False"
     db.commit()
 

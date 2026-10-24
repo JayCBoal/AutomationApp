@@ -3,7 +3,7 @@ import json
 
 import pytest
 
-from app.models import Audit, Job, JobRun, JobStep, JobStepParameter, Operation
+from core.models import Audit, Job, JobRun, JobStep, JobStepParameter, Operation
 
 ROUTE = "/api/v1/jobs"
 

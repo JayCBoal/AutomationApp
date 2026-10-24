@@ -24,7 +24,7 @@ from typing import Dict, List, Optional, Set
 
 from sqlalchemy.orm import Session
 
-from app.models import Alert, Job, Reaction, ReactionAction, WorkflowItem
+from core.models import Alert, Job, Reaction, ReactionAction, WorkflowItem
 from app.schemas import ReactionActionIO, ReactionIO
 from engine import return_codes
 from engine.clock_rules import AFTER_READY, DEFAULT_HISTORY_RUNS, HISTORY, NOT_STARTED_BY, TimeRule, problem_with

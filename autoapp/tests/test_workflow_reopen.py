@@ -9,7 +9,7 @@ import sys
 
 import pytest
 
-from app.models import Job, JobStep, JobStepParameter, ReactionEvent, WorkflowItem, WorkflowPrerequisite, WorkflowRunItem
+from core.models import Job, JobStep, JobStepParameter, ReactionEvent, WorkflowItem, WorkflowPrerequisite, WorkflowRunItem
 from conftest import AUTOAPP_DIR, subprocess_env
 from test_frames_engine import tree     # noqa: F401  (fixture)
 from test_workflow_runner import flow, results, run_flow, sim, start    # noqa: F401  (fixtures)

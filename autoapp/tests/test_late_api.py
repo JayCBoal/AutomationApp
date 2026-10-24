@@ -5,7 +5,7 @@ has not fired yet with the time it works out to.
 """
 from datetime import datetime, timedelta, timezone
 
-from app.models import Job, JobRun, ReactionEvent, WorkflowRunItem
+from core.models import Job, JobRun, ReactionEvent, WorkflowRunItem
 from test_workflow_clock import events, run_clocked, timed  # noqa: F401 (fixture)
 from test_workflow_runner import flow, results, sim  # noqa: F401 (fixtures)
 

@@ -8,7 +8,7 @@ from urllib.parse import urlencode
 
 import pytest
 
-from app.models import Audit, RunRestart, WorkflowItem, WorkflowPrerequisite
+from core.models import Audit, RunRestart, WorkflowItem, WorkflowPrerequisite
 from test_launches import follow, get, post     # noqa: F401
 from test_workflow_reopen import fix, framed, reopen, run_workflow, two_stage    # noqa: F401  (fixtures)
 from test_frames_engine import tree     # noqa: F401  (fixture)
@@ -234,7 +234,7 @@ def test_a_workflow_edited_since_the_run_is_refused(failed, live_api, db):
 
 
 def test_a_cancelled_run_is_reopened_by_resume_and_by_advanced(failed, live_api, db):
-    from app.models import JobRun, WorkflowRunItem
+    from core.models import JobRun, WorkflowRunItem
     run = db.query(JobRun).filter(JobRun.RunID == failed["run_id"]).one()
     run.Reason = "CANCELLED"
     db.query(WorkflowRunItem).filter(WorkflowRunItem.ItemName == "Report").one().Reason = "CANCELLED"

@@ -9,7 +9,7 @@ import pytest
 
 from app import mail_sender
 from app.alert_outbox import queue, queue_test, facts_for_run, Facts
-from app.models import Alert, AlertDelivery, AlertRecipient, JobRun, MailSetting, ReactionEvent, Variable
+from core.models import Alert, AlertDelivery, AlertRecipient, JobRun, MailSetting, ReactionEvent, Variable
 from test_job_clock import run_alone  # noqa: F401 (fixture)
 from test_telemetry_ingest import ROUTE
 from test_workflow_clock import run_clocked, timed  # noqa: F401 (fixture)

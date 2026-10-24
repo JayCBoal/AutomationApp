@@ -24,7 +24,7 @@ sys.path.insert(0, str(REPO_DIR / "SQL"))
 
 from sqlalchemy import create_engine, inspect, text
 
-from app.models import RunRestart
+from core.models import RunRestart
 from migrate_workflows import add_missing_columns as add_columns
 
 COLUMNS = [("ReactionActions", "RerunMode", "VARCHAR(10) NULL", None)]

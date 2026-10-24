@@ -9,7 +9,7 @@ import sys
 import pytest
 
 from app.log_agent import run_log
-from app.models import JobRun, Variable, WorkflowRunItem
+from core.models import JobRun, Variable, WorkflowRunItem
 from conftest import AUTOAPP_DIR, subprocess_env
 from create_dev_db import create_restart_files, load_seed
 from test_workflow_reopen import reopen     # noqa: F401  (fixture)

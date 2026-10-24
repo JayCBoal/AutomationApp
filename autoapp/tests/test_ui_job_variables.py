@@ -5,7 +5,7 @@ are in conftest.py.
 """
 import pytest
 
-from app.models import Variable
+from core.models import Variable
 
 
 @pytest.fixture

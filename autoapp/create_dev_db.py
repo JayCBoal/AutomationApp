@@ -21,8 +21,8 @@ from pathlib import Path
 from sqlalchemy import inspect
 
 from app.catalog import sync_catalog
-from app.database import DATABASE_URL, SessionLocal, engine
-from app.models import Application, Base, Variable
+from core.database import DATABASE_URL, SessionLocal, engine
+from core.models import Application, Base, Variable
 
 SEED_FILE = Path(__file__).resolve().parents[1] / "SQL" / "Seed_Sample_Data.sql"
 SALES_FILE = Path(__file__).resolve().parents[1] / "SQL" / "Sample_Sales_Data.sql"

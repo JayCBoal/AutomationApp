@@ -13,7 +13,7 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy.orm import Session
 
 from app.alert_outbox import queue_for_action
-from app.models import Endpoint, Job, JobRun, JobStep, Operation, ReactionAction, ReactionEvent
+from core.models import Endpoint, Job, JobRun, JobStep, Operation, ReactionAction, ReactionEvent
 from app.schemas import (LogRecord, OperationRecord, ReactionRecord, RunEndRecord, RunStartRecord, TelemetryBatch,
                          TelemetryIngestResult)
 

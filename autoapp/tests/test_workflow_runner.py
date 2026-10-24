@@ -10,7 +10,7 @@ import time
 import pytest
 
 from app.log_agent import run_log
-from app.models import Job, JobRun, Operation, Variable, WorkflowItem, WorkflowPrerequisite, WorkflowRunItem, utcnow
+from core.models import Job, JobRun, Operation, Variable, WorkflowItem, WorkflowPrerequisite, WorkflowRunItem, utcnow
 from conftest import AUTOAPP_DIR, subprocess_env
 
 

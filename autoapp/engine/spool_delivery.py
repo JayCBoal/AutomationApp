@@ -82,7 +82,7 @@ def sweep(spool_dir: str, send: Callable[[List[Dict[str, Any]]], Any]) -> Tuple[
 
 def load_into_database(records: List[Dict[str, Any]]) -> None:
     """Loads records without going through the API."""
-    from app.database import SessionLocal
+    from core.database import SessionLocal
     from app.telemetry_ingest import ingest_records
 
     db = SessionLocal()

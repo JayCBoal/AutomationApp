@@ -47,7 +47,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from sqlalchemy.orm import Session
 
 from app.alert_outbox import addresses, facts_for_run, queue
-from app.models import (Alert, ConditionCheck, Job, JobRun, ReactionEvent, WorkflowPrerequisite, WorkflowPrerequisiteCheck,
+from core.models import (Alert, ConditionCheck, Job, JobRun, ReactionEvent, WorkflowPrerequisite, WorkflowPrerequisiteCheck,
                         WorkflowRunItem, utcnow)
 from engine import frames
 from engine.frames import tree_top

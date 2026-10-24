@@ -217,7 +217,7 @@ def test_new_job_button_opens_a_blank_job_ready_to_fill_in(page, jobs):
 
 def test_check_on_a_job_fixed_since_the_search_says_it_is_now_ready(page, jobs, db):
     """The red link reflects the search. Clicking it checks again, so a job mended in the meantime shows as ready."""
-    from app.models import Job, JobStepParameter
+    from core.models import Job, JobStepParameter
     rows = open_jobs(page)
     broken = db.query(Job).filter(Job.JobKey == "DEV-BROKEN").one()
     for step in broken.steps:

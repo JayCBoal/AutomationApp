@@ -36,8 +36,8 @@ from typing import Dict, List, Optional, Tuple
 
 from sqlalchemy.orm import Session
 
-from app.database import SessionLocal
-from app.models import Job, JobRun, Variable, WorkflowItemVariable
+from core.database import SessionLocal
+from core.models import Job, JobRun, Variable, WorkflowItemVariable
 from engine import job_log, log_files, return_codes, run_values, workflow_vars
 from engine.control_file import ControlRecord, ControlWriter, NullControl, control_name, top_level_number
 from engine.executor import Executor

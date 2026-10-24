@@ -4,7 +4,7 @@ workflow, use and resumed job, Edit sent back by level, the finished jobs named,
 """
 import pytest
 
-from app.models import Audit, Job, Variable
+from core.models import Audit, Job, Variable
 from test_ui_rerun_workflow import wait_for_status
 from test_workflow_runner import flow, sim    # noqa: F401  (fixtures)
 

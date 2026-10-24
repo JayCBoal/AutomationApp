@@ -1,7 +1,7 @@
 """Renaming a job: what it leaves behind (history, working folder), the refusal while it runs, and moving the folder."""
 import pytest
 
-from app.models import Audit, Job, JobRun
+from core.models import Audit, Job, JobRun
 
 ROUTE = "/api/v1/jobs"
 

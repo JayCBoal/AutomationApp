@@ -17,7 +17,7 @@ sys.path.insert(0, str(REPO_DIR / "autoapp"))
 from sqlalchemy.dialects import mysql
 from sqlalchemy.schema import CreateIndex, CreateTable
 
-from app.models import Base
+from core.models import Base
 
 OUTPUT = Path(__file__).with_name("Create_Tables.sql")
 

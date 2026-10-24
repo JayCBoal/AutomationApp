@@ -14,7 +14,7 @@ from typing import Dict, List, Optional
 
 from sqlalchemy.orm import Session
 
-from app.models import Alert, AlertDelivery, JobRun, ReactionAction, utcnow
+from core.models import Alert, AlertDelivery, JobRun, ReactionAction, utcnow
 
 FACT_PATTERN = re.compile(r"%\{Alert\.([A-Za-z]+)\}")
 FACT_NAMES = ("Job", "Workflow", "Outcome", "Why", "Deadline", "Link", "Time")

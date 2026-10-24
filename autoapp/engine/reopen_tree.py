@@ -13,7 +13,7 @@ from typing import Dict, List, Optional, Tuple
 
 from sqlalchemy.orm import Session
 
-from app.models import Job, JobRun, WorkflowItem, WorkflowPrerequisite, WorkflowRunItem
+from core.models import Job, JobRun, WorkflowItem, WorkflowPrerequisite, WorkflowRunItem
 from engine import reopen
 from engine.control_file import ControlRecord
 from engine.runner import automatic_resume_problem, find_earlier_attempt

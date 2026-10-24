@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.database import get_db
+from core.database import get_db
 from app.schemas import TelemetryBatch, TelemetryIngestResult
 from app.telemetry_ingest import ingest_batch
 

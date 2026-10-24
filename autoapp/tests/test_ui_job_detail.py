@@ -5,7 +5,7 @@ browser fixtures are in conftest.py.
 """
 import pytest
 
-from app.models import StepType
+from core.models import StepType
 
 
 @pytest.fixture

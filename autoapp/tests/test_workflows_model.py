@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 from sqlalchemy.exc import IntegrityError
 
-from app.models import Job, JobRun, WorkflowItem, WorkflowPrerequisite, WorkflowRunItem
+from core.models import Job, JobRun, WorkflowItem, WorkflowPrerequisite, WorkflowRunItem
 
 MIGRATION = Path(__file__).resolve().parents[2] / "SQL" / "migrate_workflows.py"
 

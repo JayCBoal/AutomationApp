@@ -5,7 +5,7 @@ the workflow run's outline, side panel and diagram, and a job run's log page.
 import pytest
 from playwright.sync_api import expect
 
-from app.models import JobRun, ReactionEvent, WorkflowRunItem, utcnow
+from core.models import JobRun, ReactionEvent, WorkflowRunItem, utcnow
 from test_late_api import a_running_workflow
 from test_workflow_runner import flow, sim  # noqa: F401 (fixtures)
 

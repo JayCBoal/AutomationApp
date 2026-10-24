@@ -5,7 +5,7 @@ Each test runs a real job as a separate process and reads its stdout and stderr.
 """
 import pytest
 
-from app.models import Variable
+from core.models import Variable
 
 
 @pytest.fixture
@@ -198,5 +198,5 @@ def test_secret_values_are_masked_in_error_messages_too(db, seed, endpoints, run
 
 
 def _param(name, value):
-    from app.models import JobStepParameter
+    from core.models import JobStepParameter
     return JobStepParameter(ParamName=name, ParamValue=value)

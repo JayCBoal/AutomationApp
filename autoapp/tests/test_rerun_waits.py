@@ -5,7 +5,7 @@ The engine is driven the way the API starts it (--ignore-waits, --reset-counts);
 """
 import json
 
-from app.models import ReactionEvent, RunRestart, WorkflowItem, WorkflowPrerequisiteCheck
+from core.models import ReactionEvent, RunRestart, WorkflowItem, WorkflowPrerequisiteCheck
 from test_launches import follow, get, post     # noqa: F401
 from test_outside_engine import NEVER_OPEN, wait_for     # noqa: F401
 from test_rerun_advanced import advanced, attempts, plan_of, rerun    # noqa: F401  (fixtures)

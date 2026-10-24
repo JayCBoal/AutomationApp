@@ -14,7 +14,7 @@ from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
 from app import rerun_steps
-from app.models import Audit, Job, JobRun, ReactionEvent, RunRestart
+from core.models import Audit, Job, JobRun, ReactionEvent, RunRestart
 
 RESUME, RESTART, ADVANCED = "RESUME", "RESTART", "ADVANCED"
 PASSED_OVER = {"bypass": "Bypassed", "dont_run": "Did not run"}

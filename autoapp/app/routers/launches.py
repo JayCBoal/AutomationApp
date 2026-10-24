@@ -28,8 +28,8 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.database import get_db
-from app.models import Job, JobRun
+from core.database import get_db
+from core.models import Job, JobRun
 from engine import job_log
 
 router = APIRouter(prefix="/api/v1/launches", tags=["Runs"])

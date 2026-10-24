@@ -7,9 +7,9 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
-from app.database import get_db
+from core.database import get_db
 from app.main import app
-from app.models import Base
+from core.models import Base
 from app.schema_check import schema_problems
 from conftest import SERVER_DATABASE_URL
 

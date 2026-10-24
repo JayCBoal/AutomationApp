@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from app.models import Audit, Job, WorkflowItem
+from core.models import Audit, Job, WorkflowItem
 
 ROUTE = "/api/v1/jobs"
 

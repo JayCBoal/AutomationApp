@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from app.models import JobRun
+from core.models import JobRun
 from conftest import AUTOAPP_DIR, subprocess_env
 from engine.telemetry_client import LocalSpoolTelemetryClient
 from test_telemetry_ingest import ROUTE

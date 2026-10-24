@@ -37,7 +37,7 @@ except ModuleNotFoundError:
              f"Switch on the project environment first:\n\n    source {REPO_DIR}/.venv/bin/activate\n\n"
              "If that file does not exist, see 'Quick start' in README.md.")
 
-from app.models import (
+from core.models import (
     Application, Base, Endpoint, Job, JobStep, JobStepParameter, StepType, Variable
 )
 from app.trace import search_operations, trace_operation

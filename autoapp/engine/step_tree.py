@@ -8,7 +8,7 @@ numbered in one run, so an If at 3 holds 3.1 (Then), 3.2 (ElseIf), 3.3 (Else).
 from dataclasses import dataclass, field
 from typing import Dict, Iterable, Iterator, List, Optional
 
-from app.models import JobStep
+from core.models import JobStep
 from engine.handlers.flow import BRANCHES
 
 

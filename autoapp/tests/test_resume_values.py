@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from app.models import Audit, Variable
+from core.models import Audit, Variable
 from engine import run_values
 from engine.scope_engine import ScopeResolutionEngine
 from test_control_file import attempt, control_of, gated_job, log_of, put_gate    # noqa: F401 (attempt is a fixture)
@@ -19,7 +19,7 @@ def valued(seed, endpoints, db):
     job = gated_job(seed, name="RES")
     seed.set_vars(job, Region="EU", Prefix="x-${Region}")
     db.add(Variable(MasterObject_id=job.MasterObject_id, VarName="Token", VarValue="s3cret-token", IsSecret=True))
-    from app.models import JobStep, JobStepParameter
+    from core.models import JobStep, JobStepParameter
     report = db.query(JobStep).filter(JobStep.job_id == job.MasterObject_id, JobStep.Title == "Report").one()
     for parameter in db.query(JobStepParameter).filter(JobStepParameter.job_step_id == report.id, JobStepParameter.ParamName == "Messages"):
         parameter.ParamValue = "Region ${Region} prefix ${Prefix} token ${Token}"

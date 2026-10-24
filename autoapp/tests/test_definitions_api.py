@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from app.models import Audit, Endpoint, Entity, JobStepParameter, Operation, Site, Variable
+from core.models import Audit, Endpoint, Entity, JobStepParameter, Operation, Site, Variable
 
 
 @pytest.fixture
@@ -288,7 +288,7 @@ def test_an_endpoint_has_a_created_date_and_who_created_it(client, db):
 
 
 def test_an_endpoint_is_registered_as_a_master_object_and_removed_with_it(client, db):
-    from app.models import MasterObject
+    from core.models import MasterObject
     client.post("/api/v1/endpoints", json={"name": "SCRATCH", "path": "/data/scratch"})
     db.expire_all()
     endpoint = db.query(Endpoint).one()

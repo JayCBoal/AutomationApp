@@ -15,8 +15,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.database import get_db
-from app.models import Job, JobRun, WorkflowRunItem
+from core.database import get_db
+from core.models import Job, JobRun, WorkflowRunItem
 from engine import conditions, workflow_conditions
 
 router = APIRouter(prefix="/api/v1/conditions", tags=["Conditions"])

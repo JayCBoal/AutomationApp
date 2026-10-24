@@ -19,7 +19,7 @@ from typing import List, Optional, Union
 
 from sqlalchemy.orm import Session, object_session
 
-from app.models import Audit, Job, JobRun, JobStep, JobStepParameter, StepType, Variable, utcnow
+from core.models import Audit, Job, JobRun, JobStep, JobStepParameter, StepType, Variable, utcnow
 from app.schemas import JobDetail, JobSave, JobStepOut, JobStepSave, VariableOut
 from app import outside_store, reaction_store, rename_store, workflow_store
 from engine import return_codes, step_tree

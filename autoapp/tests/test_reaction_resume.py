@@ -7,7 +7,7 @@ import threading
 
 import pytest
 
-from app.models import JobRun, ReactionAction, ReactionEvent
+from core.models import JobRun, ReactionAction, ReactionEvent
 from engine.reactions import RESTART, RESUME, Act, Rule, judge
 from test_control_file import gated_job, log_of, put_gate
 from test_launches import post  # noqa: F401 (fixtures)

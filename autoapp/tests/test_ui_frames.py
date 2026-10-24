@@ -5,7 +5,7 @@ with what is inside each frame.
 """
 import pytest
 
-from app.models import Job, WorkflowItem, WorkflowPrerequisite
+from core.models import Job, WorkflowItem, WorkflowPrerequisite
 from test_frames_engine import tree, waits_in_tree                          # noqa: F401  (a fixture and a helper)
 from test_workflow_runner import sim                                         # noqa: F401  (a fixture)
 from test_ui_workflow_diagram import boxes

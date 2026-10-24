@@ -5,7 +5,7 @@ run drawn live.
 """
 import pytest
 
-from app.models import Job, WorkflowItem, WorkflowPrerequisite
+from core.models import Job, WorkflowItem, WorkflowPrerequisite
 
 LONG = "Load_general_ledger_postings_for_all_operating_companies_and_intercompany_items"
 

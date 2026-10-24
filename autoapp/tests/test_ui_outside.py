@@ -5,7 +5,7 @@ by, the condition box with outside names and time windows, and a run showing wha
 """
 import pytest
 
-from app.models import Job, WorkflowItem, WorkflowPrerequisite
+from core.models import Job, WorkflowItem, WorkflowPrerequisite
 from conftest import wait_for_search          # noqa: F401
 
 
@@ -175,7 +175,7 @@ def test_files_and_a_time_are_dashed_boxes_with_their_own_icons(page, two, seed,
     load = db.query(WorkflowItem).filter(WorkflowItem.ItemName == "Load").one()
     endpoint = db.query(WorkflowPrerequisite).filter(WorkflowPrerequisite.Kind == "OTHER_JOB").count()
     assert endpoint == 1
-    from app.models import Endpoint
+    from core.models import Endpoint
     inbound = db.query(Endpoint).filter(Endpoint.Name == "INBOUND_ORDERS").one()
     seed._add(WorkflowPrerequisite(item=load, Kind="ENDPOINT", TargetName="INBOUND_ORDERS",
                                    Endpoint_MasterObject_id=inbound.MasterObject_id, MinAgeSeconds=60))

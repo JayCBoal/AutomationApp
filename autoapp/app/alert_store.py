@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 
 from app.alert_outbox import FACT_NAMES, FACT_PATTERN, addresses
 from app.job_store import JobStoreError
-from app.models import Alert, AlertDelivery, AlertRecipient, Audit, Credential, Job, MailSetting, ReactionAction, \
+from core.models import Alert, AlertDelivery, AlertRecipient, Audit, Credential, Job, MailSetting, ReactionAction, \
     WorkflowItem, utcnow
 
 EDITOR_NAME = "web interface"

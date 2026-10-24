@@ -7,7 +7,7 @@ import json
 
 import pytest
 
-from app.models import ConditionCheck, Job, Variable, WorkflowItem, WorkflowPrerequisite
+from core.models import ConditionCheck, Job, Variable, WorkflowItem, WorkflowPrerequisite
 from engine import conditions, workflow_conditions
 from engine.telemetry_client import LocalSpoolTelemetryClient
 from test_workflow_runner import flow, results, run_flow, sim, start, states  # noqa: F401 (fixtures)

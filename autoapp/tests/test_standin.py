@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from app.models import Scheduler, Variable
+from core.models import Scheduler, Variable
 from conftest import AUTOAPP_DIR, subprocess_env
 
 STANDIN_DIR = Path(AUTOAPP_DIR).parent / "demo" / "scheduler_standin"

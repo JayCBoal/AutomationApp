@@ -16,7 +16,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 
 from sqlalchemy.orm import Session
 
-from app.models import Job, JobStep
+from core.models import Job, JobStep
 from engine import conditions, step_tree
 from engine.handlers import get_handler
 from engine.handlers.flow import CONDITIONAL, structure_problems, top_level_problems

@@ -98,7 +98,7 @@ def test_a_failure_a_reaction_counts_as_succeeded_keeps_its_file(seed, endpoints
 
 
 def db_job(db, key):
-    from app.models import Job
+    from core.models import Job
     return db.query(Job).filter(Job.JobKey == key).one()
 
 

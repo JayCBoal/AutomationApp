@@ -4,8 +4,8 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.database import get_db
-from app.models import StepType
+from core.database import get_db
+from core.models import StepType
 from app.schemas import StepOutputOut, StepParameterOut, StepTypeOut
 from engine.handlers import HANDLER_REGISTRY
 from engine.step_catalog import ENDPOINT_SUFFIX, LOCATION

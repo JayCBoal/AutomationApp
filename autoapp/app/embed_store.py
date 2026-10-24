@@ -13,7 +13,7 @@ from typing import List, Optional
 from sqlalchemy.orm import Session
 
 from app import rename_store, workflow_store
-from app.models import Audit, Job, WorkflowItem
+from core.models import Audit, Job, WorkflowItem
 from app.schemas import (EmbeddedJobSave, JobStepOut, JobStepSave, PrerequisiteOut, PrerequisiteSave, VariableSave,
                          WorkflowItemSave)
 from app.workflow_errors import WorkflowError

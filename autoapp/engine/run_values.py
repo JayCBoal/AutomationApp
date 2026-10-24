@@ -15,7 +15,7 @@ from typing import Dict, List, Optional
 
 from sqlalchemy.orm import Session
 
-from app.models import Variable, WorkflowItemVariable
+from core.models import Variable, WorkflowItemVariable
 from engine import job_log
 from engine.scope_engine import ScopeResolutionEngine
 

@@ -6,10 +6,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.database import get_db
+from core.database import get_db
 from app import tag_store
 from app.job_store import JobStoreError
-from app.models import Application, Audit, Endpoint, Site
+from core.models import Application, Audit, Endpoint, Site
 from app.schemas import EndpointCreate, EndpointOut
 
 router = APIRouter(prefix="/api/v1/endpoints", tags=["Endpoints"])

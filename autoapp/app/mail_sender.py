@@ -18,7 +18,7 @@ from typing import List, Optional
 
 from sqlalchemy.orm import Session
 
-from app.models import AlertDelivery, MailSetting, utcnow
+from core.models import AlertDelivery, MailSetting, utcnow
 
 logger = logging.getLogger("autoapp.mail")
 

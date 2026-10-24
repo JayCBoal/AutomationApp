@@ -2,7 +2,7 @@
 What Ignore a prerequisite and Reset counts leave on the run pages (docs/WORKFLOWS_PHASE7.md, step 6c): the line an
 operator ignored is drawn struck through on the run diagram, and the Restarts list says what was released.
 """
-from app.models import JobRun
+from core.models import JobRun
 from test_workflow_runner import flow, sim    # noqa: F401  (fixtures)
 
 

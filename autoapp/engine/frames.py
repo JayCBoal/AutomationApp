@@ -5,7 +5,7 @@ embedded. A condition reaches an item inside a frame by a dotted path: %{Transfo
 """
 from typing import Dict, List
 
-from app.models import Job
+from core.models import Job
 
 
 def tree_top(job: Job) -> Job:

@@ -12,7 +12,7 @@ from typing import List, Optional, Set, Tuple
 
 from sqlalchemy.orm import Session
 
-from app.models import Job, JobRun, ReactionEvent, WorkflowItem, WorkflowRunItem
+from core.models import Job, JobRun, ReactionEvent, WorkflowItem, WorkflowRunItem
 from engine import clock_rules, outside
 from engine.clock_rules import HISTORY, NOT_ENDED_BY, NOT_STARTED_BY, RUNS_LONGER_THAN
 from engine.prerequisites import FINAL

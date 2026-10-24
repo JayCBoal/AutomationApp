@@ -5,7 +5,7 @@ in the database; the saving of them is tried in test_frames_api.py.
 """
 import pytest
 
-from app.models import Job, JobRun, WorkflowItem, WorkflowPrerequisite, WorkflowRunItem, utcnow
+from core.models import Job, JobRun, WorkflowItem, WorkflowPrerequisite, WorkflowRunItem, utcnow
 from test_workflow_runner import results, run_flow, sim, start      # noqa: F401  (fixtures)
 
 

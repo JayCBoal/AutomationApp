@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from app.models import JobRun, Reaction, ReactionAction, ReactionEvent, utcnow
+from core.models import JobRun, Reaction, ReactionAction, ReactionEvent, utcnow
 from conftest import AUTOAPP_DIR, subprocess_env
 from test_workflow_reopen import fix
 from test_workflow_runner import flow, results, sim  # noqa: F401 (fixtures)

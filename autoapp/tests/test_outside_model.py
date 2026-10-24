@@ -9,7 +9,7 @@ from pathlib import Path
 
 from sqlalchemy import create_engine
 
-from app.models import Base, Job, WorkflowItem, WorkflowPrerequisite, WorkflowPrerequisiteCheck
+from core.models import Base, Job, WorkflowItem, WorkflowPrerequisite, WorkflowPrerequisiteCheck
 
 MIGRATION = Path(__file__).resolve().parents[2] / "SQL" / "migrate_outside_dependencies.py"
 OLD_PREREQUISITES = """CREATE TABLE WorkflowPrerequisites (
@@ -55,7 +55,7 @@ def test_an_outside_prerequisite_can_be_a_workflow_an_endpoint_or_a_time(db):
 
 
 def test_what_a_prerequisite_found_is_kept_with_the_run(db):
-    from app.models import JobRun
+    from core.models import JobRun
     run = JobRun(RunID="r1", JobKey="FLOW", SchedulerInstanceID="I")
     db.add(run)
     db.flush()

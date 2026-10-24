@@ -14,7 +14,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Set, Tuple
 
 from app.alert_outbox import addresses, facts_for_run, queue
-from app.models import Alert, JobRun, ReactionEvent, RunRestart, utcnow
+from core.models import Alert, JobRun, ReactionEvent, RunRestart, utcnow
 from engine import clock_rules, job_log, outside
 from engine.clock_rules import HISTORY, NOT_STARTED_BY, RUNS_LONGER_THAN, Deadline
 from engine.prerequisites import FINAL

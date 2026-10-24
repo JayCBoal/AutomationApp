@@ -14,10 +14,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.database import get_db
+from core.database import get_db
 from app import tag_store
 from app.job_store import JobStoreError, apply_variables
-from app.models import Application, Audit, Entity, Scheduler, Site, Tag
+from core.models import Application, Audit, Entity, Scheduler, Site, Tag
 from app.schemas import VariableSave
 from engine.tag_vars import shown, tag_path
 

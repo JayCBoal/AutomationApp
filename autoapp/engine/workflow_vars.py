@@ -24,7 +24,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from sqlalchemy.orm import Session
 
-from app.models import Job, JobRun, WorkflowItem, WorkflowRunItem
+from core.models import Job, JobRun, WorkflowItem, WorkflowRunItem
 from engine import tag_vars
 
 

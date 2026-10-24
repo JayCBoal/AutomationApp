@@ -22,7 +22,7 @@ from typing import Dict, List, Optional
 from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session, aliased
 
-from app.models import Application, Endpoint, Entity, JobRun, Operation, Site
+from core.models import Application, Endpoint, Entity, JobRun, Operation, Site
 from app.schemas import FileLocation, FileTrace, OperationOut, TraceHop
 
 MAX_RESULTS = 500

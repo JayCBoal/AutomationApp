@@ -8,7 +8,7 @@ import time
 
 import pytest
 
-from app.models import Audit, Job, WorkflowItem
+from core.models import Audit, Job, WorkflowItem
 from test_launches import follow, get, post
 
 ROUTE = "/api/v1/jobs"

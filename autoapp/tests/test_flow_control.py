@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from app.models import JobStep, Operation
+from core.models import JobStep, Operation
 from conftest import read_logs
 from engine import conditions
 

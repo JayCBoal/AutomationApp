@@ -131,7 +131,7 @@ def test_a_job_is_found_with_the_job_search_criteria_and_chosen(page, collect, d
 
 
 def test_the_search_finds_workflows_by_type(page, collect, seed, db):
-    from app.models import Job
+    from core.models import Job
     db.add(Job(JobKey="DEV-FLOW", JobType="WORKFLOW", Description="A workflow"))
     db.commit()
     page.goto("/ui/run.html?job_type=WORKFLOW")

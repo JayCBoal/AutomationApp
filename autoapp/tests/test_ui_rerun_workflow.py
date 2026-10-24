@@ -5,7 +5,7 @@ x2 on a box that has run twice.
 """
 import pytest
 
-from app.models import Job, JobRun
+from core.models import Job, JobRun
 from conftest import wait_for_search
 from test_reruns import make_unknown
 from test_workflow_reopen import fix

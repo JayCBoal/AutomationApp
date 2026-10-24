@@ -12,8 +12,8 @@ from typing import Any, Dict, List, Union
 from fastapi import APIRouter, Body, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.database import get_db
-from app.models import Audit, SettingValue, utcnow
+from core.database import get_db
+from core.models import Audit, SettingValue, utcnow
 from engine import settings
 
 router = APIRouter(prefix="/api/v1/settings", tags=["Settings"])

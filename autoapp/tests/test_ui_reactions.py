@@ -5,7 +5,7 @@ here on the workflow page, a run showing what Reactions did, and Kill.
 """
 import pytest
 
-from app.models import Job, Reaction, ReactionAction, WorkflowItem, WorkflowPrerequisite
+from core.models import Job, Reaction, ReactionAction, WorkflowItem, WorkflowPrerequisite
 
 
 @pytest.fixture(autouse=True)

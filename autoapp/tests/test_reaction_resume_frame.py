@@ -5,7 +5,7 @@ workflow run on its own by its own. What succeeded stays; what cannot be picked 
 import threading
 import time
 
-from app.models import JobRun
+from core.models import JobRun
 from app.run_restarts import restarts_for
 from engine.reactions import RESTART, RESUME
 from test_control_file import gated_job, put_gate
@@ -13,7 +13,7 @@ from test_frames_engine import tree     # noqa: F401  (fixture)
 from test_reaction_resume import messages, unknown_job
 from test_workflow_reactions import events, react
 from test_workflow_runner import flow, results, run_flow, sim, start    # noqa: F401  (fixtures)
-from app.models import WorkflowPrerequisite
+from core.models import WorkflowPrerequisite
 
 
 def open_gate_after_first_failure(tmp_path, job="RES"):

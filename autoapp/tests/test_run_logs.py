@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 import pytest
 
 from app.log_agent import remove_old_logs
-from app.models import JobRun, SettingValue, Variable, utcnow
+from core.models import JobRun, SettingValue, Variable, utcnow
 from app.telemetry_ingest import ingest_records
 from conftest import read_spool
 
@@ -84,7 +84,7 @@ def test_loading_the_same_spool_twice_keeps_one_copy_of_the_log(
 
 def test_a_run_from_before_logs_were_kept_says_it_has_none(db, client):
     from datetime import datetime
-    from app.models import JobRun
+    from core.models import JobRun
     db.add(JobRun(RunID="old-run", JobKey="DEV-OLD", SchedulerInstanceID="1", Status="SUCCESS",
                   StartedDateTime=datetime(2026, 10, 1, 9, 0), EndedDateTime=datetime(2026, 10, 1, 9, 1)))
     db.commit()

@@ -7,7 +7,7 @@ import json
 
 import pytest
 
-from app.models import Audit, Job
+from core.models import Audit, Job
 
 
 @pytest.fixture

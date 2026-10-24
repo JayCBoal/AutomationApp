@@ -7,7 +7,7 @@ import time
 
 import pytest
 
-from app.models import Job, WorkflowItem, WorkflowPrerequisite
+from core.models import Job, WorkflowItem, WorkflowPrerequisite
 from test_launches import follow, get, post
 
 

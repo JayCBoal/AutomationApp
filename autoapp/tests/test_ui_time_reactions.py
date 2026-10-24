@@ -5,7 +5,7 @@ offered on a job and in a workflow, what a time of day works out to, and what is
 import pytest
 from playwright.sync_api import expect
 
-from app.models import Alert, AlertRecipient, Job, WorkflowItem
+from core.models import Alert, AlertRecipient, Job, WorkflowItem
 
 
 @pytest.fixture(autouse=True)

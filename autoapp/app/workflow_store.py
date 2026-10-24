@@ -31,7 +31,7 @@ from sqlalchemy.orm import Session, object_session
 
 from app import outside_store, reaction_store
 from app.workflow_errors import WorkflowError
-from app.models import Job, JobRun, WorkflowItem, WorkflowItemVariable, WorkflowPrerequisite
+from core.models import Job, JobRun, WorkflowItem, WorkflowItemVariable, WorkflowPrerequisite
 from app.schemas import PrerequisiteSave, WorkflowItemOut, WorkflowItemSave
 from engine import frames, return_codes, workflow_conditions, workflow_vars
 

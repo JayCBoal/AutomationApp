@@ -13,8 +13,8 @@ from typing import Any, Dict, List, Optional
 
 from sqlalchemy.orm import Session
 
-from engine import conditions, outside, workflow_conditions
-from engine.prerequisites import FINAL, HOLDS, NEVER, SKIPPED_OPTIONAL, TIMED_OUT, WAIT, prerequisite_state
+from core import conditions, outside, workflow_conditions
+from core.prerequisites import FINAL, HOLDS, NEVER, SKIPPED_OPTIONAL, TIMED_OUT, WAIT, prerequisite_state
 
 
 RELEASED_WORDS = "Released by an operator for this restart."

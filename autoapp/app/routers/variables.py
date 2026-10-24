@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 from core.database import get_db
-from engine.scope_engine import ScopeResolutionEngine
+from core.scope_engine import ScopeResolutionEngine
 
 router = APIRouter(prefix="/api/v1/variables", tags=["Variable Utility"])
 

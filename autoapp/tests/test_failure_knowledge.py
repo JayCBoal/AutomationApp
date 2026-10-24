@@ -8,11 +8,11 @@ import pytest
 from sqlalchemy.engine import Connection
 from sqlalchemy.exc import OperationalError
 
-from engine.handlers import HANDLERS
-from engine.handlers.base_handler import BaseHandler
-from engine.handlers.sql_handler import RunSqlHandler, commits_by_itself
-from engine.step_catalog import NOT_DONE, PARTLY_DONE, UNKNOWN, WhatItKnew
-from engine.telemetry_client import LocalSpoolTelemetryClient
+from core.handlers import HANDLERS
+from core.handlers.base_handler import BaseHandler
+from core.handlers.sql_handler import RunSqlHandler, commits_by_itself
+from core.step_catalog import NOT_DONE, PARTLY_DONE, UNKNOWN, WhatItKnew
+from core.telemetry_client import LocalSpoolTelemetryClient
 
 
 class SaysNothing(BaseHandler):

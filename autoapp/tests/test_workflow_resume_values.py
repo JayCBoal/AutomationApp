@@ -8,7 +8,7 @@ import json
 import pytest
 
 from core.models import JobRun, Variable, WorkflowItem, WorkflowItemVariable
-from engine import workflow_vars
+from core import workflow_vars
 from test_workflow_reopen import reopen          # noqa: F401  (fixture)
 from test_workflow_runner import flow, results, run_flow, sim, start    # noqa: F401  (fixtures)
 

@@ -2,7 +2,7 @@
 Judging Reactions (engine/reactions.py): which entry decides, which side effects fire, and
 "at most N times". Carrying them out is tested with the runners.
 """
-from engine.reactions import Act, Rule, judge
+from core.reactions import Act, Rule, judge
 
 
 def rule(section, test, *actions, codes=None):

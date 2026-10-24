@@ -17,8 +17,8 @@ from typing import List, Optional
 from sqlalchemy.orm import Session
 
 from core.models import JobRun, utcnow
-from engine import log_files, settings
-from engine.control_file import control_name
+from core import log_files, settings
+from core.control_file import control_name
 
 
 class LocalAgent:

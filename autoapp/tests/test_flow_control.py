@@ -14,7 +14,7 @@ import pytest
 
 from core.models import JobStep, Operation
 from conftest import read_logs
-from engine import conditions
+from core import conditions
 
 MIGRATION = Path(__file__).resolve().parents[2] / "SQL" / "migrate_flow_control.py"
 

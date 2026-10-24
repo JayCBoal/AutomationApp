@@ -11,8 +11,8 @@ import pytest
 
 from core.models import JobRun, SettingValue
 from conftest import AUTOAPP_DIR, subprocess_env
-from engine.scope_engine import ScopeResolutionEngine
-from engine import settings
+from core.scope_engine import ScopeResolutionEngine
+from core import settings
 
 
 @pytest.fixture

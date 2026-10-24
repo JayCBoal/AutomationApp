@@ -13,12 +13,12 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Set, Tuple
 
-from app.alert_outbox import addresses, facts_for_run, queue
+from core.alert_outbox import addresses, facts_for_run, queue
 from core.models import Alert, JobRun, ReactionEvent, RunRestart, utcnow
-from engine import clock_rules, job_log, outside
-from engine.clock_rules import HISTORY, NOT_STARTED_BY, RUNS_LONGER_THAN, Deadline
-from engine.prerequisites import FINAL
-from engine.reactions import Act, Rule, start_workflow
+from core import clock_rules, job_log, outside
+from core.clock_rules import HISTORY, NOT_STARTED_BY, RUNS_LONGER_THAN, Deadline
+from core.prerequisites import FINAL
+from core.reactions import Act, Rule, start_workflow
 
 NOT_STARTED = ("PENDING", "WAITING")
 SIDE_EFFECTS = ("MARK_AS_LATE", "START_WORKFLOW", "NOTIFY")

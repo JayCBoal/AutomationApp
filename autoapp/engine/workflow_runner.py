@@ -46,16 +46,17 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from sqlalchemy.orm import Session
 
-from app.alert_outbox import addresses, facts_for_run, queue
+from core.alert_outbox import addresses, facts_for_run, queue
 from core.models import (Alert, ConditionCheck, Job, JobRun, ReactionEvent, WorkflowPrerequisite, WorkflowPrerequisiteCheck,
                         WorkflowRunItem, utcnow)
-from engine import frames
-from engine.frames import tree_top
-from engine import conditions, job_log, log_files, outside, reopen, reopen_counts, reopen_tree, settings, workflow_conditions, workflow_vars
+from core import frames
+from core.frames import tree_top
+from core import conditions, job_log, log_files, outside, reopen, reopen_tree, settings, workflow_conditions, workflow_vars
+from engine import reopen_counts
 from engine.outside_state import Context, Outside
-from engine.prerequisites import FINAL, HOLDS, NEVER, TIMED_OUT, WAIT, SKIPPED_OPTIONAL, prerequisite_state
-from engine.workflow_clock import ClockWatcher
-from engine.reactions import LIMITED, Act, OwnReactions, Rule, judge, read_rules, start_workflow
+from core.prerequisites import FINAL, HOLDS, NEVER, TIMED_OUT, WAIT, SKIPPED_OPTIONAL, prerequisite_state
+from core.workflow_clock import ClockWatcher
+from core.reactions import LIMITED, Act, OwnReactions, Rule, judge, read_rules, start_workflow
 
 AUTOAPP_DIR = Path(__file__).resolve().parents[1]
 CHILD_SCHEDULER = "AutoApp workflow"
@@ -555,7 +556,7 @@ class WorkflowRunner:
 
     def _note_decision(self, planned: Planned, child: JobRun) -> None:
         """A failed step whose effect is unknown, which the operator said to count as done, is not run again."""
-        from engine.runner import find_earlier_attempt
+        from core.earlier_attempt import find_earlier_attempt
         record, _problem = find_earlier_attempt(self.db, child.RunID)
         failure = record.open_failure() if record else None
         if failure and failure.get("operator_decides") and self.options.decisions.get(planned.row.Path) == reopen.COUNT_AS_DONE:
@@ -602,7 +603,7 @@ class WorkflowRunner:
 
     def _files_pattern(self, prerequisite: WorkflowPrerequisite) -> str:
         """The folder and file pattern of an endpoint prerequisite, with its ${...} filled in. Empty if it cannot be."""
-        from engine.scope_engine import ScopeResolutionEngine
+        from core.scope_engine import ScopeResolutionEngine
         endpoint = prerequisite.endpoint
         engine = ScopeResolutionEngine(db=self.db, job_id=self.workflow.MasterObject_id, instance_id=self.options.instance_id,
                                        environment=dict(os.environ), business_date=self.options.business_date)
@@ -666,7 +667,7 @@ class WorkflowRunner:
         refs = {ref for text in self._conditions() for ref in conditions.references(text) if ref.startswith("${")}
         if not refs:
             return {}
-        from engine.scope_engine import ScopeResolutionEngine
+        from core.scope_engine import ScopeResolutionEngine
         engine = ScopeResolutionEngine(db=self.db, job_id=self.workflow.MasterObject_id, instance_id=self.options.instance_id,
                                        environment=dict(os.environ), business_date=self.options.business_date)
         engine.build_context()
@@ -1003,7 +1004,7 @@ class WorkflowRunner:
             return "the job left no record of its run, so there is nothing to pick up. Choose Restart from the beginning."
         if planned.job_type == "WORKFLOW":
             return reopen_tree.automatic_problem(self.db, child)
-        from engine.runner import automatic_resume_problem, find_earlier_attempt
+        from core.earlier_attempt import automatic_resume_problem, find_earlier_attempt
         return automatic_resume_problem(*find_earlier_attempt(self.db, child.RunID))
 
     def _rerun(self, chain: List[Planned], planned: Planned, act: Act) -> str:
@@ -1127,7 +1128,8 @@ def _count(things, word: str) -> str:
 
 def _load_spool(spool_dir: str, run_id: str) -> None:
     """Loads a job run's spool file straight into the database: delivery through the API did not finish."""
-    from engine.spool_delivery import load_into_database, read_spool_file
+    from core.spool import read_spool_file
+    from engine.spool_delivery import load_into_database
     folder = Path(spool_dir)
     for path in list(folder.glob(f"*_{run_id}.jsonl")) + list(folder.glob(f"delivered/*_{run_id}.jsonl")):
         try:

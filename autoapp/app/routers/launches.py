@@ -30,7 +30,7 @@ from sqlalchemy.orm import Session
 
 from core.database import get_db
 from core.models import Job, JobRun
-from engine import job_log
+from core import job_log
 
 router = APIRouter(prefix="/api/v1/launches", tags=["Runs"])
 

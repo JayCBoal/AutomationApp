@@ -7,7 +7,7 @@ The records are produced by the real spool writer, then posted to the real API.
 from datetime import datetime
 
 from core.models import JobRun, Operation
-from engine.telemetry_client import LocalSpoolTelemetryClient
+from core.telemetry_client import LocalSpoolTelemetryClient
 
 ROUTE = "/api/v1/telemetry/records"
 

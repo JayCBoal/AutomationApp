@@ -8,8 +8,8 @@ import json
 import pytest
 
 from core.models import ConditionCheck, Job, Variable, WorkflowItem, WorkflowPrerequisite
-from engine import conditions, workflow_conditions
-from engine.telemetry_client import LocalSpoolTelemetryClient
+from core import conditions, workflow_conditions
+from core.telemetry_client import LocalSpoolTelemetryClient
 from test_workflow_runner import flow, results, run_flow, sim, start, states  # noqa: F401 (fixtures)
 
 ROUTE = "/api/v1/jobs"

@@ -25,7 +25,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from sqlalchemy.orm import Session
 
 from core.models import Job, JobRun, WorkflowItem, WorkflowRunItem
-from engine import tag_vars
+from core import tag_vars
 
 
 @dataclass
@@ -50,7 +50,7 @@ class Levels:
 def fixed_values(db: Session, workflow: Job, instance_id: str, environment: Optional[Dict[str, str]] = None,
                  business_date: Optional[date] = None) -> Dict[str, Any]:
     """The workflow's variables and each use's, as a run starts, ready to keep as JSON."""
-    from engine.scope_engine import ScopeResolutionEngine
+    from core.scope_engine import ScopeResolutionEngine
     engine = ScopeResolutionEngine(db=db, job_id=workflow.MasterObject_id, instance_id=instance_id,
                                    environment=environment, business_date=business_date)
     engine.build_context()

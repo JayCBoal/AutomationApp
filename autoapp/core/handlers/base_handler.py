@@ -2,12 +2,12 @@ import os
 import time
 from abc import ABC, abstractmethod
 from typing import Dict, Any, List, Optional, Tuple
-from engine import job_log
-from engine.control_file import NullJournal
-from engine.step_catalog import (
+from core import job_log
+from core.control_file import NullJournal
+from core.step_catalog import (
     CHOICE, LOCATION, NUMBER, STRING, UNKNOWN, Output, Param, WhatItKnew, normalize_parameters
 )
-from engine.telemetry_client import LocalSpoolTelemetryClient
+from core.telemetry_client import LocalSpoolTelemetryClient
 
 class BaseHandler(ABC):
     """

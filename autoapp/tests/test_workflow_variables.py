@@ -10,7 +10,7 @@ import time
 import pytest
 
 from core.models import JobRun, SettingValue, Variable, WorkflowItem, WorkflowItemVariable
-from engine import settings
+from core import settings
 from test_workflow_runner import flow, results, run_flow, sim, start, states  # noqa: F401 (fixtures)
 
 ROUTE = "/api/v1/jobs"

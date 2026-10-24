@@ -5,9 +5,9 @@ from datetime import datetime
 
 import pytest
 
-from engine.date_mask import format_date
-from engine.rename_mask import check_mask, new_name, new_names
-from engine.scope_engine import ScopeResolutionEngine
+from core.date_mask import format_date
+from core.rename_mask import check_mask, new_name, new_names
+from core.scope_engine import ScopeResolutionEngine
 
 # Tuesday 6 October 2026, 14:05:09.042, and an early-morning time for the 12-hour clock
 AFTERNOON = datetime(2026, 10, 6, 14, 5, 9, 42000)

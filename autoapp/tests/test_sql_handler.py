@@ -6,8 +6,8 @@ import sqlite3
 
 import pytest
 
-from engine.handlers.sql_handler import RunSqlHandler, safe_url
-from engine.telemetry_client import LocalSpoolTelemetryClient
+from core.handlers.sql_handler import RunSqlHandler, safe_url
+from core.telemetry_client import LocalSpoolTelemetryClient
 
 
 @pytest.fixture

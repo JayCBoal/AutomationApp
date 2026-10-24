@@ -16,8 +16,8 @@ from typing import Dict, List, Optional
 from sqlalchemy.orm import Session
 
 from core.models import Variable, WorkflowItemVariable
-from engine import job_log
-from engine.scope_engine import ScopeResolutionEngine
+from core import job_log
+from core.scope_engine import ScopeResolutionEngine
 
 SCOPE_KEY = re.compile(r"^(SYS|APP|ENTITY|JOB|TAG|WORKFLOW|USE)\.(.+)$")
 

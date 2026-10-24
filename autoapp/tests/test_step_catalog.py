@@ -8,9 +8,9 @@ import pytest
 
 from app.catalog import sync_catalog
 from core.models import JobStepParameter, StepDefinition, StepType
-from engine.handlers import HANDLERS
-from engine.handlers.file_handler import FileOpHandler
-from engine.step_catalog import (
+from core.handlers import HANDLERS
+from core.handlers.file_handler import FileOpHandler
+from core.step_catalog import (
     BOOLEAN, CHOICE, DEST, INTEGER, LOCATION, SOURCE, Param, check_parameters, normalize_parameters
 )
 

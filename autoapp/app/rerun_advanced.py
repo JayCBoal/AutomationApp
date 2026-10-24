@@ -16,8 +16,8 @@ from typing import Dict, List, Optional, Tuple
 
 from sqlalchemy.orm import Session
 
-from engine import reopen
-from engine.reopen_tree import TreePlan, downstream
+from core import reopen
+from core.reopen_tree import TreePlan, downstream
 
 FROM, ONLY = "from", "only"
 LEAVE = "leave"         # an item that did not run, left as it is: not an action, it only stops the default

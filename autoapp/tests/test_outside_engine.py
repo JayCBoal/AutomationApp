@@ -12,8 +12,9 @@ import pytest
 
 from core.models import (Job, JobRun, WorkflowItem, WorkflowPrerequisite, WorkflowPrerequisiteCheck, WorkflowRunItem,
                         utcnow)
-from engine import conditions, outside, outside_state, workflow_conditions
-from engine.prerequisites import HOLDS, NEVER, SKIPPED_OPTIONAL, TIMED_OUT, WAIT
+from core import conditions, outside, workflow_conditions
+from engine import outside_state
+from core.prerequisites import HOLDS, NEVER, SKIPPED_OPTIONAL, TIMED_OUT, WAIT
 from engine.workflow_runner import Planned, readiness
 from test_workflow_runner import flow, results, run_flow, sim, start, states     # noqa: F401  (fixtures)
 

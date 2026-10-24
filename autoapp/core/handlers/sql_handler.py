@@ -23,10 +23,10 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.exc import ArgumentError, SQLAlchemyError
 from sqlalchemy.pool import NullPool
 
-from engine import job_log
-from engine.handlers.base_handler import BaseHandler
-from engine.step_catalog import BOOLEAN, DEST, LOCATION, NOT_DONE, PARTLY_DONE, STRING, TEXT, UNKNOWN, Param, WhatItKnew
-from engine.telemetry_client import utc_now_iso
+from core import job_log
+from core.handlers.base_handler import BaseHandler
+from core.step_catalog import BOOLEAN, DEST, LOCATION, NOT_DONE, PARTLY_DONE, STRING, TEXT, UNKNOWN, Param, WhatItKnew
+from core.telemetry_client import utc_now_iso
 
 STATEMENT_KEPT = 2000      # characters of the statement kept in the operation record
 

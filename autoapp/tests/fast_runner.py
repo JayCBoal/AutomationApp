@@ -10,7 +10,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from engine import outside, runner      # noqa: E402
+from core import outside
+from engine import runner      # noqa: E402
 
 SPEED = float(os.environ.get("AUTOAPP_TEST_CLOCK_SPEED", "1"))
 SHIFT = timedelta(minutes=float(os.environ.get("AUTOAPP_TEST_CLOCK_SHIFT_MINUTES", "0")))     # time that passed before it began

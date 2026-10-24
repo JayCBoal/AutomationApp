@@ -15,15 +15,15 @@ from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 from sqlalchemy.orm import Session
 
-from engine import conditions, job_log
-from engine.control_file import ControlRecord, Journal, NullControl
-from engine.handlers.file_tools import matching_files, plural
-from engine.preflight import PreparedStep
-from engine.run_context import RunContext, file_object, references, shown_time
-from engine.scope_engine import ScopeResolutionEngine
-from engine.step_catalog import NOT_DONE, WhatItKnew, normalize_parameters
-from engine.step_params import LoopFolder, ResolvedStep, resolve_step
-from engine.telemetry_client import LocalSpoolTelemetryClient
+from core import conditions, job_log
+from core.control_file import ControlRecord, Journal, NullControl
+from core.handlers.file_tools import matching_files, plural
+from core.preflight import PreparedStep
+from core.run_context import RunContext, file_object, references, shown_time
+from core.scope_engine import ScopeResolutionEngine
+from core.step_catalog import NOT_DONE, WhatItKnew, normalize_parameters
+from core.step_params import LoopFolder, ResolvedStep, resolve_step
+from core.telemetry_client import LocalSpoolTelemetryClient
 
 # A step parameter every step type accepts: the job log level for that step alone
 LOG_LEVEL_PARAM = "LogLevel"

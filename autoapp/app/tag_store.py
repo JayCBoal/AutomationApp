@@ -15,8 +15,8 @@ from sqlalchemy.orm import Session
 
 from app.job_store import JobStoreError
 from core.models import Job, JobStepParameter, MasterObject, Tag, TagAssignment, Variable
-from engine import tag_vars
-from engine.tag_vars import SEPARATOR, tag_path
+from core import tag_vars
+from core.tag_vars import SEPARATOR, tag_path
 
 MASK = "********"
 

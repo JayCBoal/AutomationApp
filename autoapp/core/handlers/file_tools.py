@@ -17,10 +17,10 @@ import zipfile
 from pathlib import Path
 from typing import Dict, List
 
-from engine import job_log
-from engine.handlers.base_handler import BaseHandler
-from engine.step_catalog import BOOLEAN, DEST, INTEGER, LOCATION, NUMBER, SOURCE, STRING, NOT_DONE, PARTLY_DONE, Output, Param
-from engine.telemetry_client import utc_now_iso
+from core import job_log
+from core.handlers.base_handler import BaseHandler
+from core.step_catalog import BOOLEAN, DEST, INTEGER, LOCATION, NUMBER, SOURCE, STRING, NOT_DONE, PARTLY_DONE, Output, Param
+from core.telemetry_client import utc_now_iso
 
 ALLOW_NO_FILES = Param("AllowNoFiles", BOOLEAN, default="False",
                        description="Succeed when no files match. Otherwise a step that finds nothing fails.")

@@ -7,8 +7,8 @@ import json
 import pytest
 
 from core.models import Audit, Variable
-from engine import run_values
-from engine.scope_engine import ScopeResolutionEngine
+from core import run_values
+from core.scope_engine import ScopeResolutionEngine
 from test_control_file import attempt, control_of, gated_job, log_of, put_gate    # noqa: F401 (attempt is a fixture)
 from test_launches import follow, get, post
 from test_reruns import run_and_wait

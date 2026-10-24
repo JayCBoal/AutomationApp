@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from core.database import get_db
 from core.models import Audit, SettingValue, utcnow
-from engine import settings
+from core import settings
 
 router = APIRouter(prefix="/api/v1/settings", tags=["Settings"])
 

@@ -4,7 +4,7 @@ deadlines from a time of day or a length, "longer than usual" from history, and 
 """
 from datetime import datetime, timedelta
 
-from engine.clock_rules import (
+from core.clock_rules import (
     AFTER_READY, AFTER_START, CLOCK, HISTORY, LENGTH, NOT_ENDED_BY, NOT_STARTED_BY, RUNS_LONGER_THAN,
     Deadline, TimeRule, day_words, deadline_for, due_in_words, history_limit, judge, length_words,
     next_clock_time, problem_with,

@@ -16,7 +16,7 @@ from typing import Dict
 from sqlalchemy.orm import Session
 
 from core.models import StepDefinition, StepType
-from engine.handlers import HANDLERS
+from core.handlers import HANDLERS
 
 
 def sync_catalog(db: Session) -> Dict[str, int]:

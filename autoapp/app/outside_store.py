@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session
 from core.models import Endpoint, Job, WorkflowItem, WorkflowPrerequisite
 from app.schemas import NeededByOut, PrerequisiteOut, PrerequisiteSave
 from app.workflow_errors import WorkflowError
-from engine import conditions, frames, return_codes, workflow_conditions
+from core import conditions, frames, return_codes, workflow_conditions
 
 NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 CLOCK = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")

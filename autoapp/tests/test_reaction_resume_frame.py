@@ -7,7 +7,7 @@ import time
 
 from core.models import JobRun
 from app.run_restarts import restarts_for
-from engine.reactions import RESTART, RESUME
+from core.reactions import RESTART, RESUME
 from test_control_file import gated_job, put_gate
 from test_frames_engine import tree     # noqa: F401  (fixture)
 from test_reaction_resume import messages, unknown_job

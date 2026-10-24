@@ -25,7 +25,7 @@ from app.run_clock import fired_entries, item_lines, run_lines
 from app.run_restarts import RestartOut, restarts_for, summary_for
 from core.models import (Audit, ConditionCheck, JobRun, Operation, ReactionEvent, WorkflowPrerequisiteCheck,
                         WorkflowRunItem, utcnow)
-from engine import conditions, log_files
+from core import conditions, log_files
 
 MAX_RESULTS = 500
 router = APIRouter(tags=["History"])

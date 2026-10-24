@@ -33,7 +33,7 @@ from core.database import get_db
 from app.main import app
 from app.telemetry_ingest import ingest_records
 from create_dev_db import sql_statements
-from engine.spool_delivery import sweep
+from core.spool import sweep
 
 os.environ.setdefault("AUTOAPP_MAIL_SENDER", "off")      # tests send by hand: see app/main.py
 

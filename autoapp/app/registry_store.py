@@ -28,8 +28,8 @@ from app.job_store import JobStoreError, apply_variables
 from core.models import (
     Application, Audit, Endpoint, Entity, JobRun, JobStep, JobStepParameter, MasterObject, Scheduler, Site, Tag, utcnow
 )
-from engine.step_catalog import ENDPOINT_SUFFIX
-from engine.tag_vars import find_by_path, shown, tag_path
+from core.step_catalog import ENDPOINT_SUFFIX
+from core.tag_vars import find_by_path, shown, tag_path
 
 NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 MAX_RESULTS = 500

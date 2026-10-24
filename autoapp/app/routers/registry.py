@@ -19,7 +19,7 @@ from app import tag_store
 from app.job_store import JobStoreError, apply_variables
 from core.models import Application, Audit, Entity, Scheduler, Site, Tag
 from app.schemas import VariableSave
-from engine.tag_vars import shown, tag_path
+from core.tag_vars import shown, tag_path
 
 # These names are referred to from elsewhere, so they are kept to characters that are safe anywhere
 NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")

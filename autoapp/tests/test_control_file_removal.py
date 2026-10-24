@@ -7,7 +7,7 @@ import json
 
 import pytest
 
-from engine.control_file import ControlRecord
+from core.control_file import ControlRecord
 from test_control_file import attempt, control_of, gated_job, log_of, put_gate        # noqa: F401 (attempt is a fixture)
 from test_launches import get    # noqa: F401
 from test_workflow_reactions import react

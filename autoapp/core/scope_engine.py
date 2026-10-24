@@ -1,12 +1,12 @@
 import os
 import re
-from engine.date_mask import format_date
+from core.date_mask import format_date
 from contextlib import contextmanager
 from datetime import date, datetime, time
 from typing import Any, Dict, List, Optional
 from sqlalchemy.orm import Session
 from core.models import Application, Entity, Job, Variable
-from engine import settings, tag_vars
+from core import settings, tag_vars
 
 
 class ScopeResolutionEngine:

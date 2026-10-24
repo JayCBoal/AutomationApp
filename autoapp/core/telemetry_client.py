@@ -24,7 +24,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from engine.spool_delivery import DeliveryError, mark_delivered, post_records
+from core.spool import DeliveryError, mark_delivered, post_records
 
 
 def utc_now_iso() -> str:

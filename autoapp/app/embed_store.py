@@ -17,7 +17,7 @@ from core.models import Audit, Job, WorkflowItem
 from app.schemas import (EmbeddedJobSave, JobStepOut, JobStepSave, PrerequisiteOut, PrerequisiteSave, VariableSave,
                          WorkflowItemSave)
 from app.workflow_errors import WorkflowError
-from engine import frames
+from core import frames
 import json
 
 

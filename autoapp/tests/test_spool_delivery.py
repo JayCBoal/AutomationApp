@@ -62,7 +62,7 @@ def test_runner_posts_after_each_step_and_sends_each_record_once(db, job, tmp_pa
     """
     from engine.runner import run_job
     posts = []
-    monkeypatch.setattr("engine.telemetry_client.post_records",
+    monkeypatch.setattr("core.telemetry_client.post_records",
                         lambda api_url, records, timeout=None: posts.append(
                             [r["Record"] for r in records]))
     db.commit()

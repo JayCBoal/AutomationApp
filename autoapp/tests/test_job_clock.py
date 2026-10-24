@@ -13,7 +13,7 @@ import pytest
 
 from core.models import JobRun
 from conftest import AUTOAPP_DIR, subprocess_env
-from engine.telemetry_client import LocalSpoolTelemetryClient
+from core.telemetry_client import LocalSpoolTelemetryClient
 from test_telemetry_ingest import ROUTE
 from test_workflow_clock import SPEED, timed
 from test_workflow_runner import sim  # noqa: F401 (fixture)

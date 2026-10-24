@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from app import mail_sender
-from app.alert_outbox import queue, queue_test, facts_for_run, Facts
+from core.alert_outbox import queue, queue_test, facts_for_run, Facts
 from core.models import Alert, AlertDelivery, AlertRecipient, JobRun, MailSetting, ReactionEvent, Variable
 from test_job_clock import run_alone  # noqa: F401 (fixture)
 from test_telemetry_ingest import ROUTE

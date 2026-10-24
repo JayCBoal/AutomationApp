@@ -1,7 +1,7 @@
 """Telemetry spooler: records land in a .jsonl.tmp file that is renamed when the run ends."""
 import json
 
-from engine.telemetry_client import LocalSpoolTelemetryClient
+from core.telemetry_client import LocalSpoolTelemetryClient
 
 
 def names(folder):

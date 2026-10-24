@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-from engine import job_log
+from core import job_log
 
 DEFAULT_ROOT = Path(__file__).resolve().parents[1] / "logs"
 

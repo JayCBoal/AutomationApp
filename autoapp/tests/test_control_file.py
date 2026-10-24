@@ -18,8 +18,8 @@ import pytest
 from app.log_agent import LocalAgent
 from core.models import JobRun, Variable
 from conftest import AUTOAPP_DIR, subprocess_env
-from engine import job_log
-from engine.control_file import ControlRecord, ControlWriter, control_name
+from core import job_log
+from core.control_file import ControlRecord, ControlWriter, control_name
 
 
 @pytest.fixture

@@ -5,8 +5,8 @@ import hashlib
 
 import pytest
 
-from engine.handlers.file_handler import FileOpHandler
-from engine.telemetry_client import LocalSpoolTelemetryClient
+from core.handlers.file_handler import FileOpHandler
+from core.telemetry_client import LocalSpoolTelemetryClient
 
 STEP_CONFIG = {"StepID": 201, "StepType": "COPY_FILES"}
 
@@ -196,7 +196,7 @@ def test_a_copy_that_arrives_a_different_size_fails(folders, spool_records, monk
         with open(source, "rb") as f, open(target, "wb") as out:
             out.write(f.read()[:5])
 
-    monkeypatch.setattr("engine.handlers.file_handler.shutil.copy2", truncating_copy)
+    monkeypatch.setattr("core.handlers.file_handler.shutil.copy2", truncating_copy)
 
     with pytest.raises(IOError, match="Size mismatch"):
         run_handler(spool, {"Source": str(src / "a.csv"), "Dest": str(dest)})
@@ -224,7 +224,7 @@ def test_checksum_option_fails_a_copy_whose_content_changed(folders, spool_recor
         with open(source, "rb") as f, open(target, "wb") as out:
             out.write(f.read().replace(b"alpha", b"ALPHA"))
 
-    monkeypatch.setattr("engine.handlers.file_handler.shutil.copy2", corrupting_copy)
+    monkeypatch.setattr("core.handlers.file_handler.shutil.copy2", corrupting_copy)
 
     with pytest.raises(IOError, match="Checksum mismatch"):
         run_handler(spool, {"Source": str(src / "a.csv"), "Dest": str(dest), "Checksum": "True"})

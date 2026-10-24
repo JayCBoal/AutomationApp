@@ -16,13 +16,13 @@ from app.schemas import (
     FieldPreview, JobCheckResult, JobDetail, JobInitRequest, JobInitResponse, JobPreview, JobSave, JobSaveResult,
     JobStepPayloadSchema, JobSummary, LastRun, MakeShared, RenameFacts
 )
-from engine.step_catalog import ENDPOINT_SUFFIX
-from engine.handlers import get_handler
-from engine import step_tree, workflow_vars
-from engine.handlers.flow import BRANCHES
-from engine.preflight import prepare_job
-from engine.scope_engine import ScopeResolutionEngine
-from engine.step_params import preview_step, resolve_step
+from core.step_catalog import ENDPOINT_SUFFIX
+from core.handlers import get_handler
+from core import step_tree, workflow_vars
+from core.handlers.flow import BRANCHES
+from core.preflight import prepare_job
+from core.scope_engine import ScopeResolutionEngine
+from core.step_params import preview_step, resolve_step
 
 router = APIRouter(prefix="/api/v1/jobs", tags=["Jobs"])
 

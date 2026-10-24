@@ -6,9 +6,9 @@ else must be a registered Endpoint, referenced by name.
 """
 import pytest
 
-from engine.handlers.file_handler import FileOpHandler
-from engine.scope_engine import ScopeResolutionEngine
-from engine.step_params import resolve_step
+from core.handlers.file_handler import FileOpHandler
+from core.scope_engine import ScopeResolutionEngine
+from core.step_params import resolve_step
 
 
 # What the handler receives for the parameters a step leaves out

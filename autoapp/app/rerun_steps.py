@@ -15,8 +15,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from core.models import Job, JobStep
-from engine import step_tree
-from engine.control_file import ControlRecord
+from core import step_tree
+from core.control_file import ControlRecord
 
 # Step types that copy, delete, zip or unzip files: run again, they do it again
 FILE_STEP_TYPES = {"COPY_FILES", "DELETE_FILES", "ZIP_FILES", "UNZIP_FILES"}

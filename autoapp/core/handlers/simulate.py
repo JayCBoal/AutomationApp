@@ -6,10 +6,10 @@ and can fail on purpose.
 """
 import time
 
-from engine import job_log
-from engine.handlers.base_handler import BaseHandler
-from engine.step_catalog import BOOLEAN, CHOICE, INTEGER, NOT_DONE, STRING, TEXT, UNKNOWN, Param, WhatItKnew
-from engine.telemetry_client import utc_now_iso
+from core import job_log
+from core.handlers.base_handler import BaseHandler
+from core.step_catalog import BOOLEAN, CHOICE, INTEGER, NOT_DONE, STRING, TEXT, UNKNOWN, Param, WhatItKnew
+from core.telemetry_client import utc_now_iso
 
 MESSAGE_LEVELS = ("SUMMARY", "DETAIL", "WARNING", "ERROR")
 _WRITERS = {"SUMMARY": job_log.summary, "DETAIL": job_log.detail, "WARNING": job_log.warning, "ERROR": job_log.error}

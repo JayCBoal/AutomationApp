@@ -17,7 +17,7 @@ from app.log_agent import run_log
 from core.models import Endpoint, Job, JobRun, StepType, Variable, WorkflowPrerequisiteCheck, WorkflowRunItem
 from conftest import AUTOAPP_DIR, subprocess_env
 from create_dev_db import create_sales_db, load_seed
-from engine.handlers import HANDLER_REGISTRY
+from core.handlers import HANDLER_REGISTRY
 
 
 def test_sample_jobs_run_and_hand_a_file_from_one_to_the_other(db, run_runner, load_spool, client, tmp_path):

@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 
 from core.database import get_db
 from core.models import Job, JobRun, WorkflowRunItem
-from engine import conditions, workflow_conditions
+from core import conditions, workflow_conditions
 
 router = APIRouter(prefix="/api/v1/conditions", tags=["Conditions"])
 
@@ -80,7 +80,7 @@ def _variable(db: Session, workflow_key: Optional[str]):
     workflow = db.query(Job).filter(Job.JobKey == workflow_key).first() if workflow_key else None
     if workflow is None:
         return None
-    from engine.scope_engine import ScopeResolutionEngine
+    from core.scope_engine import ScopeResolutionEngine
     engine = ScopeResolutionEngine(db=db, job_id=workflow.MasterObject_id, instance_id="CHECK")
     engine.build_context()
     return engine.interpolate

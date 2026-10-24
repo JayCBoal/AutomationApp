@@ -17,12 +17,12 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 from sqlalchemy.orm import Session
 
 from core.models import Job, JobStep
-from engine import conditions, step_tree
-from engine.handlers import get_handler
-from engine.handlers.flow import CONDITIONAL, structure_problems, top_level_problems
-from engine.run_context import FILE_PROPERTIES, references
-from engine.scope_engine import ScopeResolutionEngine
-from engine.step_params import ResolvedStep, resolve_step
+from core import conditions, step_tree
+from core.handlers import get_handler
+from core.handlers.flow import CONDITIONAL, structure_problems, top_level_problems
+from core.run_context import FILE_PROPERTIES, references
+from core.scope_engine import ScopeResolutionEngine
+from core.step_params import ResolvedStep, resolve_step
 
 
 @dataclass

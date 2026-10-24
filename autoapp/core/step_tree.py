@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from typing import Dict, Iterable, Iterator, List, Optional
 
 from core.models import JobStep
-from engine.handlers.flow import BRANCHES
+from core.handlers.flow import BRANCHES
 
 
 @dataclass

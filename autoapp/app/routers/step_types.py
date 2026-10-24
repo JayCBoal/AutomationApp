@@ -7,8 +7,8 @@ from sqlalchemy.orm import Session
 from core.database import get_db
 from core.models import StepType
 from app.schemas import StepOutputOut, StepParameterOut, StepTypeOut
-from engine.handlers import HANDLER_REGISTRY
-from engine.step_catalog import ENDPOINT_SUFFIX, LOCATION
+from core.handlers import HANDLER_REGISTRY
+from core.step_catalog import ENDPOINT_SUFFIX, LOCATION
 
 router = APIRouter(prefix="/api/v1/step-types", tags=["Step Catalog"])
 

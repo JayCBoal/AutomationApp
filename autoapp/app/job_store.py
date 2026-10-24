@@ -22,9 +22,9 @@ from sqlalchemy.orm import Session, object_session
 from core.models import Audit, Job, JobRun, JobStep, JobStepParameter, StepType, Variable, utcnow
 from app.schemas import JobDetail, JobSave, JobStepOut, JobStepSave, VariableOut
 from app import outside_store, reaction_store, rename_store, workflow_store
-from engine import return_codes, step_tree
-from engine.handlers import HANDLER_REGISTRY
-from engine.handlers.flow import BRANCH_NAMES, BRANCHES, structure_problems, top_level_problems
+from core import return_codes, step_tree
+from core.handlers import HANDLER_REGISTRY
+from core.handlers.flow import BRANCH_NAMES, BRANCHES, structure_problems, top_level_problems
 
 # A variable is written ${Name} in a value, so its name is kept to what that can hold unambiguously
 VARIABLE_NAME_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")

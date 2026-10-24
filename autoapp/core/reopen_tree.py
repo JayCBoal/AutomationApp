@@ -14,9 +14,9 @@ from typing import Dict, List, Optional, Tuple
 from sqlalchemy.orm import Session
 
 from core.models import Job, JobRun, WorkflowItem, WorkflowPrerequisite, WorkflowRunItem
-from engine import reopen
-from engine.control_file import ControlRecord
-from engine.runner import automatic_resume_problem, find_earlier_attempt
+from core import reopen
+from core.control_file import ControlRecord
+from core.earlier_attempt import automatic_resume_problem, find_earlier_attempt
 
 
 @dataclass
@@ -121,7 +121,7 @@ def _item_refusal(db: Session, top: JobRun, scope: str) -> Optional[str]:
 
 
 def _find_item(db: Session, top: JobRun, path: str) -> Optional[WorkflowRunItem]:
-    from engine import outside
+    from core import outside
     return (db.query(WorkflowRunItem).filter(WorkflowRunItem.Path == path,
                                              WorkflowRunItem.WorkflowRun_id.in_(outside.run_tree_ids(db, top.id))).first())
 
@@ -290,7 +290,7 @@ def downstream(db: Session, run: JobRun, chosen: List[str]) -> List[str]:
 
 def _later_items(db: Session, top: JobRun, path: str) -> List[str]:
     """What waits for the item at path, in the same workflow, by the prerequisites on other jobs of that workflow."""
-    from engine import outside
+    from core import outside
     row = (db.query(WorkflowRunItem).filter(WorkflowRunItem.Path == path,
                                             WorkflowRunItem.WorkflowRun_id.in_(outside.run_tree_ids(db, top.id))).first())
     if row is None or row.Item_id is None:

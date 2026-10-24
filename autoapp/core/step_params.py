@@ -27,10 +27,10 @@ from typing import Any, Dict, Optional, Sequence, Tuple
 from sqlalchemy.orm import Session
 
 from core.models import Endpoint, JobStep
-from engine.rename_mask import check_mask
-from engine.run_context import RunContext
-from engine.scope_engine import ScopeResolutionEngine
-from engine.step_catalog import check_parameters, holds_run_value, normalize_parameters
+from core.rename_mask import check_mask
+from core.run_context import RunContext
+from core.scope_engine import ScopeResolutionEngine
+from core.step_catalog import check_parameters, holds_run_value, normalize_parameters
 
 
 @dataclass

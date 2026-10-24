@@ -22,8 +22,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, List, Optional, Tuple
 
-from engine import return_codes
-from engine.clock_rules import KINDS_FOR, TimeRule
+from core import return_codes
+from core.clock_rules import KINDS_FOR, TimeRule
 
 AUTOAPP_DIR = Path(__file__).resolve().parents[1]
 REACTION_SCHEDULER = "AutoApp reaction"

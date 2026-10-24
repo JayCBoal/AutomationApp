@@ -8,8 +8,8 @@ import zipfile
 
 import pytest
 
-from engine.handlers.file_tools import CheckFilesHandler, DeleteFilesHandler, UnzipFilesHandler, ZipFilesHandler
-from engine.telemetry_client import LocalSpoolTelemetryClient
+from core.handlers.file_tools import CheckFilesHandler, DeleteFilesHandler, UnzipFilesHandler, ZipFilesHandler
+from core.telemetry_client import LocalSpoolTelemetryClient
 
 
 @pytest.fixture

@@ -8,7 +8,7 @@ import re
 
 import pytest
 
-from engine.scope_engine import ScopeResolutionEngine
+from core.scope_engine import ScopeResolutionEngine
 
 
 def engine_for(db, job, instance_id="INST_001"):

@@ -33,7 +33,7 @@ from app import outside_store, reaction_store
 from app.workflow_errors import WorkflowError
 from core.models import Job, JobRun, WorkflowItem, WorkflowItemVariable, WorkflowPrerequisite
 from app.schemas import PrerequisiteSave, WorkflowItemOut, WorkflowItemSave
-from engine import frames, return_codes, workflow_conditions, workflow_vars
+from core import frames, return_codes, workflow_conditions, workflow_vars
 
 TEST_WORDS = {"SUCCESS": "succeeded", "FAILED": "failed", "ENDED": "ended", "RC": "gave return codes",
               "RULE": "is named in its rule"}
@@ -651,7 +651,7 @@ def _variable_problems(db: Session, workflow: Job) -> List[str]:
     refs = [(where, ref) for where, text in texts for ref in _safe_references(text) if ref.startswith("${")]
     if not refs:
         return []
-    from engine.scope_engine import ScopeResolutionEngine
+    from core.scope_engine import ScopeResolutionEngine
     engine = ScopeResolutionEngine(db=db, job_id=workflow.MasterObject_id, instance_id="CHECK")
     engine.build_context()
     problems = []

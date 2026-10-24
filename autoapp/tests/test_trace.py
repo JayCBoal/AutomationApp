@@ -444,7 +444,7 @@ def test_trace_order_does_not_depend_on_the_order_spool_files_were_loaded(
         collect_and_deliver, seed, run_runner, client, db, tmp_path):
     """A spool file can arrive late. The trace must go by when things happened, not when they were loaded."""
     from app.telemetry_ingest import ingest_records
-    from engine.spool_delivery import read_spool_file
+    from core.spool import read_spool_file
 
     load = seed.job("DEV-BILLING-LOAD")
     seed.step(load, 1, SourceEndpoint="BILLING_INBOX", Dest="to_load", Move="True")

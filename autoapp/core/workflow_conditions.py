@@ -19,8 +19,8 @@ import re
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
-from engine import conditions
-from engine.run_context import shown_time
+from core import conditions
+from core.run_context import shown_time
 
 NUMBER, STRING = conditions.NUMBER, conditions.STRING
 FINAL = ("SUCCESS", "FAILED", "NOT_RUN", "DISABLED", "BYPASSED", "SKIPPED")

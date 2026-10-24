@@ -18,7 +18,8 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
-from app import alert_outbox, alert_store as store
+from app import alert_store as store
+from core import alert_outbox
 from core.database import get_db
 from app.job_store import JobStoreError
 

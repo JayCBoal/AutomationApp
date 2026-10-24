@@ -13,11 +13,11 @@ from typing import List, Optional, Set, Tuple
 from sqlalchemy.orm import Session
 
 from core.models import Job, JobRun, ReactionEvent, WorkflowItem, WorkflowRunItem
-from engine import clock_rules, outside
-from engine.clock_rules import HISTORY, NOT_ENDED_BY, NOT_STARTED_BY, RUNS_LONGER_THAN
-from engine.prerequisites import FINAL
-from engine.reactions import Rule, read_rules
-from engine.workflow_clock import durations_of, local
+from core import clock_rules, outside
+from core.clock_rules import HISTORY, NOT_ENDED_BY, NOT_STARTED_BY, RUNS_LONGER_THAN
+from core.prerequisites import FINAL
+from core.reactions import Rule, read_rules
+from core.workflow_clock import durations_of, local
 
 NOT_STARTED = ("PENDING", "WAITING")
 LABELS = {NOT_STARTED_BY: "Not started by", NOT_ENDED_BY: "Not ended by", RUNS_LONGER_THAN: "Runs longer than"}

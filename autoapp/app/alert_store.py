@@ -16,7 +16,7 @@ from typing import Any, Dict, List, Optional
 
 from sqlalchemy.orm import Session
 
-from app.alert_outbox import FACT_NAMES, FACT_PATTERN, addresses
+from core.alert_outbox import FACT_NAMES, FACT_PATTERN, addresses
 from app.job_store import JobStoreError
 from core.models import Alert, AlertDelivery, AlertRecipient, Audit, Credential, Job, MailSetting, ReactionAction, \
     WorkflowItem, utcnow

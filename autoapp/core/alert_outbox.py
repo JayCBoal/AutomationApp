@@ -67,7 +67,7 @@ def _fill_in(db: Session, text: str, facts: Facts) -> str:
     text = FACT_PATTERN.sub(lambda m: values.get(m.group(1), m.group(0)), text)
     if "${" not in text or facts.job_id is None:
         return text
-    from engine.scope_engine import ScopeResolutionEngine
+    from core.scope_engine import ScopeResolutionEngine
     try:
         engine = ScopeResolutionEngine(db=db, job_id=facts.job_id, instance_id=facts.instance_id)
         engine.build_context()

@@ -33,7 +33,7 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
-from engine import job_log
+from core import job_log
 
 CONTROL_SUFFIX = ".control"
 

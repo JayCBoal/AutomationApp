@@ -7,8 +7,8 @@ the runner (engine/executor.py) does their work, as it is about running other st
 """
 from typing import List, Sequence
 
-from engine.handlers.base_handler import BaseHandler
-from engine.step_catalog import BOOLEAN, INTEGER, LOCATION, NUMBER, SOURCE, STRING, TEXT, NOT_DONE, Output, Param
+from core.handlers.base_handler import BaseHandler
+from core.step_catalog import BOOLEAN, INTEGER, LOCATION, NUMBER, SOURCE, STRING, TEXT, NOT_DONE, Output, Param
 
 CONDITION_HELP = ("When the steps run, written like a SQL WHERE clause: %{Check_files.Status} = 'SUCCESS' "
                   "AND %{Check_files.FileCount} > 0. Text goes in quotes.")

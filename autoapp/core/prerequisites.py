@@ -10,7 +10,7 @@ and the outside prerequisites (engine/outside_state.py) share.
 """
 from typing import Optional
 
-from engine import return_codes
+from core import return_codes
 
 FINAL = ("SUCCESS", "FAILED", "NOT_RUN", "DISABLED", "BYPASSED", "SKIPPED")
 HOLDS, NEVER, WAIT, TIMED_OUT, SKIPPED_OPTIONAL = "HOLDS", "NEVER", "WAIT", "TIMED_OUT", "SKIPPED"

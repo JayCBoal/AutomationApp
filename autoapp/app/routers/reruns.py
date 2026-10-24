@@ -24,13 +24,13 @@ from sqlalchemy.orm import Session
 from core.database import get_db
 from core.models import Audit, Job, JobRun, utcnow
 from app import rerun_advanced, rerun_steps, rerun_values, run_restarts
-from engine import reopen_tree as rerun_tree
+from core import reopen_tree as rerun_tree
 from app.rerun_values import LevelEdit, ValueChange, ValueLevel, ValueShown
 from app.routers.launches import LaunchOut, start_runner
-from engine import job_log, reopen, run_values
-from engine.control_file import ControlRecord
-from engine.runner import find_earlier_attempt
-from engine.scope_engine import ScopeResolutionEngine
+from core import job_log, reopen, run_values
+from core.control_file import ControlRecord
+from core.earlier_attempt import find_earlier_attempt
+from core.scope_engine import ScopeResolutionEngine
 
 router = APIRouter(prefix="/api/v1/runs", tags=["Runs"])
 

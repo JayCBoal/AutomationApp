@@ -17,9 +17,9 @@ import threading
 from datetime import datetime, timedelta
 from typing import List, Optional
 
-from engine import clock_rules, job_log, outside
-from engine.clock_rules import HISTORY, NOT_ENDED_BY, RUNS_LONGER_THAN, Deadline, TimeRule
-from engine.reactions import Act, Rule, start_workflow
+from core import clock_rules, job_log, outside
+from core.clock_rules import HISTORY, NOT_ENDED_BY, RUNS_LONGER_THAN, Deadline, TimeRule
+from core.reactions import Act, Rule, start_workflow
 
 POLL_SECONDS = float(os.getenv("AUTOAPP_JOB_CLOCK_POLL_SECONDS", "1"))
 APPLIES = (NOT_ENDED_BY, RUNS_LONGER_THAN)

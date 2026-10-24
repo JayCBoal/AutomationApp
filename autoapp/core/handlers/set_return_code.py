@@ -4,10 +4,10 @@ The Set Return Code step: sets the job's return code, and the job carries on
 a job chooses its own code ("no files arrived: 4"). When the job ends, its Success return
 codes decide whether the code means Succeeded or Failed.
 """
-from engine import job_log
-from engine.handlers.base_handler import BaseHandler
-from engine.step_catalog import INTEGER, NOT_DONE, STRING, Param
-from engine.telemetry_client import utc_now_iso
+from core import job_log
+from core.handlers.base_handler import BaseHandler
+from core.step_catalog import INTEGER, NOT_DONE, STRING, Param
+from core.telemetry_client import utc_now_iso
 
 
 class SetReturnCodeHandler(BaseHandler):

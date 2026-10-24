@@ -18,8 +18,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from core.models import Audit, Job, JobRun, WorkflowRunItem
-from engine.reopen_tree import Pick, TreePlan
-from engine import reopen, run_values, workflow_vars
+from core.reopen_tree import Pick, TreePlan
+from core import reopen, run_values, workflow_vars
 
 WORKFLOW, USE, JOB = "workflow", "use", "job"
 SUCCEEDED = "SUCCESS"

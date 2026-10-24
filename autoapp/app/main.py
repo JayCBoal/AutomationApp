@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -11,8 +12,9 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.catalog import sync_catalog
 from app.database import get_db
 from app.log_agent import remove_old_logs
+from app.mail_sender import run_sender_forever
 from app.routers import (
-    conditions, definitions, endpoints, history, jobs, launches, lookups, operations, registry, reruns, schedulers, settings,
+    alerts, conditions, definitions, endpoints, history, jobs, launches, lookups, operations, registry, reruns, schedulers, settings,
     step_types, telemetry, variables
 )
 from app.schema_check import out_of_date_message, schema_problems
@@ -75,8 +77,12 @@ async def lifespan(app: FastAPI):
     finally:
         sessions.close()
     cleanup = asyncio.create_task(remove_old_logs_daily())
+    # AUTOAPP_MAIL_SENDER=off keeps the sender from running (the tests send by hand, so they can see each step)
+    sender = None if os.getenv("AUTOAPP_MAIL_SENDER") == "off" else asyncio.create_task(run_sender_forever(provide_db))
     yield
     cleanup.cancel()
+    if sender:
+        sender.cancel()
 
 
 app = FastAPI(
@@ -120,6 +126,7 @@ app.include_router(settings.router)
 app.include_router(launches.router)
 app.include_router(reruns.router)
 app.include_router(conditions.router)
+app.include_router(alerts.router)
 
 
 @app.get("/health", tags=["Health"])

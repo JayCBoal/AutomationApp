@@ -32,6 +32,11 @@
                         <option value="">Any</option><option>SUCCESS</option><option>FAILED</option><option>RUNNING</option>
                     </select>
                 </label>
+                <label title="Late means a deadline was missed at some point; the mark stays after the run catches up">Late
+                    <select x-model="criteria.late" name="late">
+                        <option value="">Any</option><option value="true">Marked late</option><option value="false">Never late</option>
+                    </select>
+                </label>
             </fieldset>
             <fieldset>
                 <legend>Scheduler</legend>
@@ -60,7 +65,7 @@
         <div data-rerun-panel></div>
         <div class="table-scroll" x-show="rows.length > 0">
             <table class="results">
-                <thead><tr><th>Job</th><th>Status</th><th>Started</th><th>Took</th><th>Scheduler</th><th>Files</th><th>Log</th></tr></thead>
+                <thead><tr><th>Job</th><th>Status</th><th>Late</th><th>Started</th><th>Took</th><th>Scheduler</th><th>Files</th><th>Log</th></tr></thead>
                 <tbody>
                     <template x-for="run in shownRows" :key="run.run_id">
                         <tr :class="{ inside: run.depth > 0 }" :data-depth="run.depth">
@@ -86,6 +91,11 @@
                                 <span class="muted small restarted" x-show="run.restarts_count > 0" :title="run.restarts_words"
                                       x-text="'Restarted ×' + run.restarts_count"></span>
                                 <div class="error-text small" x-show="run.error" x-text="run.error"></div>
+                            </td>
+                            <td class="late-cell">
+                                <span class="tag late" x-show="run.late" x-text="'Late'"></span>
+                                <div class="muted small late-reason" x-show="run.late" x-text="run.late_reason"></div>
+                                <div class="muted small late-cause" x-show="run.late && run.late_cause" x-text="run.late_cause"></div>
                             </td>
                             <td class="nowrap" x-text="time(run.started)"></td>
                             <td class="nowrap" x-text="duration(run)"></td>

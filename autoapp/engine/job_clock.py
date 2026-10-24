@@ -122,7 +122,7 @@ class JobClock:
                 instance = start_workflow(act.target_job, **self.options)
                 self._record(act, "TOOK_EFFECT", f"{reason}. Started workflow '{act.target_job}', instance {instance}.")
             elif act.action == "NOTIFY":
-                self._record(act, "NOT_FIRED", f"{reason}. Notify '{act.alert_name}' was not carried out: alerts are not built yet.")
+                self._record(act, "TOOK_EFFECT", f"{reason}. Alert '{act.alert_name}' queued.")
             else:
                 self._record(act, "NOT_FIRED", f"{reason}. {act.words().capitalize()} was not carried out: "
                                                f"a time can only mark as late, notify or start a workflow.")

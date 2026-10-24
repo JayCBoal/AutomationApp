@@ -787,17 +787,20 @@ Compiled 2026-10-18, from the design record and Phases 1 to 4.
 
 
 **D178. A time of day in a time-based Reaction means its next occurrence after the run started.** A run starting at 23:00 with "not ended by 03:00" means 03:00 tomorrow; the editor shows the result. This replaces the earlier note in WORKFLOWS.md ("the day the run started").
-- *Why:* the owner, 2026-10-23. The old wording would make a run that starts at 23:00 late the moment it begins; the new one agrees with D103 (windows that cross midnight) and with a run not being tied to "today". *Considered:* the day the run started. *Status:* Designed (Phase 8). *Source:* WORKFLOWS_PHASE8.md, proposal 3.
+- *Why:* the owner, 2026-10-23. The old wording would make a run that starts at 23:00 late the moment it begins; the new one agrees with D103 (windows that cross midnight) and with a run not being tied to "today". *Considered:* the day the run started. *Status:* Built (Phase 8). *Source:* WORKFLOWS_PHASE8.md, proposal 3.
 
 **D179. Notify names an alert, goes through an outbox and is tested against a small mail server of our own.** An alert has recipients, a subject and a message; Notify adds a delivery row and a sender in the server sends it, so no job waits for mail. A development-only receive-only mail server (`mail_sink`) takes the place of a real one. Operator Messages are a separate path (a person's reply), not part of this phase.
-- *Why:* the telemetry principle (D40), and runners on agent hosts should not need a mail server; the test server exercises the real sending path with no second "write to a folder" path. *Considered:* only recording "alert X would be sent"; saved-messages folder. *Status:* Designed (Phase 8). *Source:* WORKFLOWS_PHASE8.md, proposals 6 to 8.
+- *Why:* the telemetry principle (D40), and runners on agent hosts should not need a mail server; the test server exercises the real sending path with no second "write to a folder" path. *Considered:* only recording "alert X would be sent"; saved-messages folder. *Status:* Built (Phase 8). *Source:* WORKFLOWS_PHASE8.md, proposals 6 to 8.
 
 **D180. "Not started by" applies inside workflows only.** A job on its own has no run to watch before it starts; that waits for scheduling to say when a start was expected.
-- *Why:* the owner, 2026-10-23. *Status:* Designed (Phase 8). *Source:* WORKFLOWS_PHASE8.md.
+- *Why:* the owner, 2026-10-23. *Status:* Built (Phase 8). *Source:* WORKFLOWS_PHASE8.md.
 
-**D181. Time-based Whens take side effects only** (Mark as late, Notify, Start a workflow): no Kill, Count as or Rerun on a time. *Why:* the owner, 2026-10-23; a timed entry can then never change how a job ends, so a missed or late firing is harmless. *Status:* Designed (Phase 8).
+**D181. Time-based Whens take side effects only** (Mark as late, Notify, Start a workflow): no Kill, Count as or Rerun on a time. *Why:* the owner, 2026-10-23; a timed entry can then never change how a job ends, so a missed or late firing is harmless. *Status:* Built (Phase 8).
 
-**D182. "Longer than usual" uses the job's last 10 successful runs (at least 3), fixed once at the start.** Fewer than 3: not judged, and the job log says so. *Why:* the owner, 2026-10-23; the timer then needs no database, so the job runner on an agent host can use it. *Status:* Designed (Phase 8). *Source:* WORKFLOWS_PHASE8.md, proposal 4.
+**D182. "Longer than usual" uses the job's last 10 successful runs (at least 3), fixed once at the start.** Fewer than 3: not judged, and the job log says so. *Why:* the owner, 2026-10-23; the timer then needs no database, so the job runner on an agent host can use it. *Status:* Built (Phase 8). *Source:* WORKFLOWS_PHASE8.md, proposal 4.
 
 **D183. A late job's cause is named; Notify can skip the alert when a job it waited for was late; a time can be "within N minutes of being ready".** When a timed entry fires on a job that was still waiting for a job in the same workflow, the late flag, the event and the alert name that job. A tick on Notify (off by default) skips the alert in that case, never the late flag. The third way to give a time counts from the moment the job's own prerequisites were met.
-- *Why:* the owner, 2026-10-23: a delayed job must not make everything after it a separate fault. *Status:* Designed (Phase 8). *Source:* WORKFLOWS_PHASE8.md, proposal 13.
+- *Why:* the owner, 2026-10-23: a delayed job must not make everything after it a separate fault. *Status:* Built (Phase 8). *Source:* WORKFLOWS_PHASE8.md, proposal 13.
+
+**D184. `DEV-LATE_SAMPLE` brings its own alert and mail settings, pointing at the test mail server.** The seed adds the alert `DEV-LATE_ALERT` and the mail settings (localhost, port 8025) so the sample works on a fresh database once `mail_sink` is running. Its times are minutes, not hours, so the walk-through takes about three minutes.
+- *Why:* a Notify with no alert or mail settings would show nothing; the sample is only worth running if the message can be seen arriving. *Considered:* leaving the settings to the Alerts page (the owner would have to set them before the sample showed anything). *Status:* Built (Phase 8).

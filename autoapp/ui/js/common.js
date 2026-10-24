@@ -31,6 +31,8 @@ const AutoApp = (() => {
         { group: "right", name: "Job History", href: "history.html", about: "Every run of every job" },
         { group: "right", name: "Audit Log", href: "audit.html", about: "Who changed which definition, and when" },
         { group: "admin", name: "Settings", href: "settings.html", about: "System-wide settings, such as the order variables are looked for in" },
+        { group: "admin", name: "Alerts", href: "alerts.html", about: "Who is told, and what they are told, when a Reaction notifies; and where mail is sent through" },
+        { group: "admin", name: "Alert Deliveries", href: "alert_deliveries.html", about: "Every message Notify queued, and whether it was sent" },
     ];
 
     // ---------- Embedded mode ----------

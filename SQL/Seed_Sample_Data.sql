@@ -778,3 +778,75 @@ INSERT INTO Reactions (id, Job_MasterObject_id, Item_id, Section, ReactionOrder,
 (6, NULL, 37, 'NEXT', 1, 'FAILED', NULL);
 INSERT INTO ReactionActions (id, Reaction_id, ActionOrder, Action, MaxTimes, WaitSeconds, RerunMode, TargetItem_id) VALUES
 (6, 6, 1, 'RERUN', 2, 2, 'RESUME', NULL);
+
+-- ----------------------------------------------------------------------------
+-- 13. A sample of time-based Reactions (docs/WORKFLOWS_PHASE8.md): DEV-LATE_SAMPLE, with one alert and the mail
+--     settings that point at the test mail server (start it first with `mail_sink` from dev_env.sh; its page is
+--     http://localhost:8026). Rehearsed walk-through (about three minutes):
+--      1. Run it. Extract takes 150 seconds. Its Reaction says "runs longer than 1 minute": at one minute Extract
+--         is marked Late (Job History shows the Late column, the workflow run shows the Late tag and the clock
+--         lines) and the alert is queued. Open Administration, Alert Deliveries: the message is Sent, and the test
+--         mail server's page shows it.
+--      2. Transform is "not started by" 2 minutes after the workflow started. Extract is still running, so at two
+--         minutes Transform is marked Late too. Its Notify has "skip if a job it waited for was late" ticked, so
+--         no second message is sent: Extract's alert already told people. The Reaction event says it was skipped.
+--      3. Load has "not ended by" 10 minutes after the start. It ends in time, so it is never marked; its clock
+--         line shows the deadline until it ends.
+--      4. Try Send a test on the Alerts page, or change a time and run again.
+-- ----------------------------------------------------------------------------
+INSERT INTO MasterObjects (id, ObjectType) VALUES
+(64, 'JOB'), (65, 'JOB'), (66, 'JOB'), (67, 'JOB');
+
+INSERT INTO Jobs (MasterObject_id, JobKey, JobType, Description) VALUES
+(64, 'DEV-LATE_SAMPLE', 'WORKFLOW', 'Sample workflow: Mark as late and Notify, on jobs that run long or start late');
+INSERT INTO Jobs (MasterObject_id, JobKey, Description) VALUES
+(65, 'DEV-SIM-LATE_EXTRACT',   'Stand-in: extracts the day''s data; takes 150 seconds'),
+(66, 'DEV-SIM-LATE_TRANSFORM', 'Stand-in: transforms it once Extract is done'),
+(67, 'DEV-SIM-LATE_LOAD',      'Stand-in: loads it once Transform is done');
+
+INSERT INTO JobSteps (id, Job_MasterObject_id, StepType_id, StepOrder, StepTitle, StepName)
+SELECT 58, 65, id, 1, 'Extract', 'Extract' FROM StepTypes WHERE Code = 'SIMULATE';
+INSERT INTO JobSteps (id, Job_MasterObject_id, StepType_id, StepOrder, StepTitle, StepName)
+SELECT 59, 66, id, 1, 'Transform', 'Transform' FROM StepTypes WHERE Code = 'SIMULATE';
+INSERT INTO JobSteps (id, Job_MasterObject_id, StepType_id, StepOrder, StepTitle, StepName)
+SELECT 60, 67, id, 1, 'Load', 'Load' FROM StepTypes WHERE Code = 'SIMULATE';
+
+INSERT INTO JobStepParameters (JobStep_id, ParameterName, ParameterValue) VALUES
+(58, 'Messages',    'Extracting the day''s data'),
+(58, 'WaitSeconds', '150'),
+(59, 'Messages',    'Transforming it'),
+(60, 'Messages',    'Loading it');
+
+INSERT INTO WorkflowItems (id, Workflow_MasterObject_id, ItemName, Job_MasterObject_id, JoinRule, StartRule, ItemOrder, ReactionsOverridden) VALUES
+(42, 64, 'Extract',   65, 'ALL', NULL, 1, 1),
+(43, 64, 'Transform', 66, 'ALL', NULL, 2, 1),
+(44, 64, 'Load',      67, 'ALL', NULL, 3, 1);
+
+INSERT INTO WorkflowPrerequisites (id, Item_id, TargetItem_id, Test, ReturnCodes) VALUES
+(36, 43, 42, 'SUCCESS', NULL),
+(37, 44, 43, 'SUCCESS', NULL);
+
+-- The alert, and where mail goes (the test mail server; the real server's settings are set on the Alerts page)
+INSERT INTO Alerts (id, Name, Description, Subject, Message, CreatedDateTime) VALUES
+(1, 'DEV-LATE_ALERT', 'Sample: tells the operators a job is late',
+ '%{Alert.Job} is late',
+ 'Job %{Alert.Job} in %{Alert.Workflow} is late: %{Alert.Why}. Outcome so far: %{Alert.Outcome}. Deadline: %{Alert.Deadline}. See %{Alert.Link}',
+ CURRENT_TIMESTAMP);
+INSERT INTO AlertRecipients (id, Alert_id, RecipientOrder, Address) VALUES
+(1, 1, 1, 'operators@example.test');
+INSERT INTO MailSettings (id, Host, Port, SenderAddress, UseTls) VALUES
+(1, 'localhost', 8025, 'autoapp@example.test', 0);
+
+-- Extract: longer than 1 minute -> Mark as late, and tell the operators
+-- Transform: not started by 2 minutes after the workflow started -> Mark as late; Notify, unless Extract was late
+-- Load: not ended by 10 minutes after the workflow started -> Mark as late (it ends in time, so it does not fire)
+INSERT INTO Reactions (id, Job_MasterObject_id, Item_id, Section, ReactionOrder, WhenTest, WhenTimeKind, WhenMinutes) VALUES
+(7, NULL, 42, 'ALSO', 1, 'RUNS_LONGER_THAN', 'LENGTH',      1),
+(8, NULL, 43, 'ALSO', 1, 'NOT_STARTED_BY',   'AFTER_START', 2),
+(9, NULL, 44, 'ALSO', 1, 'NOT_ENDED_BY',     'AFTER_START', 10);
+INSERT INTO ReactionActions (id, Reaction_id, ActionOrder, Action, Alert_id, SkipIfCauseLate) VALUES
+(7,  7, 1, 'MARK_AS_LATE', NULL, 0),
+(8,  7, 2, 'NOTIFY',       1,    0),
+(9,  8, 1, 'MARK_AS_LATE', NULL, 0),
+(10, 8, 2, 'NOTIFY',       1,    1),
+(11, 9, 1, 'MARK_AS_LATE', NULL, 0);

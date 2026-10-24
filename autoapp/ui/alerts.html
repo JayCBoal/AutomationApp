@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Alerts - AutoApp</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="css/autoapp.css">
+    <script src="js/common.js"></script>
+    <script src="js/alerts.js"></script>
+    <script defer src="vendor/alpine-3.17.4.min.js"></script>
+</head>
+<body>
+<div id="app-chrome" data-title="Alerts"></div>
+
+<!-- Who is told, and what they are told, when a Reaction's Notify fires (docs/WORKFLOWS_PHASE8.md). Nothing is sent from
+     here except Send a test: a message goes into the outbox and the sender inside the server sends it. -->
+<main x-data="alertsPage()">
+    <p class="message error" id="page-error" x-show="error" x-text="error" role="alert" x-cloak></p>
+    <p class="message saved" id="save-notice" x-show="notice" x-text="notice" role="status" x-cloak></p>
+
+    <section class="panel" aria-label="Mail settings" id="mail-panel">
+        <div class="steps-head">
+            <h2 class="section">Mail settings</h2>
+            <span class="muted small" x-text="mail.configured ? 'Mail is sent through ' + mail.host + ':' + mail.port : 'Not set: no message can be sent yet'"></span>
+        </div>
+        <p class="small muted">Always sent by SMTP. In development the host is the test mail server (port 8025), which keeps each
+            message and sends nothing on. The login, if the server needs one, is a Credential: its name is the user, its secret the password.</p>
+        <div class="wf-row">
+            <label>Host <input type="text" id="mail-host" x-model="mail.host" maxlength="255"></label>
+            <label>Port <input type="number" id="mail-port" x-model.number="mail.port" min="1" max="65535" style="max-width: 100px"></label>
+            <label>Sent from <input type="text" id="mail-sender" x-model="mail.sender" maxlength="255" placeholder="autoapp@example.com"></label>
+            <label><input type="checkbox" id="mail-tls" x-model="mail.use_tls"> Use TLS</label>
+            <label>Login credential <input type="text" id="mail-credential" x-model="mail.credential" maxlength="100"
+                                           placeholder="none"></label>
+        </div>
+        <div class="actions">
+            <button type="button" class="primary" id="save-mail" :disabled="busy" @click="saveMail()">Save mail settings</button>
+        </div>
+    </section>
+
+    <section class="panel" aria-label="Alerts">
+        <div class="steps-head">
+            <h2 class="section">Alerts</h2>
+            <span class="spacer"></span>
+            <a class="small" href="alert_deliveries.html">Alert deliveries</a>
+            <button type="button" class="primary" id="new-alert" :disabled="busy" @click="startNew()">New alert</button>
+        </div>
+        <p class="muted small" id="alerts-summary" x-show="!alerts.length">No alerts yet. A Reaction's Notify names one.</p>
+
+        <!-- The alert being added or changed -->
+        <form class="alert-form panel" id="alert-form" x-show="draft" @submit.prevent="save()" x-cloak>
+            <template x-if="draft">
+                <div>
+                    <div class="wf-row">
+                        <label>Name <input type="text" id="alert-name" x-model="draft.name" maxlength="100" required></label>
+                        <label>Description <input type="text" id="alert-description" x-model="draft.description" maxlength="256"></label>
+                    </div>
+                    <label>Recipients <span class="muted small">(email addresses, separated by commas or spaces)</span>
+                        <input type="text" id="alert-recipients" x-model="draft.recipients" placeholder="ops@example.com, boss@example.com"></label>
+                    <label>Subject <input type="text" id="alert-subject" x-model="draft.subject" maxlength="255" required></label>
+                    <label>Message <textarea id="alert-message" x-model="draft.message" required></textarea></label>
+                    <p class="muted small">The subject and message can use the same <code>${...}</code> values a step can, and the run's
+                        facts: <code>%{Alert.Job}</code>, <code>%{Alert.Workflow}</code>, <code>%{Alert.Outcome}</code>,
+                        <code>%{Alert.Why}</code>, <code>%{Alert.Deadline}</code>, <code>%{Alert.Link}</code> and
+                        <code>%{Alert.Time}</code>.</p>
+                    <div class="actions">
+                        <button type="submit" class="primary" id="save-alert" :disabled="busy">Save</button>
+                        <button type="button" class="secondary" id="cancel-alert" :disabled="busy" @click="draft = null">Cancel</button>
+                    </div>
+                </div>
+            </template>
+        </form>
+
+        <template x-for="alert in alerts" :key="alert.name">
+            <article class="alert" :data-alert="alert.name">
+                <div class="steps-head">
+                    <h3 x-text="alert.name"></h3>
+                    <span class="muted small" x-text="alert.description"></span>
+                    <span class="spacer"></span>
+                    <button type="button" class="secondary edit-alert" :disabled="busy" @click="startEdit(alert)">Edit</button>
+                    <button type="button" class="secondary test-alert" :disabled="busy" @click="sendTest(alert)">Send a test</button>
+                    <button type="button" class="secondary delete-alert" :disabled="busy || alert.used_by.length > 0"
+                            :title="alert.used_by.length ? 'A Reaction names it' : ''" @click="remove(alert)">Delete</button>
+                </div>
+                <p class="small">To <span class="alert-recipients" x-text="alert.recipients.join(', ')"></span></p>
+                <p class="small"><strong x-text="alert.subject"></strong></p>
+                <p class="small delivery-body" x-text="alert.message"></p>
+                <p class="small alert-used-by">
+                    <span class="muted" x-show="!alert.used_by.length">Not named by any Reaction.</span>
+                    <span x-show="alert.used_by.length">Named by <span class="used-by" x-text="alert.used_by.join(', ')"></span></span>
+                </p>
+            </article>
+        </template>
+    </section>
+</main>
+</body>
+</html>

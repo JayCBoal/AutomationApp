@@ -1336,7 +1336,7 @@ function workflowDetail() {
                 const frame = Boolean(item.frame_run_id) || (item.inside || []).length > 0;
                 const saved = this.form && used ? this.form.items.find(i => i.id === used.id) : null;
                 return { id: item.path, name: item.name, join: used ? used.join : "ALL", status: item.status, attempt: item.attempt,
-                         statusText: frame ? [this.stateWords(item), this.insideWords(item)].filter(Boolean).join(" · ") : this.stateWords(item),
+                         statusText: [this.stateWords(item), frame ? this.insideWords(item) : "", item.late ? "Late" : ""].filter(Boolean).join(" · "),
                          kind: frame ? "FRAME" : this.jobKind(item.job_key), disabled: null,
                          disabledHere: used ? used.disabled_here : null, rule: used && used.join === "CUSTOM" ? used.rule : null,
                          reactions: used && this.form ? this.reactionsTip(saved || { reactions_overridden: false, job_reactions: [] }) : null,

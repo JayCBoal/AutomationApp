@@ -184,21 +184,33 @@ class ReactionActionIO(BaseModel):
     """One thing a Reaction does (docs/WORKFLOWS_PHASE3.md)."""
     action: str = Field(..., description=(
         "COUNT_AS_SUCCEEDED, COUNT_AS_FAILED, RERUN, RERUN_FROM, SKIP, SKIP_BRANCH or KILL_WORKFLOW "
-        "(What happens next); START_WORKFLOW (Also)"))
+        "(What happens next); START_WORKFLOW, NOTIFY or MARK_AS_LATE (Also; MARK_AS_LATE only on a time When)"))
     max_times: Optional[int] = Field(None, description="RERUN and RERUN_FROM: at most this many times in a run")
     wait_seconds: Optional[int] = Field(None, description="RERUN and RERUN_FROM: how long to wait first")
     mode: Optional[str] = Field(None, description=(
         "RERUN: RESTART (from the beginning) or RESUME (from where the job failed; the default for a new one)"))
     target: Optional[str] = Field(None, max_length=100, description="RERUN_FROM and SKIP: a job in the workflow, by its name there")
     workflow: Optional[str] = Field(None, max_length=320, description="START_WORKFLOW: the workflow's key")
+    alert: Optional[str] = Field(None, max_length=100, description="NOTIFY: the alert's name")
+    skip_if_cause_late: bool = Field(False, description=(
+        "NOTIFY: do not send when a job this one waited for was late (the mark as late is still made)"))
 
 
 class ReactionIO(BaseModel):
     """What happens after a job ends, chosen by how it ended."""
     section: str = Field("NEXT", description="NEXT (What happens next: the first that holds decides) or ALSO "
                                              "(every one that holds fires)")
-    when: str = Field("FAILED", description="SUCCESS, FAILED, ENDED or RC (one of return_codes)")
+    when: str = Field("FAILED", description=(
+        "SUCCESS, FAILED, ENDED or RC (one of return_codes); or a time When, judged while the run goes on: "
+        "NOT_STARTED_BY, NOT_ENDED_BY or RUNS_LONGER_THAN"))
     return_codes: Optional[str] = Field(None, max_length=100, description="For RC: the codes, as 0, 4 or 0-4")
+    time_kind: Optional[str] = Field(None, description=(
+        "For a time When, how its time is given: CLOCK (a time of day), AFTER_START or AFTER_READY (minutes), "
+        "LENGTH (minutes), HISTORY (percent over the average of its last run_count runs)"))
+    clock_time: Optional[str] = Field(None, max_length=5, description="CLOCK: the time of day, like 03:00")
+    minutes: Optional[int] = Field(None, description="AFTER_START, AFTER_READY and LENGTH: how many minutes")
+    percent: Optional[int] = Field(None, description="HISTORY: how far over the average counts as too long")
+    run_count: Optional[int] = Field(None, description="HISTORY: how many earlier runs to average (default 10, at least 3)")
     actions: List[ReactionActionIO] = Field(default_factory=list)
 
 

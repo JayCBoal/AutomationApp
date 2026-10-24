@@ -51,6 +51,8 @@ def shown_in_outline(page, count):
 
 
 def drag(page, source, target):
+    target.scroll_into_view_if_needed()                           # a two-row menu pushes the diagram down
+    source.scroll_into_view_if_needed()
     a, b = source.bounding_box(), target.bounding_box()
     page.mouse.move(a["x"] + a["width"] / 2, a["y"] + a["height"] / 2)
     page.mouse.down()

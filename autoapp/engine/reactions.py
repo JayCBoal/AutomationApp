@@ -31,6 +31,7 @@ REACTION_SCHEDULER = "AutoApp reaction"
 RESTART, RESUME = "RESTART", "RESUME"
 LIMITED = ("RERUN", "RERUN_FROM")
 SIDE_EFFECTS = ("START_WORKFLOW",)
+NOTIFYING = ("NOTIFY",)         # also under Also, carried out when a job ends; the sender sends it (app/mail_sender.py)
 ONLY_IN_WORKFLOWS = ("RERUN_FROM", "SKIP", "SKIP_BRANCH", "KILL_WORKFLOW")
 # Carried out in this order when one entry has several
 ORDER = ("COUNT_AS_SUCCEEDED", "COUNT_AS_FAILED", "SKIP", "SKIP_BRANCH", "RERUN", "RERUN_FROM", "KILL_WORKFLOW")
@@ -42,6 +43,7 @@ WORDS = {"COUNT_AS_SUCCEEDED": "count as succeeded", "COUNT_AS_FAILED": "count a
 WHEN_WORDS = {"SUCCESS": "it succeeded", "FAILED": "it failed", "ENDED": "it ended", "RC": "its return code is",
               "NOT_STARTED_BY": "it has not started by its time", "NOT_ENDED_BY": "it has not ended by its time",
               "RUNS_LONGER_THAN": "it runs longer than its limit"}
+WHEN_WORDS_OF_END = {"SUCCESS": "the job succeeded", "FAILED": "the job failed"}
 TIME_TESTS = tuple(KINDS_FOR)      # judged while the run goes on, by the runner's clock
 
 
@@ -141,11 +143,11 @@ def judge(rules: List[Rule], status: str, code: Optional[int], times_used: Calla
     for rule in rules:
         if not holds(rule, status, code):
             continue
-        verdict.side_effects += [a for a in rule.actions if a.action in SIDE_EFFECTS]
+        verdict.side_effects += [a for a in rule.actions if a.action in SIDE_EFFECTS + NOTIFYING]
         if rule.section != "NEXT" or verdict.deciding:
             continue
         decisions = [a for a in rule.actions
-                     if a.action not in SIDE_EFFECTS and (in_workflow or a.action not in ONLY_IN_WORKFLOWS)]
+                     if a.action not in SIDE_EFFECTS + NOTIFYING and (in_workflow or a.action not in ONLY_IN_WORKFLOWS)]
         used_up = [a for a in decisions if a.action in LIMITED and times_used(a) >= a.max_times]
         if used_up:
             verdict.used_up += used_up
@@ -205,6 +207,9 @@ class OwnReactions:
                 record(act, "TOOK_EFFECT", f"Counted as {'succeeded' if counted == 'SUCCESS' else 'failed'}, "
                                            f"as its Reactions say ({verdict.deciding.when_words()}).")
         for act in verdict.side_effects:
+            if act.action == "NOTIFY":      # the server queues the message when this record reaches it
+                record(act, "TOOK_EFFECT", f"Alert '{act.alert_name}' queued: {WHEN_WORDS_OF_END.get(status, 'the job ended')}.")
+                continue
             instance = start_workflow(act.target_job, **self.options)
             record(act, "TOOK_EFFECT", f"Started workflow '{act.target_job}', instance {instance}.")
         return counted

@@ -528,3 +528,12 @@ body.embedded main { padding-top: 12px; }
 .restart-list { margin: 0.25rem 0 0; padding-left: 1.5rem; }
 .restart-list .restart { margin-bottom: 0.5rem; }
 .restart-detail { margin: 0.15rem 0 0; padding-left: 1.25rem; }
+
+/* Late (Phase 8): a deadline was missed; the mark stays after the run catches up */
+.tag.late { color: var(--warning); border-color: var(--warning); font-weight: 600; }
+.late-reason, .late-cause { max-width: 360px; }
+.alert-form textarea { width: 100%; min-height: 110px; font-family: inherit; }
+.alert-used-by { margin: 4px 0; }
+.delivery-body { white-space: pre-wrap; margin: 4px 0; }
+.status.SENT { color: var(--success); }
+.status.PENDING { color: var(--warning); }

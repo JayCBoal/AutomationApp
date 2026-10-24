@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Alert Deliveries - AutoApp</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="css/autoapp.css">
+    <script src="js/common.js"></script>
+    <script src="js/alert_deliveries.js"></script>
+    <script defer src="vendor/alpine-3.17.4.min.js"></script>
+</head>
+<body>
+<div id="app-chrome" data-title="Alert Deliveries"></div>
+
+<!-- Every message Notify queued: to whom, when, and whether it was sent (docs/WORKFLOWS_PHASE8.md, proposal 7). -->
+<main x-data="alertDeliveries()">
+    <form class="panel" @submit.prevent="search()" aria-label="Search criteria">
+        <div class="criteria">
+            <fieldset>
+                <legend>Message</legend>
+                <label>Alert <input type="text" x-model="criteria.alert" name="alert"></label>
+                <label>Result
+                    <select x-model="criteria.status" name="status">
+                        <option value="">Any</option><option value="PENDING">Waiting to be sent</option>
+                        <option value="SENT">Sent</option><option value="FAILED">Failed</option>
+                    </select>
+                </label>
+            </fieldset>
+        </div>
+        <div class="actions">
+            <button type="submit" class="primary" :disabled="loading">Search</button>
+            <button type="button" class="secondary" @click="clear()" :disabled="loading">Clear</button>
+            <span class="spacer"></span>
+            <a class="small" href="alerts.html">Alerts and mail settings</a>
+        </div>
+    </form>
+
+    <section class="panel" aria-label="Results" x-cloak>
+        <p class="message error" x-show="error" x-text="error" role="alert"></p>
+        <p class="message" id="result-summary" x-show="!error" x-text="summary"></p>
+        <div class="table-scroll" x-show="rows.length > 0">
+            <table class="results">
+                <thead><tr><th>Alert</th><th>Result</th><th>To</th><th>Subject and message</th><th>Queued</th><th>Run</th></tr></thead>
+                <tbody>
+                    <template x-for="d in rows" :key="d.id">
+                        <tr class="delivery" :data-status="d.status">
+                            <td><span x-text="d.alert"></span> <span class="tag" x-show="d.is_test">Test</span></td>
+                            <td>
+                                <span class="status" :class="d.status" x-text="resultWords(d)"></span>
+                                <div class="error-text small delivery-error" x-show="d.error" x-text="d.error"></div>
+                            </td>
+                            <td class="small" x-text="d.recipients"></td>
+                            <td>
+                                <strong x-text="d.subject"></strong>
+                                <details><summary class="small muted">Message</summary>
+                                    <div class="small delivery-body" x-text="d.body"></div></details>
+                            </td>
+                            <td class="nowrap" x-text="time(d.created)"></td>
+                            <td class="nowrap">
+                                <a class="run-link" :href="runLink(d)" x-show="d.run_id">The run</a>
+                                <div class="muted small" x-show="d.workflow_path" x-text="'as ' + d.workflow_path"></div>
+                            </td>
+                        </tr>
+                    </template>
+                </tbody>
+            </table>
+        </div>
+    </section>
+</main>
+</body>
+</html>

@@ -46,7 +46,8 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from sqlalchemy.orm import Session
 
-from app.models import (ConditionCheck, Job, JobRun, ReactionEvent, WorkflowPrerequisite, WorkflowPrerequisiteCheck,
+from app.alert_outbox import addresses, facts_for_run, queue
+from app.models import (Alert, ConditionCheck, Job, JobRun, ReactionEvent, WorkflowPrerequisite, WorkflowPrerequisiteCheck,
                         WorkflowRunItem, utcnow)
 from engine import frames
 from engine.frames import tree_top
@@ -1058,9 +1059,26 @@ class WorkflowRunner:
         return [start] + [p for p in self.items if p.name in names and p is not start]
 
     def _side_effect(self, planned: Planned, child: Optional[JobRun], act: Act) -> None:
+        if act.action == "NOTIFY":
+            self._notify(planned, child, act)
+            return
         o = self.options
         instance = start_workflow(act.target_job, o.spool_dir, o.api_url, o.working_root, o.log_level)
         self._event(planned, child, act, "TOOK_EFFECT", f"Started workflow '{act.target_job}', instance {instance}.")
+
+    def _notify(self, planned: Planned, child: Optional[JobRun], act: Act) -> None:
+        """Queues the alert's message in the outbox (app/alert_outbox.py); the sender sends it, so nothing waits for mail."""
+        alert = self.db.get(Alert, act.alert_id) if act.alert_id else None
+        if alert is None:
+            self._event(planned, child, act, "NOT_FIRED", f"'{planned.name}': Notify was not carried out: its alert no longer exists.")
+            return
+        row = planned.row
+        why = f"'{planned.name}' {outcome_words(row)}"
+        facts = facts_for_run(self.record, why, outcome=row.Status, workflow_path=row.Path)
+        facts.job, facts.workflow = planned.name, self.record.JobKey
+        queue(self.db, alert, facts)
+        self._event(planned, child, act, "TOOK_EFFECT",
+                    f"'{planned.name}': alert '{alert.Name}' queued for {', '.join(addresses(alert)) or 'no one'}.")
 
     def _event(self, planned: Planned, child: Optional[JobRun], act: Act, result: str, message: str) -> None:
         self.db.add(ReactionEvent(JobRun_id=child.id if child else self.record.id, WorkflowRun_id=self.record.id,

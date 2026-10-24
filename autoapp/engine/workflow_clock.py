@@ -13,7 +13,8 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Set, Tuple
 
-from app.models import JobRun, ReactionEvent, RunRestart, utcnow
+from app.alert_outbox import addresses, facts_for_run, queue
+from app.models import Alert, JobRun, ReactionEvent, RunRestart, utcnow
 from engine import clock_rules, job_log, outside
 from engine.clock_rules import HISTORY, NOT_STARTED_BY, RUNS_LONGER_THAN, Deadline
 from engine.prerequisites import FINAL
@@ -177,7 +178,7 @@ class ClockWatcher:
             elif act.action == "START_WORKFLOW":
                 self._start_workflow(watch, act, told)
             elif act.action == "NOTIFY":
-                self._notify(watch, act, told, cause_late)
+                self._notify(watch, act, told, cause_late, deadline)
             else:
                 self._event(watch, act, "NOT_FIRED", f"{told}. {act.words().capitalize()} was not carried out: "
                                                      f"a time can only mark as late, notify or start a workflow.")
@@ -213,9 +214,21 @@ class ClockWatcher:
         instance = start_workflow(act.target_job, o.spool_dir, o.api_url, o.working_root, o.log_level)
         self._event(watch, act, "TOOK_EFFECT", f"{told}. Started workflow '{act.target_job}', instance {instance}.")
 
-    def _notify(self, watch: Watch, act: Act, told: str, cause_late: bool) -> None:
-        """Notify arrives with the alert outbox (step 5); until then a Notify is recorded as not carried out."""
-        self._event(watch, act, "NOT_FIRED", f"{told}. Notify '{act.alert_name}' was not carried out: alerts are not built yet.")
+    def _notify(self, watch: Watch, act: Act, told: str, cause_late: bool, deadline: Deadline) -> None:
+        """Queues the alert's message in the outbox (app/alert_outbox.py); the sender sends it, so nothing waits for mail."""
+        if act.skip_if_cause_late and cause_late:
+            self._event(watch, act, "NOT_FIRED", f"{told}. Notify '{act.alert_name}' was skipped: a job it waited for was late.")
+            return
+        alert = self.runner.db.get(Alert, act.alert_id) if act.alert_id else None
+        if alert is None:
+            self._event(watch, act, "NOT_FIRED", f"{told}. Notify was not carried out: its alert no longer exists.")
+            return
+        record = self.runner.record
+        facts = facts_for_run(record, told, outcome="LATE", workflow_path=watch.path)
+        facts.job = watch.planned.name if watch.planned else record.JobKey
+        facts.workflow, facts.deadline = record.JobKey, clock_rules.shown(deadline.due)
+        queue(self.runner.db, alert, facts)
+        self._event(watch, act, "TOOK_EFFECT", f"{told}. Alert '{alert.Name}' queued for {', '.join(addresses(alert)) or 'no one'}.")
 
     def _first(self, watch: Watch, action: str) -> Act:
         return next(a for a in watch.rule.actions if a.action == action)

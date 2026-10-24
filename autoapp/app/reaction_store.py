@@ -7,7 +7,11 @@ Rules, checked on saving:
   - What happens next (NEXT) holds decisions; Also (ALSO) holds side effects. Each entry has
     at least one action, at most one Count as, and at most one of Rerun, Rerun from… and Kill
     the workflow.
-  - The When is SUCCESS, FAILED, ENDED or RC with return codes.
+  - The When is SUCCESS, FAILED, ENDED or RC with return codes, or a time When (Phase 8): NOT_STARTED_BY,
+    NOT_ENDED_BY or RUNS_LONGER_THAN with how its time is given (engine/clock_rules.py judges it). A time When
+    takes side effects only (Mark as late, Notify, Start a workflow), so it sits under Also. "Has not started by"
+    and "within N minutes of being ready" need a workflow around the job.
+  - Notify names an alert that exists; Mark as late is only for a time When.
   - Rerun from…, Skip…, Skip the rest of the branch and Kill the workflow name other jobs, or a
     workflow around the job, so only a use in a workflow offers them.
   - Rerun from… names a job this one waits for, directly or not; Skip… another job in the
@@ -20,13 +24,15 @@ from typing import Dict, List, Optional, Set
 
 from sqlalchemy.orm import Session
 
-from app.models import Job, Reaction, ReactionAction, WorkflowItem
+from app.models import Alert, Job, Reaction, ReactionAction, WorkflowItem
 from app.schemas import ReactionActionIO, ReactionIO
 from engine import return_codes
+from engine.clock_rules import AFTER_READY, DEFAULT_HISTORY_RUNS, HISTORY, NOT_STARTED_BY, TimeRule, problem_with
 from engine.reactions import LIMITED, ONLY_IN_WORKFLOWS, SIDE_EFFECTS, WORDS
 
 MAX_TIMES, MAX_WAIT = 100, 86400
 DECISIONS = tuple(ReactionAction.DECISIONS)
+ALSO_ACTIONS = tuple(SIDE_EFFECTS) + tuple(ReactionAction.TIME_SIDE_EFFECTS)    # what Also offers: nothing changes in the run
 DEFAULT_MODE = "RESUME"             # for a Rerun this job saved without a choice; saved ones keep theirs
 
 
@@ -36,12 +42,19 @@ class ReactionError(Exception):
 
 def describe(reactions: List[Reaction]) -> List[ReactionIO]:
     return [ReactionIO(section=r.Section, when=r.WhenTest, return_codes=r.WhenReturnCodes,
-                       actions=[ReactionActionIO(action=a.Action, max_times=a.MaxTimes, wait_seconds=a.WaitSeconds,
-                                                 mode=(a.RerunMode or "RESTART") if a.Action == "RERUN" else None,
-                                                 target=a.target_item.ItemName if a.target_item else None,
-                                                 workflow=a.target_job.JobKey if a.target_job else None)
-                                for a in r.actions])
+                       time_kind=r.WhenTimeKind, clock_time=r.WhenClockTime, minutes=r.WhenMinutes,
+                       percent=r.WhenPercent, run_count=r.WhenRunCount,
+                       actions=[_describe_action(a) for a in r.actions])
             for r in sorted(reactions, key=lambda r: (r.Section != "NEXT", r.ReactionOrder))]
+
+
+def _describe_action(a: ReactionAction) -> ReactionActionIO:
+    return ReactionActionIO(action=a.Action, max_times=a.MaxTimes, wait_seconds=a.WaitSeconds,
+                            mode=(a.RerunMode or "RESTART") if a.Action == "RERUN" else None,
+                            target=a.target_item.ItemName if a.target_item else None,
+                            workflow=a.target_job.JobKey if a.target_job else None,
+                            alert=a.alert.Name if a.alert else None,
+                            skip_if_cause_late=bool(a.SkipIfCauseLate))
 
 
 # ---------- Checking ----------
@@ -56,16 +69,18 @@ def check(db: Session, label: str, submitted: List[ReactionIO], home: Job, upstr
     in_workflow = names is not None
     for number, entry in enumerate(submitted, start=1):
         where = f"{label}, Reaction {number}"
-        _check_entry(where, entry)
+        _check_entry(where, entry, in_workflow)
         for act in entry.actions:
             _check_action(db, where, entry, act, home, in_workflow, upstream or set(), names or [], own_name)
 
 
-def _check_entry(where: str, entry: ReactionIO) -> None:
+def _check_entry(where: str, entry: ReactionIO, in_workflow: bool) -> None:
     if entry.section not in Reaction.SECTIONS:
         raise ReactionError(f"{where}: its section must be NEXT (What happens next) or ALSO, not '{entry.section}'.")
-    if entry.when not in Reaction.TESTS:
-        raise ReactionError(f"{where}: its When must be SUCCESS, FAILED, ENDED or RC, not '{entry.when}'.")
+    if entry.when not in Reaction.TESTS + Reaction.TIME_TESTS:
+        raise ReactionError(f"{where}: its When must be SUCCESS, FAILED, ENDED, RC or a time When, not '{entry.when}'.")
+    if entry.when in Reaction.TIME_TESTS:
+        _check_time(where, entry, in_workflow)
     if entry.when == "RC" and return_codes.problem(entry.return_codes):
         raise ReactionError(f"{where}: {return_codes.problem(entry.return_codes)}")
     if not entry.actions:
@@ -78,14 +93,38 @@ def _check_entry(where: str, entry: ReactionIO) -> None:
                             "and Kill the workflow.")
 
 
+def _check_time(where: str, entry: ReactionIO, in_workflow: bool) -> None:
+    """A time When: under Also (it takes side effects only), and with a time that can be worked out."""
+    if entry.section != "ALSO":
+        raise ReactionError(f"{where}: a time When only tells or marks, it changes nothing in the run, so it "
+                            "belongs under Also.")
+    needs_workflow = entry.when == NOT_STARTED_BY or entry.time_kind == AFTER_READY
+    if needs_workflow and not in_workflow:
+        raise ReactionError(f"{where}: 'has not started by' and 'within minutes of being ready' need a workflow "
+                            "around the job, so only a use of it in a workflow offers them. Add it there.")
+    problem = problem_with(_time_rule(entry))
+    if problem:
+        raise ReactionError(f"{where}: {problem}")
+
+
+def _time_rule(entry: ReactionIO) -> TimeRule:
+    return TimeRule(entry.when, entry.time_kind or "", entry.clock_time, entry.minutes, entry.percent, entry.run_count)
+
+
 def _check_action(db, where, entry, act: ReactionActionIO, home, in_workflow, upstream, names, own_name) -> None:
-    if act.action not in DECISIONS + SIDE_EFFECTS:
+    if act.action not in DECISIONS + ALSO_ACTIONS:
         raise ReactionError(f"{where}: '{act.action}' is not an action AutoApp knows.")
     words = WORDS[act.action].capitalize()
-    if entry.section == "NEXT" and act.action in SIDE_EFFECTS:
+    if entry.section == "NEXT" and act.action in ALSO_ACTIONS:
         raise ReactionError(f"{where}: {words} changes nothing in the run, so it belongs under Also.")
-    if entry.section == "ALSO" and act.action not in SIDE_EFFECTS:
+    if entry.section == "ALSO" and act.action not in ALSO_ACTIONS:
         raise ReactionError(f"{where}: {words} decides what happens next, so it belongs under What happens next.")
+    if act.action == "MARK_AS_LATE" and entry.when not in Reaction.TIME_TESTS:
+        raise ReactionError(f"{where}: Mark as late is for a time When (not started by, not ended by, runs longer "
+                            "than), because only a missed time makes a run late.")
+    if act.action == "NOTIFY" and _alert(db, act) is None:
+        raise ReactionError(f"{where}: Notify must name an alert that exists, and '{act.alert or ''}' is not one. "
+                            "Add it on the Alerts page first.")
     if act.action in ONLY_IN_WORKFLOWS and not in_workflow:
         raise ReactionError(f"{where}: {words} needs a workflow around the job, so only a use of it in a workflow "
                             "offers it. Add it there.")
@@ -133,11 +172,22 @@ def apply(db: Session, reactions: List[Reaction], submitted: List[ReactionIO], o
         order[entry.section] += 1
         reaction = Reaction(Section=entry.section, ReactionOrder=order[entry.section], WhenTest=entry.when,
                             WhenReturnCodes=return_codes.normal(entry.return_codes) if entry.when == "RC" else None,
-                            **owner)
+                            **_time_columns(entry), **owner)
         for position, act in enumerate(entry.actions, start=1):
             reaction.actions.append(_action(db, act, position, items or {}))
         reactions.append(reaction)
     return True
+
+
+def _time_columns(entry: ReactionIO) -> dict:
+    """The Reaction's time columns: only a time When has them, and only the ones its kind uses."""
+    if entry.when not in Reaction.TIME_TESTS:
+        return {}
+    kind = entry.time_kind
+    return {"WhenTimeKind": kind, "WhenClockTime": entry.clock_time if kind == "CLOCK" else None,
+            "WhenMinutes": entry.minutes if kind in ("AFTER_START", "AFTER_READY", "LENGTH") else None,
+            "WhenPercent": entry.percent if kind == HISTORY else None,
+            "WhenRunCount": (entry.run_count or DEFAULT_HISTORY_RUNS) if kind == HISTORY else None}
 
 
 def _action(db: Session, act: ReactionActionIO, position: int, items: Dict[str, object]) -> ReactionAction:
@@ -147,7 +197,13 @@ def _action(db: Session, act: ReactionActionIO, position: int, items: Dict[str, 
                           WaitSeconds=(act.wait_seconds or 0) if limited else None,
                           RerunMode=(act.mode or DEFAULT_MODE) if act.action == "RERUN" else None,
                           target_item=items.get(act.target) if act.action in ("RERUN_FROM", "SKIP") else None,
-                          target_job=target if act.action == "START_WORKFLOW" else None)
+                          target_job=target if act.action == "START_WORKFLOW" else None,
+                          alert=_alert(db, act) if act.action == "NOTIFY" else None,
+                          SkipIfCauseLate=bool(act.skip_if_cause_late) if act.action == "NOTIFY" else False)
+
+
+def _alert(db: Session, act: ReactionActionIO) -> Optional[Alert]:
+    return db.query(Alert).filter(Alert.Name == (act.alert or "").strip()).first()
 
 
 def _normal(entry: ReactionIO) -> ReactionIO:
@@ -156,11 +212,16 @@ def _normal(entry: ReactionIO) -> ReactionIO:
                                 wait_seconds=(a.wait_seconds or 0) if a.action in LIMITED else None,
                                 mode=(a.mode or DEFAULT_MODE) if a.action == "RERUN" else None,
                                 target=a.target if a.action in ("RERUN_FROM", "SKIP") else None,
-                                workflow=a.workflow.strip() if a.action == "START_WORKFLOW" and a.workflow else None)
+                                workflow=a.workflow.strip() if a.action == "START_WORKFLOW" and a.workflow else None,
+                                alert=a.alert.strip() if a.action == "NOTIFY" and a.alert else None,
+                                skip_if_cause_late=bool(a.skip_if_cause_late) if a.action == "NOTIFY" else False)
                for a in entry.actions]
+    time = _time_columns(entry)
     return ReactionIO(section=entry.section, when=entry.when,
                       return_codes=return_codes.normal(entry.return_codes) if entry.when == "RC" else None,
-                      actions=actions)
+                      time_kind=time.get("WhenTimeKind"), clock_time=time.get("WhenClockTime"),
+                      minutes=time.get("WhenMinutes"), percent=time.get("WhenPercent"),
+                      run_count=time.get("WhenRunCount"), actions=actions)
 
 
 def started_by(db: Session, workflow: Job) -> List[str]:

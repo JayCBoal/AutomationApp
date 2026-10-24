@@ -67,6 +67,19 @@
                 · <a id="run-operations" :href="operationsLink(run)">See its operations</a>
             </p>
             <div class="error-text small" x-show="run.error" x-text="run.error"></div>
+            <p class="small" id="run-late-line" x-show="run.late"><span class="tag late">Late</span>
+                <span x-text="run.late_reason"></span>
+                <span class="muted" x-show="run.late_cause" x-text="'(' + run.late_cause + ')'"></span></p>
+            <ul class="muted small run-clock" id="run-clock" x-show="run.clock && run.clock.length">
+                <template x-for="line in run.clock || []"><li x-text="line"></li></template>
+            </ul>
+            <details class="reaction-events" id="run-reactions" x-show="run.reactions && run.reactions.length">
+                <summary x-text="'Reactions that fired: ' + (run.reactions || []).length"></summary>
+                <ul class="small">
+                    <template x-for="e in run.reactions || []"><li :class="{ muted: e.result !== 'TOOK_EFFECT' }"
+                        x-text="(e.path ? e.path + ': ' : '') + e.message"></li></template>
+                </ul>
+            </details>
 
             <pre class="job-log" id="job-log" x-ref="log" @scroll="logScrolled($event)" x-show="run.log.length"><template
                  x-for="(line, index) in run.log" :key="index"><span :class="lineClass(line)" x-text="line + '\n'"></span></template></pre>

@@ -428,7 +428,7 @@ def test_navigation_links_only_to_pages_that_exist(page, db):
 
     assert [link.inner_text() for link in nav.locator("a").all()] == [
         "Main Index", "Applications", "Entities", "Sites", "Jobs & Workflows", "Run Job", "Endpoints", "Tags",
-        "Schedulers", "Operations Log", "Job History", "Audit Log", "Settings"]
+        "Schedulers", "Operations Log", "Job History", "Audit Log", "Settings", "Alerts", "Alert Deliveries"]
     assert nav.locator("span.planned").count() == 0                  # every page is built
     assert "current" in nav.get_by_role("link", name="Operations Log").get_attribute("class")
 
@@ -436,7 +436,7 @@ def test_navigation_links_only_to_pages_that_exist(page, db):
     page.wait_for_selector(".index-card")
     assert [card.locator(".name").inner_text() for card in page.locator("a.index-card[href]").all()] == [
         "Applications", "Entities", "Sites", "Jobs & Workflows", "Run Job", "Endpoints", "Tags", "Schedulers",
-        "Operations Log", "Job History", "Audit Log", "Settings"]
+        "Operations Log", "Job History", "Audit Log", "Settings", "Alerts", "Alert Deliveries"]
     assert [h.text_content() for h in page.locator("h2.section").all()] == [
         "Definitions", "Records of what happened", "Administration"]
     assert page.locator("h2.section:last-of-type + .index-grid a.index-card").all_inner_texts()[0].startswith("Settings")

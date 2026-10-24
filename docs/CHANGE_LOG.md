@@ -4,6 +4,24 @@ Notable structural, schema and design changes to AutoApp, newest first. Line-by-
 
 ---
 
+## 2026-10-23
+
+### Workflows summary
+
+- **Added (docs):** [WORKFLOWS_SUMMARY.md](WORKFLOWS_SUMMARY.md): what Phases 1 to 8 built, and a tour of the sample workflows for someone seeing them for the first time. Linked from WORKFLOWS.md.
+
+### Workflows, Phase 8: time-based Reactions, Mark as late and Notify
+
+Plan: [WORKFLOWS_PHASE8.md](WORKFLOWS_PHASE8.md). Decisions D178 to D184 in [WORKFLOW_DECISIONS.md](WORKFLOW_DECISIONS.md).
+
+- **Added (Reactions):** the Whens *has not started by*, *has not ended by*, *runs longer than* and *within N minutes of being ready*, given as a time of day, a length, or a percentage over the job's recent average; the actions *Mark as late* and *Notify*. The workflow runner judges them for items and for a job on its own through its telemetry; each fires once per run and starts again when a run is reopened.
+- **Added (Late flag):** runs and workflow items carry Late, with when, why and the job that caused it; Job History has a Late column and filter; the workflow run, its diagram and a job's log page show the Late tag and how each deadline was worked out.
+- **Added (Alerts):** an Alerts page (who is told, subject and message, Send a test), Alert Deliveries (the outbox: Pending, Sent or Failed with the reason), and mail settings. Mail goes by SMTP from a task in the server, three tries a minute apart, so no job waits for a mail server. The test mail server is `mail_sink` in `dev_env.sh` (mail on 8025, page on 8026).
+- **Added (database):** migration `migrate_late_alerts.py` (tables Alerts, AlertRecipients, AlertDeliveries, MailSettings; Late columns; time columns on Reactions); `autoapp_dev` migrated.
+- **Added (sample):** `DEV-LATE_SAMPLE` in the seed and in `autoapp_dev` (backup `demo/output/autoapp_dev_before_late_sample.sql`), with the alert `DEV-LATE_ALERT`.
+- **Fixed:** the link in an alert's message pointed at a page that does not take a run; it now opens the run's log, or a workflow's own page. The telemetry writer now takes a lock, as two threads write to it.
+- **Not yet:** the Send email step and the wider Alerting design (ROADMAP.md); working days; a dead workflow runner firing nothing (hosting).
+
 ## 2026-10-22
 
 ### Workflows, Phase 7, step 7: the restarts sample and loose ends

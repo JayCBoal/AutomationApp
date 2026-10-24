@@ -18,7 +18,7 @@ const MAX_INSIDE = 500;
 
 function jobHistory() {
     const search = AutoApp.searchPage({
-        criteria: ["job_key", "job_type", "within", "instance_id", "scheduler", "status", "date_from", "date_to"],
+        criteria: ["job_key", "job_type", "within", "instance_id", "scheduler", "status", "late", "date_from", "date_to"],
         path: "/runs", noun: "run", order: "newest first", toApi: values => ({ ...utcCriteria(values), tree: true }),
     });
     const searchRuns = search.search;
@@ -78,6 +78,7 @@ function jobHistory() {
             AutoApp.download("autoapp_job_history.csv", AutoApp.toCsv(this.shownRows, [
                 ["Job", r => r.job_key], ["Type", r => r.job_type === "WORKFLOW" ? "Workflow" : "Job"],
                 ["Status", r => r.status], ["Return code", r => r.return_code], ["Reason", r => r.reason],
+                ["Late", r => r.late ? "Late" : ""], ["Late reason", r => r.late_reason], ["Late cause", r => r.late_cause],
                 ["Within run", r => r.parent_run_id], ["Path in workflow", r => r.workflow_path],
                 ["Started (UTC)", r => r.started],
                 ["Ended (UTC)", r => r.ended], ["Seconds", r => r.duration_seconds], ["Instance ID", r => r.instance_id],

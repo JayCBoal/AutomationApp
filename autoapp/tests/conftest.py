@@ -35,6 +35,8 @@ from app.telemetry_ingest import ingest_records
 from create_dev_db import sql_statements
 from engine.spool_delivery import sweep
 
+os.environ.setdefault("AUTOAPP_MAIL_SENDER", "off")      # tests send by hand: see app/main.py
+
 AUTOAPP_DIR = Path(__file__).resolve().parents[1]
 CREATE_TABLES_SCRIPT = AUTOAPP_DIR.parent / "SQL" / "Create_Tables.sql"
 SERVER_DATABASE_URL = os.getenv("AUTOAPP_TEST_DATABASE_URL")

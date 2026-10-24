@@ -55,6 +55,7 @@
                 <span class="status" :class="run.status" id="run-status" x-text="runWords(run)"></span>
                 <span class="muted small" id="restarted-count" x-show="run && run.restarts_count > 0" x-cloak
                       :title="run && run.restarts_words" x-text="run ? 'Restarted ' + run.restarts_count + (run.restarts_count === 1 ? ' time' : ' times') : ''"></span>
+                <span class="tag late" id="run-late" x-show="run.late" :title="run.late_reason" x-text="'Late'"></span>
                 <span class="muted small" x-show="run.started" x-text="'started ' + time(run.started)"></span>
                 <span class="muted small" x-show="run.ended" x-text="'ended ' + time(run.ended)"></span>
                 <span class="spacer"></span>
@@ -112,7 +113,14 @@
                     <template x-if="runItem">
                         <div>
                             <h3 class="wf-name" x-text="runItem.name"></h3>
-                            <div><span class="wf-state" :class="runItem.status" x-text="stateWords(runItem)"></span></div>
+                            <div><span class="wf-state" :class="runItem.status" x-text="stateWords(runItem)"></span>
+                                <span class="tag late" x-show="runItem.late" x-text="'Late'"></span></div>
+                            <div class="small run-late-reason" x-show="runItem.late">
+                                <span x-text="runItem.late_reason"></span>
+                                <span class="muted" x-show="runItem.late_cause" x-text="'(' + runItem.late_cause + ')'"></span></div>
+                            <ul class="muted small run-clock" x-show="runItem.clock && runItem.clock.length">
+                                <template x-for="line in runItem.clock"><li x-text="line"></li></template>
+                            </ul>
                             <div class="muted small" x-text="'job ' + runItem.job_key"></div>
                             <div class="muted small" x-show="runItem.started" x-text="'started ' + time(runItem.started)"></div>
                             <div class="muted small" x-show="runItem.ended" x-text="'ended ' + time(runItem.ended)"></div>
@@ -165,6 +173,7 @@
                 <template x-for="item in runFlat" :key="item.path">
                     <li class="wf-row" :data-name="item.name" :data-path="item.path" :style="{ marginLeft: (item.depth * 22) + 'px' }">
                         <span class="wf-state" :class="item.status" x-text="stateWords(item)"></span>
+                        <span class="tag late" x-show="item.late" :title="item.late_reason" x-text="'Late'"></span>
                         <span class="wf-name" x-text="item.name"></span>
                         <span class="muted small" x-text="(item.frame_run_id ? 'workflow ' : 'job ') + item.job_key"></span>
                         <span class="muted small run-inside" x-show="item.frame_run_id" x-text="insideWords(item)"></span>
@@ -173,12 +182,16 @@
                         <button type="button" class="link small rerun-item" x-show="canRerun(run) && item.status === 'FAILED' && (item.run_id || item.frame_run_id)"
                                 @click="openRerun(item.run_id || item.frame_run_id)">Rerun &#9656;</button>
                         <span class="muted small run-waiting" x-show="item.waiting_for" x-text="item.waiting_for"></span>
+                        <span class="muted small run-clock-line" x-show="item.clock && item.clock.length" x-text="(item.clock || []).join(' · ')"></span>
                         <template x-for="(check, i) in checksFor(item.path)" :key="i">
                             <span class="muted small run-rule-words" :title="check.condition"
                                   x-text="'Custom rule ' + (check.result === 'TRUE' ? 'held' : 'did not hold')"></span>
                         </template>
                     </li>
                 </template>
+            </ul>
+            <ul class="muted small run-clock" id="run-clock" x-show="run.clock && run.clock.length">
+                <template x-for="line in run.clock || []"><li x-text="line"></li></template>
             </ul>
             <details class="reaction-events" id="run-reactions" x-show="run.reactions && run.reactions.length">
                 <summary x-text="'Reactions that fired: ' + (run.reactions || []).length"></summary>

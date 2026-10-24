@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session, aliased
 
 from app.database import get_db
 from app.log_agent import log_note, run_log
+from app.run_clock import fired_entries, item_lines, run_lines
 from app.run_restarts import RestartOut, restarts_for, summary_for
 from app.models import (Audit, ConditionCheck, JobRun, Operation, ReactionEvent, WorkflowPrerequisiteCheck,
                         WorkflowRunItem, utcnow)
@@ -58,6 +59,10 @@ class RunOut(BaseModel):
     bytes: Optional[int] = None
     restarts_count: int = Field(0, description="How many times it was run again (Job History says Restarted ×N)")
     restarts_words: Optional[str] = Field(None, description="How, in words: Resumed by you, then restarted by a Reaction")
+    late: bool = Field(False, description="A deadline was missed (Mark as late); the flag stays after the run catches up")
+    late_since: Optional[datetime] = Field(None, description="When it was marked late (UTC)")
+    late_reason: Optional[str] = Field(None, description="The first reason it was marked late")
+    late_cause: Optional[str] = Field(None, description="What it was waiting for, when it was late before it started")
 
 
 @router.get("/api/v1/runs", response_model=List[RunOut])
@@ -71,6 +76,7 @@ def list_runs(
     job_type: Optional[str] = Query(None, description="STEPS for job runs, WORKFLOW for workflow runs"),
     within: Optional[str] = Query(None, description="A run's RunID: that run and the runs inside it, however deep"),
     parent: Optional[str] = Query(None, description="A workflow run's RunID: the runs directly inside it, whatever else is asked"),
+    late: Optional[bool] = Query(None, description="true: only runs marked late; false: only runs never marked late"),
     tree: bool = Query(False, description="Leave out runs whose workflow run is also listed: they are inside it (see child_count)"),
     limit: int = Query(MAX_RESULTS, ge=1, le=MAX_RESULTS),
     db: Session = Depends(get_db),
@@ -81,7 +87,8 @@ def list_runs(
     else:
         within_ids = _run_and_inside(db, within) if within else None
         criteria = dict(job_key=job_key, instance_id=instance_id, scheduler=scheduler, status=status,
-                        date_from=date_from, date_to=date_to, job_type=job_type, within_ids=within_ids)
+                        date_from=date_from, date_to=date_to, job_type=job_type, within_ids=within_ids,
+                        late=late)
         query = db.query(JobRun).filter(*_run_filters(JobRun, **criteria))
         if tree:
             # A run is shown inside its workflow run when that run is listed too
@@ -91,7 +98,8 @@ def list_runs(
     return _describe_runs(db, runs)
 
 
-def _run_filters(model, job_key, instance_id, scheduler, status, date_from, date_to, job_type, within_ids) -> list:
+def _run_filters(model, job_key, instance_id, scheduler, status, date_from, date_to, job_type, within_ids,
+                 late=None) -> list:
     """The search's criteria as conditions on a run (model: JobRun, or another name for it)."""
     conditions = []
     if job_type:
@@ -110,6 +118,8 @@ def _run_filters(model, job_key, instance_id, scheduler, status, date_from, date
         conditions.append(model.StartedDateTime >= date_from)
     if date_to:
         conditions.append(model.StartedDateTime <= date_to)
+    if late is not None:
+        conditions.append(model.LateDateTime.isnot(None) if late else model.LateDateTime.is_(None))
     return conditions
 
 
@@ -174,7 +184,8 @@ def _describe(run: JobRun, counts, has_log: bool, parent_run_id: Optional[str] =
         error=run.ErrorMessage, operations=counts[0], failed_operations=counts[1], has_log=has_log,
         job_type=run.JobType or "STEPS", return_code=run.ReturnCode, reason=run.Reason, parent_run_id=parent_run_id,
         workflow_path=run.WorkflowPath, attempt=run.Attempt or 1, status_before_override=run.StatusBeforeOverride,
-        file_count=run.FileCount, bytes=run.Bytes,
+        file_count=run.FileCount, bytes=run.Bytes, late=run.LateDateTime is not None, late_since=run.LateDateTime,
+        late_reason=run.LateReason, late_cause=run.LateCause,
     )
 
 
@@ -195,6 +206,12 @@ class RunItemOut(BaseModel):
     bytes: Optional[int] = None
     waiting_for: Optional[str] = Field(None, description=(
         "While it waits for something outside its workflow: what, and until when"))
+    late: bool = Field(False, description="A deadline was missed (Mark as late)")
+    late_since: Optional[datetime] = None
+    late_reason: Optional[str] = None
+    late_cause: Optional[str] = None
+    clock: List[str] = Field(default_factory=list, description=(
+        "While it waits or runs: each timed entry that has not fired, with its time and how it was worked out"))
     frame_run_id: Optional[str] = Field(None, description="A frame (a workflow run inside this one): the run of it")
     inside: List["RunItemOut"] = Field(default_factory=list, description=(
         "A frame: the jobs inside it, as its own run has them, to any depth"))
@@ -244,6 +261,7 @@ class RunDetail(RunOut):
     cancel_requested: bool = False
     kill_requested: bool = False
     reactions: List[ReactionEventOut] = []
+    clock: List[str] = Field([], description="While it runs: its own timed entries that have not fired, with their times")
     conditions: List[ConditionCheckOut] = []
     outside_waits: List[OutsideWaitOut] = []
     restarts: List[RestartOut] = Field([], description="Each time the run was run again, by an operator or a Reaction")
@@ -266,7 +284,7 @@ def get_run(run_id: str, db: Session = Depends(get_db)):
     described.restarts_count, described.restarts_words = summary_for(db, run)
     return RunDetail(**described.model_dump(),
                      log=run_log(run), log_note=log_note(run),
-                     items=_run_items(db, run), cancel_requested=run.CancelRequestedDateTime is not None,
+                     items=_run_items(db, run), clock=run_lines(db, run, fired_entries(db, run)), cancel_requested=run.CancelRequestedDateTime is not None,
                      kill_requested=run.KillRequestedDateTime is not None, reactions=_reaction_events(db, run),
                      conditions=_condition_checks(db, run), outside_waits=_outside_waits(db, run),
                      restarts=restarts_for(db, run))
@@ -322,6 +340,7 @@ def _run_items(db: Session, run: JobRun) -> List[RunItemOut]:
     rows = db.query(WorkflowRunItem).filter(WorkflowRunItem.WorkflowRun_id == run.id).order_by(WorkflowRunItem.ItemOrder)
     waiting = _waiting_for(db, run) if run.Status == "RUNNING" else {}
     frames = _frame_runs(db, run)
+    fired = fired_entries(db, run) if run.Status == "RUNNING" else set()
     out = []
     for r in rows:
         frame = frames.get(r.Path)
@@ -333,6 +352,8 @@ def _run_items(db: Session, run: JobRun) -> List[RunItemOut]:
                               file_count=r.child_run.FileCount if r.child_run else None,
                               bytes=r.child_run.Bytes if r.child_run else None,
                               frame_run_id=frame.RunID if frame else None,
+                              late=r.LateDateTime is not None, late_since=r.LateDateTime, late_reason=r.LateReason,
+                              late_cause=r.LateCause, clock=item_lines(db, run, r, fired),
                               inside=_run_items(db, frame) if frame else []))
     return out
 

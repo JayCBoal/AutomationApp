@@ -4,6 +4,8 @@ The design record for AutoApp's workflows, built up in design sessions with the 
 
 Status: **Phases 1 to 4 are built and merged (Phase 4's Operations object and For Each File over an upstream job's files were deferred, D42); Phase 5 (outside dependencies) is built and merged (2026-10-19); Phase 6 (embedded and shared workflows) is built (2026-10-20; WORKFLOWS_PHASE6.md, D116 to D135).** The design topics below are all settled.
 
+**A summary of what was built, with a tour of the samples, is in [WORKFLOWS_SUMMARY.md](WORKFLOWS_SUMMARY.md).**
+
 **Every decision, with its reason, is in [WORKFLOW_DECISIONS.md](WORKFLOW_DECISIONS.md)**: look there first for "why does it work like this?".
 
 ## Agenda
@@ -276,7 +278,7 @@ To be judged again in practice once built, above all the outside dependencies.
 - **Phase 5, outside dependencies** (shortcoming 4): prerequisites on jobs in other workflows (current or latest run), on endpoints (minimum age, sharing code with the Check Files change), on time windows and dates; their markers; Needed by. **Built 2026-10-19.** Plan: [WORKFLOWS_PHASE5.md](WORKFLOWS_PHASE5.md); decisions D99 to D115.
 - **Phase 6, embedded and shared workflows** (shortcoming 6): embedded jobs and workflows, workflows used in workflows, frames, deep Find. **Built 2026-10-20.** Plan: [WORKFLOWS_PHASE6.md](WORKFLOWS_PHASE6.md); decisions D116 to D135.
 - **Phase 7, restarts:** the Rerun ▸ menu; Resume from a control file (not done, partly done, effect unknown); flow control state; the Reaction's Restart or Resume; Advanced…. **Built 2026-10-22.** Plan: [WORKFLOWS_PHASE7.md](WORKFLOWS_PHASE7.md); decisions D136 to D176.
-- **Phase 8, time-based Reactions** (the SLA reach): not started by, not ended by, runs longer than; Mark as late; Notify (needs a way to notify, such as the Send email step in TO-DO).
+- **Phase 8, time-based Reactions** (the SLA reach): not started by, not ended by, runs longer than; Mark as late; Notify, with alerts sent by SMTP from an outbox. **Built 2026-10-23.** Plan: [WORKFLOWS_PHASE8.md](WORKFLOWS_PHASE8.md); decisions D178 to D184. The Send email step and the full Alerting design are still ahead (ROADMAP.md).
 - The order follows the shortcomings' priority, except that the diagram comes second (every later phase has something to show on it), and restarts and time-based Reactions, the deepest engine work and the least needed to show the design, come last.
 - The owner may change the order of Phases 3 to 8 later.
 - Each phase is planned in detail just before it is built. The mockup was made alongside planning Phase 1: `autoapp/ui/mockup_workflow.html` (open it from the running server at `/ui/mockup_workflow.html`; it is not in the navigation bar).

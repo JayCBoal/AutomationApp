@@ -244,7 +244,7 @@ class WorkflowRunner:
 
     def run(self) -> int:
         """Runs the workflow to the end. Returns the exit code for whoever started it: 0 if it succeeded, else 1."""
-        from app.workflow_store import workflow_problems
+        from core.pre_run_check import workflow_problems
         if self.options.working_root:       # so the check of its jobs finds their working folders, as they will
             os.environ["AUTOAPP_WORKING_ROOT"] = self.options.working_root
         self.record = self._record_start()

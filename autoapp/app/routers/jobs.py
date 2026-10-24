@@ -20,7 +20,7 @@ from core.step_catalog import ENDPOINT_SUFFIX
 from core.handlers import get_handler
 from core import step_tree, workflow_vars
 from core.handlers.flow import BRANCHES
-from core.preflight import prepare_job
+from core.pre_run_check import job_problems
 from core.scope_engine import ScopeResolutionEngine
 from core.step_params import preview_step, resolve_step
 
@@ -50,26 +50,6 @@ def workflow_context(db: Session, workflow: Optional[str], use: Optional[str], j
 
 def checked_as(workflow: Optional[str], use: Optional[str]) -> Optional[str]:
     return f"workflow '{workflow}', as '{use}'" if workflow and use else None
-
-
-def job_problems(db: Session, job: Job, environment: Optional[Dict[str, str]] = None,
-                 warnings: Optional[List[str]] = None, workflow=None) -> List[str]:
-    """
-    Everything that would stop the job from running, as the runner would report it. Runs nothing.
-    environment: what the scheduler will set when it runs the job, if known (a WLA job's parameters).
-    warnings: given a list, what is worth knowing but does not stop the job is added to it.
-    workflow: for a job used in a workflow, what the workflow gives it (engine.workflow_vars.Levels).
-    """
-    if job.JobType == "WORKFLOW":
-        from app.workflow_store import workflow_problems
-        return workflow_problems(db, job, warnings)
-    problems = []
-    if not job.IsActive:
-        problems.append(f"Job '{job.JobKey}' is disabled.")
-    engine = ScopeResolutionEngine(db=db, job_id=job.MasterObject_id, instance_id="CHECK", environment=environment,
-                                   workflow=workflow)
-    engine.build_context()
-    return problems + prepare_job(db, job, engine, warnings)[1]
 
 
 @router.get("", response_model=List[JobSummary])

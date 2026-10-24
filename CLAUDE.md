@@ -27,7 +27,7 @@ Notes for Claude Code on this project. The why behind the project is in docs/PRO
   - `autoapp_server` (port 8000);
   - `standin_server` (port 8100);
   - `autoapp_tests`.
-- **Tests:** `autoapp_tests` runs the SQLite and MariaDB suites side by side, writes to `/tmp/autoapp_tests/sqlite.txt` and `mariadb.txt`, and takes about 8 to 11 minutes. Run it in the background. While iterating, run single test files, then the full suite before saying a change is done.
+- **Tests:** `autoapp_tests` runs the SQLite and MariaDB suites side by side, writes to `/tmp/autoapp_tests/sqlite.txt` and `mariadb.txt`, and takes about 30 to 40 minutes (2026-10-24). Run it in the background. While iterating, run single test files, then the full suite before saying a change is done.
   - Running other heavy work alongside the suite causes timing failures in the UI tests. Rerun the failed files before treating them as real.
   - The full suite is not run after every step: targeted tests each step, a quick tier (all but the UI tests) each commit, the full suite at the end of a sub-project, before a merge, after risky steps and when the owner steps away (docs/RUNNER_SEPARATION.md, "How we test").
 - **Shell:** never put `&&` before a `( ... ) &` on the same line.

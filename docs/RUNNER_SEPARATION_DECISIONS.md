@@ -21,7 +21,7 @@ Numbered R1, R2 and so on. All decided with the owner on 2026-10-24 unless marke
   - **Secrets default to Runtime.**
   - A normal variable whose value refers to a Runtime one is left partly resolved by the server; the runner finishes it after the fetch. The editor flags it.
   - When the same name is set in several layers, the winning value's flag decides.
-  - The server records what it hands out, so the audit of run values (TO-DO 19) has its source.
+  - The server records what it hands out. That is the source for the payload snapshot (operations, not audit; roadmap inbox) and for any later audit of run values (TO-DO 19).
 - **Why:** with next-run scheduling a run can wait hours between submission and start; Runtime lets a variable that must be current stay current, and keeps rotated secrets out of anything stored ahead of time. Doing the layering on the server takes the database off the runner and shows tag conflicts at submission instead of at the start of a run. The Runtime flag is how RunMyJobs and ActiveBatch do it.
 - **Considered:**
   - The runner resolving everything (the original design, to spare the scheduler): it needs every layer and every secret in scope sent to it, and the runner needs the layering code and database access.

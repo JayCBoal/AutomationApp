@@ -85,14 +85,25 @@ Smaller, and partly done by Phase A: it imports `core`, not `app`. Remaining: de
 
 Decided: see [RUNNER_SEPARATION_DECISIONS.md](RUNNER_SEPARATION_DECISIONS.md), R1 to R7. R8 and R9 settle agent assignment and the status of a run that has not started; R8's Queue design, the payload snapshot, the active-runs table and the Unknown status are separate items (roadmap inbox). Still open: sequencing against the rest of the roadmap.
 
+## How we test
+
+The full suite takes about 40 minutes and blocks code changes while it runs, so it is not run after every step (owner and Claude, 2026-10-24).
+
+1. **Every step:** the test files for the area touched, `tests/test_package_boundaries.py`, and an import check of `app`, `engine` and the scripts in `SQL/` and `demo/`.
+2. **Every commit:** a quick tier, the whole suite except the slow browser (UI) tests, run in the background while documents and designs are worked on. The split is set after the next full run is timed with `--durations`.
+3. **The full suite (both databases):** at the end of each sub-project and before any merge; after risky steps (a schema migration, an API change the pages use, a mass move of files); and whenever the owner is about to step away, so the result is waiting next time.
+
+Commits stay small, one per step, so a failure can be traced to the step that caused it. A failure in a known flaky test (TO-DO 10; the MariaDB "record has changed" error seen once on 2026-10-24) is rerun on its own before it is treated as real.
+
 ## Order of work
 
-1. Plan agreed (this document).
-2. After the Workflows final commit, merge and push: new branch from `main`.
-3. Phase A in small steps, tests green after each group.
-4. Phase B plan refined (API shapes, payload, failure rules) and agreed before any build.
-5. Phase B in steps: init payload; Job History path; spool delivery without the database; runner without models; tests on a live server.
+1. Plan agreed (this document). Done.
+2. Phase A, the `core` package. Done and merged to `main` 2026-10-24.
+3. Phase B steps 1 to 3: the Runtime flag, the `scope_engine` split, agents and tokens. A full suite run at the end of step 3.
+4. A short design session on the run tables: active runs and a read-only Job History, the "Created" status, the payload snapshot, how Queues and Agents attach (roadmap inbox).
+5. Phase B steps 4 to 8 on the agreed run model. A full suite run at the end.
 6. Phase C check.
+7. Then Queues and Agents, then Monitoring.
 
 ## Not in this plan
 
